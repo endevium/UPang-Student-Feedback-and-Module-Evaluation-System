@@ -1,0 +1,392 @@
+/* RESET */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Poppins', 'Inter', sans-serif;
+}
+
+body, html {
+  width: 100%;
+  overflow-x: hidden;
+  background-color: #041c32;
+  color: #ffffff;
+}
+
+/* WRAPPER */
+.landing-wrapper {
+  /* Your new gradient applied as a semi-transparent overlay */
+  background: 
+    linear-gradient(
+      6deg,
+      rgba(58, 86, 180, 0.81) 0%, 
+      rgba(29, 253, 201, 0.5) 50%, 
+      rgba(69, 139, 252, 0.65) 100%
+    ),
+    url('../assets/campus-bg.jpg');
+    
+  background-size: cover;
+  background-position: center;
+  
+  /* Ensuring background scrolls with Section 1 and 2 as requested */
+  background-attachment: scroll; 
+  background-repeat: no-repeat;
+  
+  min-height: 100vh;
+  width: 100%;
+}
+
+.container {
+  width: 90%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* HERO */
+.hero-section {
+  padding: 100px 0 80px;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  align-items: center;
+  gap: 40px;
+}
+
+.hero-title {
+  color: #ffcc00;
+  font-size: 3.8rem;
+  font-weight: 900;
+  line-height: 1.05;
+  margin-bottom: 20px;
+}
+
+.hero-subtitle {
+  font-size: 1rem;
+  opacity: 0.85;
+  max-width: 500px;
+}
+
+.hero-btns {
+  display: flex;
+  gap: 16px;
+  margin-top: 30px;
+}
+
+.btn-primary {
+  background: #ffcc00;
+  color: #041c32;
+  border: none;
+  padding: 12px 26px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255,255,255,0.4);
+  padding: 12px 26px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.hero-image-container {
+  display: flex;
+  justify-content: center;
+}
+
+.hero-img {
+  width: 100%;
+  max-width: 420px;
+  filter: drop-shadow(0 20px 30px rgba(0,0,0,0.5));
+}
+
+/* SECTION TITLES */
+.section-title {
+  color: #ffcc00;
+  font-size: 1.9rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.section-subtitle {
+  font-size: 0.95rem;
+  opacity: 0.8;
+  margin-bottom: 40px;
+}
+
+/* FEATURES */
+.features-section {
+  padding: 80px 0;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.feature-card {
+  /* Dark blue/teal gradient background */
+  background: linear-gradient(180deg, #162a3d 0%, #204051 100%);
+  
+  /* Slightly larger rounded corners */
+  border-radius: 20px;
+  
+  /* Layout and spacing */
+  padding: 40px 25px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  
+  /* Subtle border to define the shape against the dark background */
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  
+  /* Transitions for a hover effect */
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.feature-icon {
+  /* Size and color for the gold icon */
+  font-size: 60px; /* Adjust based on your icon font/emoji size */
+  color: #ffcc00;
+  margin-bottom: 25px;
+  
+  /* Remove background circle if you want it to look exactly like the image */
+  background: none; 
+  width: auto;
+  height: auto;
+}
+.feature-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+
+.feature-card p {
+  color: #ffffff;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0;
+  font-weight: 400;
+  /* Matches the font style in the image */
+  opacity: 0.8;
+}
+
+/* Container for the bottom decorations */
+.features-decoration-container {
+  position: relative;
+  display: flex;
+  justify-content: flex-start; /* Aligns students to the left */
+  margin-top: 40px; /* Pulls images slightly closer to the cards */
+  padding-bottom: 20px;
+}
+
+/* The student group image */
+.features-student-img {
+  width: 100%;
+  max-width: 600px; /* Adjust based on your image size */
+  height: auto;
+  z-index: 2;
+}
+
+/* The star/person doodle */
+.features-doodle-img {
+  position: absolute;
+  right: 0;
+  bottom: -183px;
+  width: 400px; /* Adjust size to match the image_cf4554.jpg */
+  height: auto;
+  z-index: 1;
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .features-decoration-container {
+    flex-direction: column;
+    align-items: center;
+    margin-top: 20px;
+  }
+  
+  .features-doodle-img {
+    position: static; /* Stack doodle below on mobile */
+    width: 150px;
+    margin-top: 20px;
+  }
+}
+
+/* CTA */
+.cta-section {
+  padding: 90px 0;
+}
+
+.cta-flex {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 50px;
+  align-items: center;
+}
+
+.cta-description {
+  font-size: 0.95rem;
+  opacity: 0.85;
+  max-width: 550px;
+}
+
+.check-list {
+  list-style: none;
+  margin-top: 25px;
+}
+
+.check-list li {
+  margin-bottom: 14px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+}
+
+.check-list li::before {
+  content: '✔';
+  color: #041c32;
+  background: #ffcc00;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  margin-right: 12px;
+}
+
+.cta-card {
+  background: #144272;
+  border-radius: 20px;
+  padding: 32px 28px;
+}
+
+.cta-card h3 {
+  color: #ffcc00;
+  margin-bottom: 10px;
+}
+
+.cta-card p {
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+.full-width {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.cta-note {
+  font-size: 0.7rem;
+  margin-top: 14px;
+  opacity: 0.7;
+}
+
+/* HOW IT WORKS */
+.how-it-works {
+  padding: 80px 0 40px;
+}
+
+.how-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px;
+  text-align: center;
+}
+
+.how-item h4 {
+  margin-bottom: 6px;
+}
+
+.how-item p {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.how-circle {
+  width: 70px;
+  height: 70px;
+  background: #ffcc00;
+  color: #041c32;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 14px;
+  font-size: 28px;
+}
+
+/* FOOTER */
+.footer-container {
+  background: #020d17;
+  padding: 70px 0 20px;
+  margin-top: 80px;
+}
+
+.footer-top {
+  margin-bottom: 40px;
+}
+
+.footer-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.footer-subtitle {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr;
+  gap: 50px;
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+.footer-column h5 {
+  color: #ffcc00;
+  margin: 12px 0 6px;
+}
+
+.social-links span {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.footer-bottom {
+  text-align: center;
+  margin-top: 40px;
+  font-size: 0.75rem;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding-top: 20px;
+}
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+  .hero-grid,
+  .cta-flex,
+  .features-grid,
+  .how-grid,
+  .footer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-title {
+    font-size: 3rem;
+  }
+
+  .hero-image-container {
+    margin-top: 40px;
+  }
+}

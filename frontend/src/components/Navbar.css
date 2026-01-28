@@ -1,0 +1,74 @@
+.navbar {
+  width: 100%;
+  height: 80px;
+  /* background-color: rgba(16, 42, 67, 0.9); Deep blue with slight transparency */
+  display: flex;
+  align-items: center;
+  position: fixed; /* Keeps it at the top while scrolling */
+  top: 0;
+  z-index: 1000;
+}
+
+.navbar-container {
+  width: 90%;
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.nav-elements {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+}
+
+.nav-links {
+  display: flex;
+  list-style: none;
+  gap: 30px;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-links a {
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 1rem;
+  transition: color 0.3s;
+}
+
+.nav-links a:hover {
+  color: #fbbf24; /* Changes to UPang Gold on hover */
+}
+
+.login-btn {
+  background-color: #ffffff;
+  color: #102a43;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.2s, background-color 0.3s;
+}
+
+.login-btn:hover {
+  background-color: #fbbf24;
+  transform: translateY(-2px);
+}
+
+/* src/components/Navbar.css */
+
+.navbar-logo img {
+  /* Use 'height' to keep the navbar consistent */
+  height: 60px; 
+  
+  /* 'width: auto' ensures the logo doesn't look stretched or squashed */
+  width: auto; 
+  
+  /* Optional: adds some space around the logo */
+  padding: 5px 0; 
+}
