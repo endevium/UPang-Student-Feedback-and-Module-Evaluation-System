@@ -6,6 +6,12 @@ import campusBg from '../assets/campus-bg.jpg';
 import heroTextPng from '../assets/hero-text.png';
 import studentGroupImg from '../assets/group-students.png';
 import starDoodleImg from '../assets/star-doodle.png';
+import sectionText from '../assets/text2.png';
+import sectionText2 from '../assets/text3.png';
+import sectionText3 from '../assets/text4.png';
+
+
+
 
 
 const LandingPage = () => {
@@ -37,7 +43,11 @@ const LandingPage = () => {
       {/* WHY SECTION */}
       <section className="features-section">
         <div className="container">
-          <h2 className="section-title">WHY USE OUR EVALUATION SYSTEM?</h2>
+          <img 
+              src={sectionText2} 
+              alt="YOUR VOICE SHAPES OUR FUTURE" 
+              className="hero-title-img" 
+            />
           <p className="section-subtitle">
             A modern, streamlined approach to course evaluation designed with students in mind.
           </p>
@@ -82,7 +92,11 @@ const LandingPage = () => {
       <section className="cta-section">
         <div className="container cta-flex">
           <div className="cta-left">
-            <h2 className="section-title">MAKE YOUR VOICE HEARD</h2>
+            <img 
+              src={sectionText} 
+              alt="YOUR VOICE SHAPES OUR FUTURE" 
+              className="hero-title-img" 
+            />
             <p className="cta-description">
               Your feedback is crucial in helping Upang maintain high educational standards and continuously improve the learning experience for all student.
             </p>
@@ -109,24 +123,28 @@ const LandingPage = () => {
       {/* HOW IT WORKS */}
       <section className="how-it-works">
         <div className="container">
-          <h2 className="section-title">HOW IT WORKS?</h2>
+           <img 
+              src={sectionText3} 
+              alt="YOUR VOICE SHAPES OUR FUTURE" 
+              className="hero-title-img" 
+            />
           <p className="section-subtitle">Simple, straightforward evaluation process in just a few steps.</p>
 
           <div className="how-grid">
             <div className="how-item">
               <div className="how-circle">👤</div>
               <h4>Log In</h4>
-              <p>Access your account using your university credentials.</p>
+              <p>Access your account using your student credentials</p>
             </div>
             <div className="how-item">
               <div className="how-circle">📝</div>
               <h4>Select Module</h4>
-              <p>Choose the course and instructor you want to evaluate.</p>
+              <p>Choose from your enrolled courses ready for evaluation</p>
             </div>
             <div className="how-item">
               <div className="how-circle">📨</div>
               <h4>Submit Feedback</h4>
-              <p>Complete the form and submit your evaluation securely.</p>
+              <p>Complete the evaluation form and submit your responses</p>
             </div>
           </div>
         </div>
@@ -168,7 +186,7 @@ const LandingPage = () => {
           </div>
 
           <div className="footer-bottom">
-            © 2025 UPang SFME • Home • About • Events • Contact
+            © 2026 UPang SFME • Home • About • Events • Contact
           </div>
         </div>
       </footer>

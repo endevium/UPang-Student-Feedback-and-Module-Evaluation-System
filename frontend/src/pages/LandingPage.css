@@ -3,7 +3,15 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: 'Poppins', 'Inter', sans-serif;
+  font-family: 'Optima-Medium', 'Optima', 'Candara', 'Segoe UI', sans-serif;
+}
+
+p, .hero-subtitle, .feature-card p, .cta-description {
+  /* Optima is the primary font; fallbacks ensure it looks good everywhere */
+  font-family: 'Optima-Medium', 'Optima', 'Candara', 'Segoe UI', sans-serif;
+  font-weight: 400;
+  line-height: 1.6; /* Improves readability for paragraphs */
+  letter-spacing: 0.02em; /* Optima looks great with a tiny bit of breathing room */
 }
 
 body, html {
@@ -16,13 +24,8 @@ body, html {
 /* WRAPPER */
 .landing-wrapper {
   /* Your new gradient applied as a semi-transparent overlay */
-  background: 
-    linear-gradient(
-      6deg,
-      rgba(58, 86, 180, 0.81) 0%, 
-      rgba(29, 253, 201, 0.5) 50%, 
-      rgba(69, 139, 252, 0.65) 100%
-    ),
+  background: #3E756C;
+background: linear-gradient(187deg,rgba(62, 117, 108, 0.8) 0%, rgba(57, 126, 133, 0.9) 50%, rgba(57, 126, 133, 0.7) 100%),
     url('../assets/campus-bg.jpg');
     
   background-size: cover;
@@ -112,11 +115,24 @@ body, html {
   margin-bottom: 10px;
   text-transform: uppercase;
 }
+p {
+  font-family: 'Optima', 'Candara', 'Segoe UI', sans-serif;
+  color: #FFFFFF;
 
+  
+}
 .section-subtitle {
-  font-size: 0.95rem;
-  opacity: 0.8;
+  /* Optima is standard on Mac; Candara and Segoe UI are the best Windows matches */
+  font-family: 'Optima', 'Candara', 'Segoe UI', sans-serif;
+  
+  font-size: 1.1rem;      /* Slightly larger for readability */
+  font-weight: 400;       /* Optima looks best at regular weight */
+  line-height: 1.6;       /* Adds breathing room between lines */
+  letter-spacing: 0.03em; /* Enhances the elegant feel of Optima */
+  
+  opacity: 0.9;           /* Softens the white text against the dark background */
   margin-bottom: 40px;
+  max-width: 700px;       /* Prevents the text from stretching too wide */
 }
 
 /* FEATURES */
@@ -132,8 +148,8 @@ body, html {
 
 .feature-card {
   /* Dark blue/teal gradient background */
-  background: linear-gradient(180deg, #162a3d 0%, #204051 100%);
-  
+  background: #254148;
+  background: linear-gradient(0deg, rgba(37, 65, 72, 1) 0%, rgba(35, 51, 74, 1) 100%);  
   /* Slightly larger rounded corners */
   border-radius: 20px;
   
@@ -305,31 +321,65 @@ body, html {
 
 .how-item h4 {
   margin-bottom: 6px;
+  font-size: 25px;
 }
 
 .how-item p {
-  font-size: 0.85rem;
+  font-size: 22px;
   opacity: 0.85;
 }
 
 .how-circle {
-  width: 70px;
-  height: 70px;
-  background: #ffcc00;
-  color: #041c32;
+  width: 80px;
+  height: 80px;
+  background-color: #ffcc00; /* Bright UPang Yellow */
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 14px;
-  font-size: 28px;
+  font-size: 2rem;
+  margin: 0 auto 20px;
+  color: #0d1b2a; /* Dark icon color */
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
 }
 
-/* FOOTER */
+.how-it-works {
+  position: relative;
+  /* Base dark background */
+  background-color: #0d1b2a; 
+  padding: 100px 0;
+  overflow: hidden; /* Keeps the clip-path from leaking out */
+  color: white;
+}
+
+/* The Angled Overlay */
+.how-it-works::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 60%; /* Only covers the top portion like in the image */
+  
+  /* Lighter blue-gray shade */
+  background: #1b263b; 
+  
+  /* This creates the sharp angled cut */
+  clip-path: polygon(0 0, 100% 0, 100% 70%, 0% 100%);
+  z-index: 1;
+}
+
+/* Ensure content stays above the background shape */
+.how-it-works .container {
+  position: relative;
+  z-index: 2;
+}
+
 .footer-container {
-  background: #020d17;
-  padding: 70px 0 20px;
-  margin-top: 80px;
+  background: #050a0f; /* Deep dark blue-black */
+  padding: 60px 0 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: #e0e0e0;
 }
 
 .footer-top {
@@ -365,11 +415,12 @@ body, html {
 }
 
 .footer-bottom {
-  text-align: center;
   margin-top: 40px;
-  font-size: 0.75rem;
-  border-top: 1px solid rgba(255,255,255,0.1);
   padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+  font-size: 0.85rem;
+  opacity: 0.7;
 }
 
 /* RESPONSIVE */
