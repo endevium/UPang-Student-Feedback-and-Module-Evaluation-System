@@ -1,4 +1,6 @@
 /* src/index.css */
+@import "tailwindcss";
+
 :root {
   --up-dark-blue: #102a43;   /* Deep background blue */
   --up-gold: #fbbf24;        /* Golden yellow for highlights */
@@ -8,7 +10,7 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', sans-serif; /* A clean font similar to your design */
+  font-family: 'Optima-Medium', 'Optima', 'Candara', 'Segoe UI', sans-serif; /* A clean font similar to your design */
   background-color: var(--up-dark-blue);
   color: var(--white);
 }

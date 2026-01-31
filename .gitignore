@@ -32,3 +32,28 @@ site-packages/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Ignore model checkpoints
+
+checkpoints/
+
+
+
+# Ignore training results/logs
+
+results/
+
+
+
+# Ignore any large files by extension
+
+*.pt
+
+*.pth
+
+*.ckpt
+
+*.h5
+
+*.bin
+*.safetensors

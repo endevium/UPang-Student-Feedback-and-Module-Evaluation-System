@@ -2,17 +2,12 @@ import React from 'react';
 import Navbar from '../components/Navbar';
 import './LandingPage.css';
 import studentCutout from '../assets/students-cutout.png';
-import campusBg from '../assets/campus-bg.jpg';
 import heroTextPng from '../assets/hero-text.png';
 import studentGroupImg from '../assets/group-students.png';
 import starDoodleImg from '../assets/star-doodle.png';
 import sectionText from '../assets/text2.png';
 import sectionText2 from '../assets/text3.png';
 import sectionText3 from '../assets/text4.png';
-
-
-
-
 
 const LandingPage = () => {
   return (
