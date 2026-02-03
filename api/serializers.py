@@ -115,3 +115,80 @@ class DepartmentHeadSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+# Login
+class StudentLoginSerializer(serializers.Serializer):
+    student_number = serializers.CharField()  
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        student_number = attrs.get('student_number')
+        password = attrs.get('password')
+
+        user = None
+
+        try:
+            student = Student.objects.get(student_number=student_number)
+            if student.check_password(password):
+                user = student
+        except Student.DoesNotExist:
+            pass
+
+        if not user:
+            raise serializers.ValidationError("Invalid credentials")
+
+        attrs['user'] = user
+        return attrs
+
+class FacultyLoginSerializer(serializers.Serializer):
+    email = serializers.CharField()  
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        password = attrs.get('password')
+
+        user = None
+
+        try:
+            faculty = Faculty.objects.get(email=email)
+            if faculty.check_password(password):
+                user = faculty
+        except Faculty.DoesNotExist:
+            pass
+
+        if not user:
+            try:
+                head = DepartmentHead.objects.get(email=email)
+                if head.check_password(password):
+                    user = head
+            except DepartmentHead.DoesNotExist:
+                pass
+
+        if not user:
+            raise serializers.ValidationError("Invalid credentials")
+
+        attrs['user'] = user
+        return attrs
+
+class DepartmentHeadLoginSerializer(serializers.Serializer):
+    email = serializers.CharField()  
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        password = attrs.get('password')
+
+        user = None
+
+        try:
+            head = DepartmentHead.objects.get(email=email)
+            if head.check_password(password):
+                user = head
+        except DepartmentHead.DoesNotExist:
+            pass
+
+        if not user:
+            raise serializers.ValidationError("Invalid credentials")
+
+        attrs['user'] = user
+        return attrs
