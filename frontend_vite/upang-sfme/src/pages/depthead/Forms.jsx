@@ -17,12 +17,22 @@ import {
 const EvaluationForms = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
+  // Helper function to get auth headers
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('authToken');
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+  };
+
   const [formsList, setFormsList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
 
   // Modal & Form State
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [selectedForm, setSelectedForm] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [formValues, setFormValues] = useState({
@@ -37,7 +47,9 @@ const EvaluationForms = () => {
       setIsLoading(true);
       setLoadError('');
       try {
-        const res = await fetch(`${API_BASE_URL}/evaluation-forms/`);
+        const res = await fetch(`${API_BASE_URL}/evaluation-forms/`, {
+          headers: getAuthHeaders(),
+        });
         const data = await res.json().catch(() => []);
         if (!res.ok) {
           setLoadError(data?.detail || 'Unable to load forms.');
@@ -73,6 +85,10 @@ const EvaluationForms = () => {
 
   const closeModal = () => {
     setIsAddOpen(false);
+    setIsEditOpen(false);
+    setIsPreviewOpen(false);
+    setIsDeleteConfirmOpen(false);
+    setSelectedForm(null);
     resetForm();
   };
 
@@ -92,7 +108,10 @@ const EvaluationForms = () => {
       setIsSubmitting(true);
       const response = await fetch(`${API_BASE_URL}/evaluation-forms/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
         body: JSON.stringify(formValues),
       });
 
@@ -104,6 +123,98 @@ const EvaluationForms = () => {
       }
 
       setFormsList((prev) => [data, ...prev]);
+      closeModal();
+    } catch {
+      setErrorMessage('Server connection failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditForm = async (e) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    // Basic Validation
+    const required = ['title', 'form_type'];
+    const missing = required.find(key => !formValues[key].trim());
+    if (missing) {
+      setErrorMessage('Please fill in all required fields.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const response = await fetch(`${API_BASE_URL}/evaluation-forms/${selectedForm.id}/`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify(formValues),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setErrorMessage(data?.detail || 'Unable to update form. Please check details.');
+        return;
+      }
+
+      setFormsList((prev) => prev.map(f => f.id === selectedForm.id ? data : f));
+      closeModal();
+    } catch {
+      setErrorMessage('Server connection failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePreview = (form) => {
+    setSelectedForm(form);
+    setIsPreviewOpen(true);
+  };
+
+  const handleEdit = (form) => {
+    setSelectedForm(form);
+    setFormValues({
+      title: form.title,
+      form_type: form.form_type,
+      description: form.description || '',
+      status: form.status,
+    });
+    setIsEditOpen(true);
+  };
+
+  const handleDuplicate = (form) => {
+    setFormValues({
+      title: `${form.title} (Copy)`,
+      form_type: form.form_type,
+      description: form.description || '',
+      status: 'Draft',
+    });
+    setIsAddOpen(true);
+  };
+
+  const handleDelete = (form) => {
+    setSelectedForm(form);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      setIsSubmitting(true);
+      const response = await fetch(`${API_BASE_URL}/evaluation-forms/${selectedForm.id}/`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        setErrorMessage('Unable to delete form.');
+        return;
+      }
+
+      setFormsList((prev) => prev.filter(f => f.id !== selectedForm.id));
       closeModal();
     } catch {
       setErrorMessage('Server connection failed.');
@@ -199,16 +310,30 @@ const EvaluationForms = () => {
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all">
+                    <button 
+                      onClick={() => handlePreview(form)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"
+                    >
                       <Eye size={14} /> Preview
                     </button>
-                    <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all">
+                    <button 
+                      onClick={() => handleEdit(form)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"
+                    >
                       <Edit3 size={14} /> Edit
                     </button>
-                    <button className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-blue-500 hover:border-blue-200 transition-all">
+                    <button 
+                      onClick={() => handleDuplicate(form)}
+                      className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-blue-500 hover:border-blue-200 transition-all"
+                      title="Duplicate"
+                    >
                       <Copy size={16} />
                     </button>
-                    <button className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-red-500 hover:border-red-200 transition-all">
+                    <button 
+                      onClick={() => handleDelete(form)}
+                      className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-red-500 hover:border-red-200 transition-all"
+                      title="Delete"
+                    >
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -246,7 +371,7 @@ const EvaluationForms = () => {
       </div>
 
       {/* INTEGRATED MODAL */}
-      {isAddOpen && (
+      {(isAddOpen || isEditOpen) && (
         <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeModal}>
           <div
             className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden"
@@ -254,15 +379,15 @@ const EvaluationForms = () => {
           >
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-black text-slate-800">Create Evaluation Form</h3>
-                <p className="text-sm text-slate-400">Add a new form for student evaluations</p>
+                <h3 className="text-lg font-black text-slate-800">{isEditOpen ? 'Edit Evaluation Form' : 'Create Evaluation Form'}</h3>
+                <p className="text-sm text-slate-400">{isEditOpen ? 'Update form details' : 'Add a new form for student evaluations'}</p>
               </div>
               <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={closeModal}>
                 &times;
               </button>
             </div>
 
-            <form className="p-6 space-y-4" onSubmit={handleAddForm}>
+            <form className="p-6 space-y-4" onSubmit={isEditOpen ? handleEditForm : handleAddForm}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Title</label>
@@ -326,10 +451,122 @@ const EvaluationForms = () => {
                   disabled={isSubmitting}
                   className="px-4 py-2 text-sm font-bold bg-[#1f474d] text-white rounded-lg hover:bg-[#18393e] disabled:opacity-70"
                 >
-                  {isSubmitting ? 'Creating...' : 'Create Form'}
+                  {isSubmitting ? (isEditOpen ? 'Updating...' : 'Creating...') : (isEditOpen ? 'Update Form' : 'Create Form')}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* PREVIEW MODAL */}
+      {isPreviewOpen && selectedForm && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeModal}>
+          <div
+            className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-800">Preview: {selectedForm.title}</h3>
+                <p className="text-sm text-slate-400">Form details and configuration</p>
+              </div>
+              <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={closeModal}>
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Title</label>
+                  <p className="mt-2 text-sm text-slate-800">{selectedForm.title}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Form Type</label>
+                  <p className="mt-2 text-sm text-slate-800">{selectedForm.form_type}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</label>
+                  <span className={`mt-2 inline-block px-2 py-1 text-xs font-bold uppercase rounded ${selectedForm.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {selectedForm.status}
+                  </span>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Created</label>
+                  <p className="mt-2 text-sm text-slate-800">{selectedForm.created_at ? new Date(selectedForm.created_at).toLocaleDateString() : 'N/A'}</p>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Description</label>
+                  <p className="mt-2 text-sm text-slate-800">{selectedForm.description || 'No description provided'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Questions</label>
+                  <p className="mt-2 text-sm text-slate-800">{selectedForm.questions_count || 0} questions</p>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Usage</label>
+                  <p className="mt-2 text-sm text-slate-800">Used {selectedForm.usage_count || 0} times</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <button 
+                  onClick={() => { closeModal(); handleEdit(selectedForm); }}
+                  className="px-4 py-2 text-sm font-bold bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
+                >
+                  Edit Form
+                </button>
+                <button className="px-4 py-2 text-sm font-bold text-slate-500" onClick={closeModal}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {isDeleteConfirmOpen && selectedForm && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeModal}>
+          <div
+            className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-black text-slate-800">Delete Form</h3>
+              <p className="text-sm text-slate-400 mt-1">This action cannot be undone</p>
+            </div>
+
+            <div className="p-6">
+              <p className="text-sm text-slate-600 mb-6">
+                Are you sure you want to delete <strong>"{selectedForm.title}"</strong>? This will permanently remove the form and cannot be undone.
+              </p>
+
+              {errorMessage && (
+                <div className="text-sm text-rose-600 font-semibold mb-4" role="alert">
+                  {errorMessage}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3">
+                <button 
+                  type="button" 
+                  className="px-4 py-2 text-sm font-bold text-slate-500" 
+                  onClick={closeModal}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-sm font-bold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-70"
+                >
+                  {isSubmitting ? 'Deleting...' : 'Delete Form'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -4,8 +4,11 @@ from .serializers import *
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from .throttles import LoginRateThrottle
 from .models import Student
+import csv
+import io
 
 def _issue_jwt(role: str, legacy_user_id: int) -> str:
     token = AccessToken()
@@ -24,6 +27,49 @@ class StudentListCreateView(generics.ListCreateAPIView):
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
 
+    def create(self, request, *args, **kwargs):
+        # Manual authentication for department head
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        dept_head_id = decoded_token.get("legacy_user_id")
+        if not dept_head_id:
+            return Response({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            dept_head = DepartmentHead.objects.get(id=dept_head_id)
+        except DepartmentHead.DoesNotExist:
+            return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        response = super().create(request, *args, **kwargs)
+        
+        if response.status_code == status.HTTP_201_CREATED:
+            # Get the created student
+            student = Student.objects.get(id=response.data['id'])
+            
+            # Log the creation
+            user_name = f"{dept_head.firstname} {dept_head.lastname}".strip() or dept_head.email or 'Depthead User'
+            AuditLog.objects.create(
+                user=user_name,
+                role='Depthead',
+                action='Create Student',
+                category='USER MANAGEMENT',
+                status='Success',
+                message=f'Created new student: {student.firstname} {student.lastname} ({student.student_id})',
+                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+            )
+        
+        return response
+
 # Retrieve, update, or delete a single student
 class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Student.objects.all()
@@ -32,6 +78,49 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
 class FacultyListCreateView(generics.ListCreateAPIView):
     queryset = Faculty.objects.all()
     serializer_class = FacultySerializer
+
+    def create(self, request, *args, **kwargs):
+        # Manual authentication for department head
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        dept_head_id = decoded_token.get("legacy_user_id")
+        if not dept_head_id:
+            return Response({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            dept_head = DepartmentHead.objects.get(id=dept_head_id)
+        except DepartmentHead.DoesNotExist:
+            return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        response = super().create(request, *args, **kwargs)
+        
+        if response.status_code == status.HTTP_201_CREATED:
+            # Get the created faculty
+            faculty = Faculty.objects.get(id=response.data['id'])
+            
+            # Log the creation
+            user_name = f"{dept_head.firstname} {dept_head.lastname}".strip() or dept_head.email or 'Depthead User'
+            AuditLog.objects.create(
+                user=user_name,
+                role='Depthead',
+                action='Create Faculty',
+                category='USER MANAGEMENT',
+                status='Success',
+                message=f'Created new faculty: {faculty.firstname} {faculty.lastname} ({faculty.email})',
+                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+            )
+        
+        return response
 
 class FacultyDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Faculty.objects.all()
@@ -181,6 +270,331 @@ class EvaluationFormListCreateView(generics.ListCreateAPIView):
     queryset = EvaluationForm.objects.all()
     serializer_class = EvaluationFormSerializer
 
+    def create(self, request, *args, **kwargs):
+        # Manual authentication for department head
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        dept_head_id = decoded_token.get("legacy_user_id")
+        if not dept_head_id:
+            return Response({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            dept_head = DepartmentHead.objects.get(id=dept_head_id)
+        except DepartmentHead.DoesNotExist:
+            return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Set the user on the request for logging
+        request.user = dept_head
+
+        response = super().create(request, *args, **kwargs)
+        if response.status_code == status.HTTP_201_CREATED:
+            form_data = response.data
+            # Log the creation
+            user_name = 'System'
+            if hasattr(request, 'user') and request.user:
+                user_name = f"{request.user.firstname} {request.user.lastname}".strip() or request.user.email or 'Depthead User'
+            AuditLog.objects.create(
+                user=user_name,
+                role='Depthead',
+                action='Created Evaluation Form',
+                category='FORM MANAGEMENT',
+                status='Success',
+                message=f'Created new form: {form_data.get("title", "Unknown")}',
+                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+            )
+        return response
+
 class EvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = EvaluationForm.objects.all()
     serializer_class = EvaluationFormSerializer
+
+    def perform_update(self, serializer):
+        # Manual authentication for department head
+        token = _get_bearer_token(self.request)
+        if token:
+            try:
+                decoded_token = AccessToken(token)
+                if decoded_token.get("role") == "department_head":
+                    dept_head_id = decoded_token.get("legacy_user_id")
+                    if dept_head_id:
+                        try:
+                            dept_head = DepartmentHead.objects.get(id=dept_head_id)
+                            self.request.user = dept_head
+                        except DepartmentHead.DoesNotExist:
+                            pass
+            except:
+                pass
+
+        old_instance = self.get_object()
+        super().perform_update(serializer)
+        new_instance = serializer.instance
+        # Log the update
+        user_name = 'System'
+        if hasattr(self.request, 'user') and self.request.user:
+            user_name = f"{self.request.user.firstname} {self.request.user.lastname}".strip() or self.request.user.email or 'Depthead User'
+        AuditLog.objects.create(
+            user=user_name,
+            role='Depthead',
+            action='Updated Evaluation Form',
+            category='FORM MANAGEMENT',
+            status='Success',
+            message=f'Updated form: {new_instance.title}',
+            ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
+        )
+
+    def perform_destroy(self, instance):
+        # Manual authentication for department head
+        token = _get_bearer_token(self.request)
+        if token:
+            try:
+                decoded_token = AccessToken(token)
+                if decoded_token.get("role") == "department_head":
+                    dept_head_id = decoded_token.get("legacy_user_id")
+                    if dept_head_id:
+                        try:
+                            dept_head = DepartmentHead.objects.get(id=dept_head_id)
+                            self.request.user = dept_head
+                        except DepartmentHead.DoesNotExist:
+                            pass
+            except:
+                pass
+
+        # Log the deletion
+        user_name = 'System'
+        if hasattr(self.request, 'user') and self.request.user:
+            user_name = f"{self.request.user.firstname} {self.request.user.lastname}".strip() or self.request.user.email or 'Depthead User'
+        AuditLog.objects.create(
+            user=user_name,
+            role='Depthead',
+            action='Deleted Evaluation Form',
+            category='FORM MANAGEMENT',
+            status='Success',
+            message=f'Deleted form: {instance.title}',
+            ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
+        )
+        super().perform_destroy(instance)
+
+class StudentBulkImportView(APIView):
+    """Bulk import students from CSV file"""
+
+    def post(self, request):
+        # Manual authentication for department head
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        dept_head_id = decoded_token.get("legacy_user_id")
+        if not dept_head_id:
+            return Response({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            dept_head = DepartmentHead.objects.get(id=dept_head_id)
+        except DepartmentHead.DoesNotExist:
+            return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if file is provided
+        if 'file' not in request.FILES:
+            return Response({"detail": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+        csv_file = request.FILES['file']
+        if not csv_file.name.endswith('.csv'):
+            return Response({"detail": "File must be a CSV"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Parse CSV and create students
+        try:
+            decoded_file = csv_file.read().decode('utf-8')
+            csv_reader = csv.DictReader(io.StringIO(decoded_file))
+
+            created_count = 0
+            errors = []
+
+            for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 to account for header
+                try:
+                    # Validate required fields
+                    required_fields = ['email', 'firstname', 'lastname', 'student_id']
+                    for field in required_fields:
+                        if not row.get(field, '').strip():
+                            errors.append(f"Row {row_num}: Missing required field '{field}'")
+                            continue
+
+                    # Check if student already exists
+                    if Student.objects.filter(email=row['email']).exists():
+                        errors.append(f"Row {row_num}: Student with email '{row['email']}' already exists")
+                        continue
+
+                    if Student.objects.filter(student_id=row['student_id']).exists():
+                        errors.append(f"Row {row_num}: Student with ID '{row['student_id']}' already exists")
+                        continue
+
+                    # Create student
+                    student = Student.objects.create(
+                        email=row['email'].strip(),
+                        firstname=row['firstname'].strip(),
+                        lastname=row['lastname'].strip(),
+                        student_id=row['student_id'].strip(),
+                        department=row.get('department', '').strip(),
+                        year_level=row.get('year_level', '').strip(),
+                        course=row.get('course', '').strip(),
+                        must_change_password=True
+                    )
+                    created_count += 1
+
+                except Exception as e:
+                    errors.append(f"Row {row_num}: {str(e)}")
+
+            # Log the bulk import
+            user_name = f"{dept_head.firstname} {dept_head.lastname}".strip() or dept_head.email or 'Depthead User'
+            AuditLog.objects.create(
+                user=user_name,
+                role='Depthead',
+                action='Bulk Import Students',
+                category='USER MANAGEMENT',
+                status='Success' if created_count > 0 else 'Failed',
+                message=f'Imported {created_count} new student records from CSV file. {len(errors)} errors encountered.',
+                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+            )
+
+            return Response({
+                "message": f"Successfully imported {created_count} students",
+                "created_count": created_count,
+                "errors": errors[:10]  # Limit errors shown to first 10
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"detail": f"Error processing CSV: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class FacultyBulkImportView(APIView):
+    """Bulk import faculty from CSV file"""
+
+    def post(self, request):
+        # Manual authentication for department head
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        dept_head_id = decoded_token.get("legacy_user_id")
+        if not dept_head_id:
+            return Response({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            dept_head = DepartmentHead.objects.get(id=dept_head_id)
+        except DepartmentHead.DoesNotExist:
+            return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if file is provided
+        if 'file' not in request.FILES:
+            return Response({"detail": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+        csv_file = request.FILES['file']
+        if not csv_file.name.endswith('.csv'):
+            return Response({"detail": "File must be a CSV"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Parse CSV and create faculty
+        try:
+            decoded_file = csv_file.read().decode('utf-8')
+            csv_reader = csv.DictReader(io.StringIO(decoded_file))
+
+            created_count = 0
+            errors = []
+
+            for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 to account for header
+                try:
+                    # Validate required fields
+                    required_fields = ['email', 'firstname', 'lastname', 'employee_id']
+                    for field in required_fields:
+                        if not row.get(field, '').strip():
+                            errors.append(f"Row {row_num}: Missing required field '{field}'")
+                            continue
+
+                    # Check if faculty already exists
+                    if Faculty.objects.filter(email=row['email']).exists():
+                        errors.append(f"Row {row_num}: Faculty with email '{row['email']}' already exists")
+                        continue
+
+                    if Faculty.objects.filter(employee_id=row['employee_id']).exists():
+                        errors.append(f"Row {row_num}: Faculty with ID '{row['employee_id']}' already exists")
+                        continue
+
+                    # Create faculty
+                    faculty = Faculty.objects.create(
+                        email=row['email'].strip(),
+                        firstname=row['firstname'].strip(),
+                        lastname=row['lastname'].strip(),
+                        employee_id=row['employee_id'].strip(),
+                        department=row.get('department', '').strip(),
+                        position=row.get('position', '').strip(),
+                        must_change_password=True
+                    )
+                    created_count += 1
+
+                except Exception as e:
+                    errors.append(f"Row {row_num}: {str(e)}")
+
+            # Log the bulk import
+            user_name = f"{dept_head.firstname} {dept_head.lastname}".strip() or dept_head.email or 'Depthead User'
+            AuditLog.objects.create(
+                user=user_name,
+                role='Depthead',
+                action='Bulk Import Faculty',
+                category='USER MANAGEMENT',
+                status='Success' if created_count > 0 else 'Failed',
+                message=f'Imported {created_count} new faculty records from CSV file. {len(errors)} errors encountered.',
+                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+            )
+
+            return Response({
+                "message": f"Successfully imported {created_count} faculty members",
+                "created_count": created_count,
+                "errors": errors[:10]  # Limit errors shown to first 10
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"detail": f"Error processing CSV: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AuditLogListView(generics.ListAPIView):
+    queryset = AuditLog.objects.filter(role='Depthead')
+    serializer_class = AuditLogSerializer
+
+    def list(self, request, *args, **kwargs):
+        # Manual authentication for department head
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        return super().list(request, *args, **kwargs)

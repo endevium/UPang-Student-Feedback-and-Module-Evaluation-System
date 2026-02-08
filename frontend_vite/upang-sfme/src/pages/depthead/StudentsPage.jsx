@@ -17,9 +17,13 @@ const StudentsManagement = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
 
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [isBulkImporting, setIsBulkImporting] = useState(false);
+  const [bulkImportResult, setBulkImportResult] = useState(null);
+
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formValues, setFormValues] = useState({
     student_number: '',
@@ -123,7 +127,10 @@ const StudentsManagement = () => {
 
       const response = await fetch(`${API_BASE_URL}/students/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        },
         body: JSON.stringify(payload),
       });
 
@@ -161,6 +168,56 @@ const StudentsManagement = () => {
       setErrorMessage('Unable to reach the server. Please try again.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleBulkImport = async (file) => {
+    if (!file) return;
+
+    setIsBulkImporting(true);
+    setBulkImportResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${API_BASE_URL}/students/bulk-import/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setBulkImportResult({
+          success: false,
+          message: data?.detail || 'Bulk import failed',
+          errors: data?.errors || []
+        });
+        return;
+      }
+
+      setBulkImportResult({
+        success: true,
+        message: data.message,
+        created_count: data.created_count,
+        errors: data.errors || []
+      });
+
+      // Refresh the student list
+      fetchStudents();
+
+    } catch (error) {
+      setBulkImportResult({
+        success: false,
+        message: 'Unable to reach the server. Please try again.',
+        errors: []
+      });
+    } finally {
+      setIsBulkImporting(false);
     }
   };
 
@@ -231,6 +288,12 @@ const StudentsManagement = () => {
                   onClick={() => setIsAddOpen(true)}
                 >
                   + Add Student
+                </button>
+                <button
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 transition-all"
+                  onClick={() => setIsBulkImportOpen(true)}
+                >
+                  📁 Bulk Import
                 </button>
                 <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">
                   <Download size={16} /> Export List
@@ -433,6 +496,113 @@ const StudentsManagement = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Import Modal */}
+      {isBulkImportOpen && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsBulkImportOpen(false)}>
+          <div
+            className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-800">Bulk Import Students</h3>
+                <p className="text-sm text-slate-400">Upload a CSV file to import multiple students at once.</p>
+              </div>
+              <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={() => setIsBulkImportOpen(false)}>
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center">
+                <div className="text-4xl mb-4">📁</div>
+                <h4 className="text-lg font-semibold text-slate-700 mb-2">Upload CSV File</h4>
+                <p className="text-sm text-slate-500 mb-4">
+                  Select a CSV file containing student data. Required columns: email, firstname, lastname, student_id
+                </p>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      handleBulkImport(file);
+                    }
+                  }}
+                  className="hidden"
+                  id="csv-upload"
+                  disabled={isBulkImporting}
+                />
+                <label
+                  htmlFor="csv-upload"
+                  className="inline-flex items-center px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-bold hover:bg-[#18393e] cursor-pointer disabled:opacity-70"
+                >
+                  {isBulkImporting ? 'Importing...' : 'Choose CSV File'}
+                </label>
+              </div>
+
+              {/* CSV Format Guide */}
+              <div className="bg-slate-50 rounded-lg p-4">
+                <h5 className="font-semibold text-slate-700 mb-2">CSV Format Requirements:</h5>
+                <div className="text-sm text-slate-600 space-y-1">
+                  <div><strong>Required columns:</strong> email, firstname, lastname, student_id</div>
+                  <div><strong>Optional columns:</strong> department, year_level, course</div>
+                  <div><strong>Example:</strong> email,firstname,lastname,student_id,department,year_level</div>
+                  <div><strong>Sample row:</strong> john.doe@upang.edu.ph,John,,Doe,2021-0001,Computer Science,3</div>
+                </div>
+              </div>
+
+              {/* Import Results */}
+              {bulkImportResult && (
+                <div className={`rounded-lg p-4 ${bulkImportResult.success ? 'bg-emerald-50 border border-emerald-200' : 'bg-rose-50 border border-rose-200'}`}>
+                  <div className="flex items-start gap-3">
+                    <div className={`text-lg ${bulkImportResult.success ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {bulkImportResult.success ? '✅' : '❌'}
+                    </div>
+                    <div className="flex-1">
+                      <h5 className={`font-semibold ${bulkImportResult.success ? 'text-emerald-800' : 'text-rose-800'}`}>
+                        {bulkImportResult.success ? 'Import Successful' : 'Import Failed'}
+                      </h5>
+                      <p className={`text-sm mt-1 ${bulkImportResult.success ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {bulkImportResult.message}
+                      </p>
+                      {bulkImportResult.created_count !== undefined && (
+                        <p className="text-sm text-emerald-700 mt-1">
+                          Created: {bulkImportResult.created_count} students
+                        </p>
+                      )}
+                      {bulkImportResult.errors && bulkImportResult.errors.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-sm font-semibold text-rose-800">Errors:</p>
+                          <ul className="text-sm text-rose-700 mt-1 space-y-1 max-h-32 overflow-y-auto">
+                            {bulkImportResult.errors.map((error, index) => (
+                              <li key={index}>• {error}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 text-sm font-bold text-slate-500"
+                  onClick={() => {
+                    setIsBulkImportOpen(false);
+                    setBulkImportResult(null);
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -19,4 +19,9 @@ urlpatterns = [
 
     path("evaluation-forms/", views.EvaluationFormListCreateView.as_view(), name="evaluation-form-list-create"),
     path("evaluation-forms/<int:pk>/", views.EvaluationFormDetailView.as_view(), name="evaluation-form-detail"),
+
+    path("students/bulk-import/", views.StudentBulkImportView.as_view(), name="student-bulk-import"),
+    path("faculty/bulk-import/", views.FacultyBulkImportView.as_view(), name="faculty-bulk-import"),
+
+    path("audit-logs/", views.AuditLogListView.as_view(), name="audit-log-list"),
 ]
