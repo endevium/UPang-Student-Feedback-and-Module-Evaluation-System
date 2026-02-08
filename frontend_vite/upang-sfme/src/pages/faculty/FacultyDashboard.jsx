@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import Sidebar from '../../components/Sidebar';
-import Header from '../../components/Header';
-import { BookOpen, Users, Star, TrendingUp, MessageSquare, LogOut, ChevronRight } from 'lucide-react';
+import { BookOpen, Users, Star, TrendingUp, MessageSquare, ChevronRight } from 'lucide-react';
 
 const FacultyDashboard = () => {
   const [facultyInfo] = useState({
     name: "Prof. Ana Reyes",
-    employeeId: "FAC-001",
     department: "Computer Science",
     specialization: "Web Development",
     overallRating: 4.7,
@@ -50,25 +48,13 @@ const FacultyDashboard = () => {
     },
   ]);
 
-  const handleLogout = () => alert('Logging out...');
   const handleViewDetails = (moduleId) => alert(`Viewing detailed feedback for ${moduleId}`);
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
-      
-      {/* 1. TOP LEVEL HEADER: Spans full width */}
-      <Header 
-        userName={facultyInfo.name} 
-        userRole="Faculty" 
-        onLogout={handleLogout} 
-      />
+      <div className="flex flex-1 flex-row relative">
+        <Sidebar role="faculty" activeItem="dashboard" onLogout={() => {}} />
 
-      {/* 2. MAIN LAYOUT: Sidebar + Content */}
-      <div className="flex flex-1 flex-row relative overflow-hidden">
-        
-        {/* SIDEBAR */}
-        <Sidebar role="faculty" activeItem="dashboard" onLogout={handleLogout} />
-        
         {/* MAIN CONTENT SCROLL AREA */}
         <main className="flex-1 overflow-y-auto">
           

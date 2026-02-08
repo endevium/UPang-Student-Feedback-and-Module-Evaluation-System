@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import Header from '../../components/Header';
 import Sidebar from '../../components/Sidebar';
 import { BookOpen, Star, BarChart3, Calendar, ListFilter, StarHalf } from 'lucide-react';
 
@@ -38,8 +37,6 @@ const HistoryPage = () => {
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
-      <Header userName="Gabriel Esperanza" userRole="Student" onLogout={() => {}} />
-
       <div className="flex flex-1 flex-row relative">
         <Sidebar role="student" activeItem="history" onLogout={() => {}} />
 

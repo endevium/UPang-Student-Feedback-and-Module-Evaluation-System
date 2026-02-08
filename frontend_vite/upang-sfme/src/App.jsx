@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import Header from './components/Header.jsx';
 
 // Main Pages
 import LandingPage from './pages/LandingPage.jsx';
@@ -25,12 +26,43 @@ import EvaluationForm from './pages/student/EvaluationForm.jsx';
 
 function App() {
   const [route, setRoute] = useState(window.location.pathname || '/');
+  const isLoggedIn = Boolean(localStorage.getItem('authToken'));
 
   useEffect(() => {
     const onPop = () => setRoute(window.location.pathname || '/');
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+
+  // If user is logged in, prevent landing page access via URL editing
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    if (route === '/' || route === '' || route === '/home') {
+      let storedUser = null;
+      try {
+        storedUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+      } catch {
+        storedUser = null;
+      }
+
+      const roleMap = {
+        student: 'Student',
+        faculty: 'Faculty',
+        department_head: 'Department Head',
+      };
+      const resolvedRole = roleMap[storedUser?.user_type] || 'Student';
+      const homePathMap = {
+        Student: '/dashboard',
+        Faculty: '/faculty-dashboard',
+        'Department Head': '/depthead-dashboard',
+      };
+
+      const target = homePathMap[resolvedRole] || '/dashboard';
+      if (route !== target) {
+        window.history.replaceState({}, '', target);
+      }
+    }
+  }, [isLoggedIn]);
 
   // Routing Logic
   const renderContent = () => {
@@ -70,6 +102,7 @@ function App() {
 
   return (
     <div className="App">
+      {isLoggedIn && <Header />}
       {/* If LandingPage fails, this div will show us the app is at least alive */}
       {renderContent() || <div className="p-10 text-black">Route not found or component failed to load.</div>}
     </div>

@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import Sidebar from '../../components/Sidebar';
-import Header from '../../components/Header';
-import Footer from '../../components/Footer';
+
 import { 
   BookOpen, 
   CheckCircle, 
@@ -11,33 +10,66 @@ import {
 } from "lucide-react";
 
 const StudentDashboard = () => {
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+
+  const [studentName, setStudentName] = useState('Student');
+  const [stats, setStats] = useState([
+    { title: "Total Modules", value: "0", description: "Enrolled this semester", icon: BookOpen, color: "bg-blue-100 text-blue-600" },
+    { title: "Instructors", value: "0", description: "To evaluate", icon: Users, color: "bg-purple-100 text-purple-600" },
+    { title: "Completed", value: "0", description: "Total evaluations done", icon: CheckCircle, color: "bg-green-100 text-green-600" },
+    { title: "Pending", value: "0", description: "Awaiting feedback", icon: AlertCircle, color: "bg-amber-100 text-amber-600" },
+  ]);
+  const [recentModules, setRecentModules] = useState([]);
+  const [loadError, setLoadError] = useState('');
   const handleNavigation = (path) => {
     window.history.pushState({}, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
-  const stats = [
-    { title: "Total Modules", value: "8", description: "Enrolled this semester", icon: BookOpen, color: "bg-blue-100 text-blue-600" },
-    { title: "Instructors", value: "8", description: "To evaluate", icon: Users, color: "bg-purple-100 text-purple-600" },
-    { title: "Completed", value: "10", description: "Total evaluations done", icon: CheckCircle, color: "bg-green-100 text-green-600" },
-    { title: "Pending", value: "6", description: "Awaiting feedback", icon: AlertCircle, color: "bg-amber-100 text-amber-600" },
-  ];
+  const fetchDashboard = useCallback(async () => {
+    setLoadError('');
+    const token = localStorage.getItem('authToken');
 
-  const recentModules = [
-    { id: "CS401", name: "Advanced Database Systems", instructor: "Prof. Maria Santos", status: "pending" },
-    { id: "CS402", name: "Software Engineering", instructor: "Dr. Juan Dela Cruz", status: "pending" },
-    { id: "CS403", name: "Web Development", instructor: "Prof. Ana Reyes", status: "completed" },
-  ];
+    if (!token) {
+      setLoadError('Please log in to view your dashboard.');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/students/me/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setLoadError(data?.detail || 'Unable to load dashboard data.');
+        return;
+      }
+
+      const name = `${data?.student?.firstname || ''} ${data?.student?.lastname || ''}`.trim();
+      setStudentName(name || 'Student');
+
+      const apiStats = data?.stats || {};
+      setStats([
+        { title: "Total Modules", value: String(apiStats.total_modules ?? 0), description: "Enrolled this semester", icon: BookOpen, color: "bg-blue-100 text-blue-600" },
+        { title: "Instructors", value: String(apiStats.instructors ?? 0), description: "To evaluate", icon: Users, color: "bg-purple-100 text-purple-600" },
+        { title: "Completed", value: String(apiStats.completed ?? 0), description: "Total evaluations done", icon: CheckCircle, color: "bg-green-100 text-green-600" },
+        { title: "Pending", value: String(apiStats.pending ?? 0), description: "Awaiting feedback", icon: AlertCircle, color: "bg-amber-100 text-amber-600" },
+      ]);
+
+      setRecentModules(Array.isArray(data?.recent_modules) ? data.recent_modules : []);
+    } catch {
+      setLoadError('Unable to reach the server. Please try again.');
+    }
+  }, [API_BASE_URL]);
+
+  useEffect(() => {
+    fetchDashboard();
+  }, [fetchDashboard]);
 
   return (
     // Change 1: background to bg-slate-50 or bg-white and text to slate-900
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
-      
-      <Header 
-        userName="John Rasheed" 
-        userRole="Student" 
-        onLogout={() => alert('Logging out...')} 
-      />
       
       <div className="flex flex-1 flex-row relative">
         <Sidebar role="student" activeItem="dashboard" onLogout={() => alert('Logging out...')} />
@@ -47,7 +79,7 @@ const StudentDashboard = () => {
             
             {/* Welcome Section */}
             <header>
-              <h1 className="text-4xl font-bold text-slate-900">Welcome back, <span className="text-[#1f474d]">Student!</span></h1>
+              <h1 className="text-4xl font-bold text-slate-900">Welcome back, <span className="text-[#1f474d]">{studentName || 'Student'}!</span></h1>
               <p className="text-slate-500 mt-2 text-lg">Here's your evaluation overview for this semester</p>
             </header>
 
@@ -116,6 +148,9 @@ const StudentDashboard = () => {
                     </div>
                   </div>
                 ))}
+                {recentModules.length === 0 && (
+                  <div className="text-sm text-slate-500">No recent modules yet.</div>
+                )}
               </div>
             </section>
 
@@ -145,6 +180,9 @@ const StudentDashboard = () => {
               </div>
             </section>
           </div>
+          {loadError && (
+            <div className="mt-6 text-sm text-rose-600 font-semibold">{loadError}</div>
+          )}
         </main>
       </div>
     </div>

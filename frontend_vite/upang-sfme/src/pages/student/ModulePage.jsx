@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import Sidebar from "../../components/Sidebar";
-import Header from "../../components/Header";
 import { Search, BookOpen, CheckCircle, User, Clock } from "lucide-react";
 
 const ModulePage = () => {
@@ -80,12 +79,6 @@ const ModulePage = () => {
     // Changed bg-[#0d1b2a] to bg-slate-50 and text-white to text-slate-900
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
       
-      <Header 
-        userName="John Rasheed" 
-        userRole="Student" 
-        onLogout={() => alert("Logging out...")} 
-      />
-
       <div className="flex flex-1 flex-row relative">
         <Sidebar role="student" activeItem="modules" onLogout={() => alert("Logging out...")} />
 

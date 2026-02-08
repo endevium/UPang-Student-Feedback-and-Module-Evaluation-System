@@ -1,49 +1,168 @@
-import React from 'react';
-import Header from '../../components/Header';
+import React, { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
-import { 
-  Users, 
-  TrendingUp, 
-  Star, 
-  Search, 
-  Download, 
-  Eye 
+import Header from '../../components/Header'; // Added Header to match Student page
+import {
+  Users,
+  TrendingUp,
+  Star,
+  Search,
+  Download,
+  Eye,
 } from 'lucide-react';
 
 const FacultyPages = () => {
-  // Hardcoded data matching the visual design in the provided images
-  const facultyData = [
-    { id: "FAC-001", name: "Prof. Maria Santos", title: "Professor", dept: "Computer Science", modules: 3, students: 145, evaluations: 48, rating: 4.6, status: "Active" },
-    { id: "FAC-002", name: "Dr. Juan Dela Cruz", title: "Associate Professor", dept: "Computer Science", modules: 2, students: 120, evaluations: 42, rating: 4.5, status: "Active" },
-    { id: "FAC-003", name: "Prof. Ana Reyes", title: "Assistant Professor", dept: "Computer Science", modules: 3, students: 135, evaluations: 45, rating: 4.8, status: "Active" },
-    { id: "FAC-004", name: "Dr. Pedro Garcia", title: "Associate Professor", dept: "Computer Science", modules: 2, students: 110, evaluations: 38, rating: 4.4, status: "Active" },
-    { id: "FAC-005", name: "Prof. Lisa Gonzales", title: "Professor", dept: "Mathematics", modules: 2, students: 100, evaluations: 35, rating: 4.3, status: "Active" },
-    { id: "FAC-006", name: "Prof. Robert Cruz", title: "Assistant Professor", dept: "English", modules: 4, students: 180, evaluations: 52, rating: 4.2, status: "Active" },
-    { id: "FAC-007", name: "Dr. Sofia Mendoza", title: "Professor", dept: "Computer Science", modules: 2, students: 95, evaluations: 32, rating: 4.7, status: "Active" },
-    { id: "FAC-008", name: "Prof. Carlos Ramos", title: "Associate Professor", dept: "Computer Science", modules: 2, students: 105, evaluations: 42, rating: 4.7, status: "Active" },
-  ];
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+
+  const [facultyData, setFacultyData] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Modal & Form State
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [formValues, setFormValues] = useState({
+    
+    email: '',
+    firstname: '',
+    middlename: '',
+    lastname: '',
+    department: '',
+    contact_number: '',
+    birthdate: '',
+  });
+
+  const mapFaculty = (f) => ({
+    id: f?.faculty_id || f?.id || f?.email || 'N/A',
+    name: `${f?.firstname || f?.name || ''} ${f?.lastname || ''}`.trim() || 'Unnamed',
+    title: f?.title || 'Faculty',
+    dept: f?.department || f?.dept || 'N/A',
+    modules: Number(f?.modules) || 0,
+    students: Number(f?.students) || 0,
+    evaluations: Number(f?.evaluations) || 0,
+    rating: Number(f?.rating) || 0,
+    status: typeof f?.status === 'boolean' ? (f.status ? 'Active' : 'Inactive') : (f?.status || 'Active'),
+  });
+
+  const fetchFaculty = async () => {
+    setIsLoading(true);
+    setLoadError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/faculty/`);
+      const data = await res.json().catch(() => []);
+      if (!res.ok) {
+        setLoadError(data?.detail || 'Unable to load faculty.');
+        return;
+      }
+      const list = Array.isArray(data) ? data : [];
+      setFacultyData(list.map(mapFaculty));
+    } catch {
+      setLoadError('Unable to reach the server. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFaculty();
+  }, []);
+
+  // Form Handlers
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormValues((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const resetForm = () => {
+    setFormValues({
+      email: '',
+      firstname: '',
+      middlename: '',
+      lastname: '',
+      department: '',
+      contact_number: '',
+      birthdate: '',
+    });
+    setErrorMessage('');
+  };
+
+  const closeModal = () => {
+    setIsAddOpen(false);
+    resetForm();
+  };
+
+  const handleAddFaculty = async (e) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    // Basic Validation - only fields accepted by FacultySerializer
+    const required = ['email', 'firstname', 'lastname', 'department'];
+    const missing = required.find(key => !formValues[key].trim());
+    if (missing) {
+      setErrorMessage('Please fill in all required fields.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const response = await fetch(`${API_BASE_URL}/faculty/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formValues),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setErrorMessage(data?.detail || 'Unable to add faculty. Please check details.');
+        return;
+      }
+
+      setFacultyData((prev) => [mapFaculty(data), ...prev]);
+      closeModal();
+    } catch {
+      setErrorMessage('Server connection failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const filteredFaculty = useMemo(() => {
+    if (!searchQuery.trim()) return facultyData;
+    const q = searchQuery.toLowerCase();
+    return facultyData.filter((f) => 
+      String(f.id).toLowerCase().includes(q) ||
+      String(f.name).toLowerCase().includes(q) ||
+      String(f.dept).toLowerCase().includes(q) ||
+      String(f.title).toLowerCase().includes(q)
+    );
+  }, [searchQuery, facultyData]);
+
+  const totalFaculty = facultyData.length;
+  const activeFaculty = facultyData.filter((f) => f.status === 'Active').length;
+  const avgRating = facultyData.length === 0 
+    ? 0 
+    : (facultyData.reduce((sum, f) => sum + (Number(f.rating) || 0), 0) / facultyData.length).toFixed(1);
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
-      <Header userName="Prof. Ramon Cruz" userRole="Department Head" onLogout={() => alert('Logout')} />
-      
+
       <div className="flex flex-1 flex-row relative">
         <Sidebar role="depthead" activeItem="faculty" onLogout={() => alert('Logout')} />
-        
+
         <main className="flex-1 p-8 overflow-y-auto">
-          {/* Header Title Section */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-[#1f2937]">Faculty Management</h1>
             <p className="text-slate-500 mt-1">View and manage all teaching staff</p>
           </div>
 
-          {/* Statistics Grid - Matching Reference */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h3 className="text-lg font-bold text-slate-700">Total Faculty</h3>
-                  <p className="text-3xl font-black mt-2 text-[#1f2937]">48</p>
+                  <p className="text-3xl font-black mt-2 text-[#1f2937]">{totalFaculty}</p>
                 </div>
                 <div className="p-3 bg-slate-100 rounded-full">
                   <Users className="text-[#1b2d3d]" size={24} />
@@ -56,7 +175,7 @@ const FacultyPages = () => {
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h3 className="text-lg font-bold text-slate-700">Active Faculty</h3>
-                  <p className="text-3xl font-black mt-2 text-[#1f2937]">45</p>
+                  <p className="text-3xl font-black mt-2 text-[#1f2937]">{activeFaculty}</p>
                 </div>
                 <div className="p-3 bg-slate-100 rounded-full">
                   <TrendingUp className="text-[#1b2d3d]" size={24} />
@@ -69,7 +188,7 @@ const FacultyPages = () => {
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h3 className="text-lg font-bold text-slate-700">Avg. Rating</h3>
-                  <p className="text-3xl font-black mt-2 text-[#1f2937]">4.5</p>
+                  <p className="text-3xl font-black mt-2 text-[#1f2937]">{avgRating}</p>
                 </div>
                 <div className="p-3 bg-slate-100 rounded-full">
                   <Star className="text-[#1b2d3d]" size={24} />
@@ -79,31 +198,38 @@ const FacultyPages = () => {
             </div>
           </div>
 
-          {/* Data Table Section */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-800">All Faculty Members</h2>
                 <p className="text-slate-400 text-sm">Complete list of teaching staff</p>
               </div>
-              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">
-                <Download size={16} /> Export List
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsAddOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#ffcc00] text-[#041c32] rounded-lg text-sm font-bold hover:bg-[#e6b800] transition-all"
+                >
+                  + Add Faculty
+                </button>
+                <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">
+                  <Download size={16} /> Export List
+                </button>
+              </div>
             </div>
 
-            {/* Search Filters */}
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-100">
               <div className="relative max-w-md">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input 
-                  type="text" 
-                  placeholder="Search by name, faculty ID, department, or specialization..." 
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by name, faculty ID, or department..."
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1f474d]/20 transition-all bg-white"
                 />
               </div>
             </div>
 
-            {/* Faculty Table - Design details from Reference */}
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="bg-slate-50 border-b border-slate-100">
@@ -114,14 +240,13 @@ const FacultyPages = () => {
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Department</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Modules</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Students</th>
-                    <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Evaluations</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Rating</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {facultyData.map((faculty, idx) => (
+                  {filteredFaculty.map((faculty, idx) => (
                     <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                       <td className="px-6 py-4 text-xs font-mono text-slate-500">{faculty.id}</td>
                       <td className="px-6 py-4 text-sm font-black text-slate-800">{faculty.name}</td>
@@ -129,7 +254,6 @@ const FacultyPages = () => {
                       <td className="px-6 py-4 text-sm text-slate-600 font-medium">{faculty.dept}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 text-center font-bold">{faculty.modules}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 text-center font-bold">{faculty.students}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600 text-center font-bold">{faculty.evaluations}</td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-1">
                           <Star className="text-amber-400 fill-amber-400" size={14} />
@@ -151,9 +275,127 @@ const FacultyPages = () => {
                 </tbody>
               </table>
             </div>
+            {(isLoading || loadError || filteredFaculty.length === 0) && (
+              <div className="p-6 text-sm text-slate-500">
+                {isLoading && 'Loading faculty...'}
+                {!isLoading && loadError}
+                {!isLoading && !loadError && filteredFaculty.length === 0 && 'No faculty found.'}
+              </div>
+            )}
           </div>
         </main>
       </div>
+
+      {/* INTEGRATED MODAL */}
+      {isAddOpen && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeModal}>
+          <div
+            className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-800">Add Faculty Member</h3>
+                <p className="text-sm text-slate-400">Default password is generated from name + birthdate.</p>
+              </div>
+              <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={closeModal}>
+                &times;
+              </button>
+            </div>
+
+            <form className="p-6 space-y-4" onSubmit={handleAddFaculty}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Email</label>
+                  <input
+                    name="email"
+                    type="email"
+                    value={formValues.email}
+                    onChange={handleInputChange}
+                    placeholder="faculty@upang.edu.ph"
+                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">First Name</label>
+                  <input
+                    name="firstname"
+                    value={formValues.firstname}
+                    onChange={handleInputChange}
+                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Middle Name</label>
+                  <input
+                    name="middlename"
+                    value={formValues.middlename}
+                    onChange={handleInputChange}
+                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Last Name</label>
+                  <input
+                    name="lastname"
+                    value={formValues.lastname}
+                    onChange={handleInputChange}
+                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Contact Number</label>
+                  <input
+                    name="contact_number"
+                    value={formValues.contact_number}
+                    onChange={handleInputChange}
+                    placeholder="+63 9XX XXX XXXX"
+                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Department</label>
+                  <input
+                    name="department"
+                    value={formValues.department}
+                    onChange={handleInputChange}
+                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Birthdate</label>
+                  <input
+                    name="birthdate"
+                    type="date"
+                    value={formValues.birthdate}
+                    onChange={handleInputChange}
+                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+
+              {errorMessage && (
+                <div className="text-sm text-rose-600 font-semibold" role="alert">
+                  {errorMessage}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button type="button" className="px-4 py-2 text-sm font-bold text-slate-500" onClick={closeModal}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-sm font-bold bg-[#1f474d] text-white rounded-lg hover:bg-[#18393e] disabled:opacity-70"
+                >
+                  {isSubmitting ? 'Saving...' : 'Create Faculty'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -51,6 +51,7 @@ class Student(PersonBase):
         blank=True,
         choices=[(1, "1st Year"), (2, "2nd Year"), (3, "3rd Year"), (4, "4th Year"), (5, "5th Year")],
     )
+    must_change_password = models.BooleanField(default=True, db_column="must_change_password")
 
     class Meta:
         db_table = "students"
@@ -63,6 +64,7 @@ class Student(PersonBase):
 class Faculty(PersonBase):
     department = models.CharField(max_length=100, blank=True, null=True)
     status = models.BooleanField(default=True)
+    must_change_password = models.BooleanField(default=True, db_column="must_change_password")
 
     class Meta:
         db_table = "faculty"
@@ -78,3 +80,19 @@ class DepartmentHead(PersonBase):
 
     def __str__(self):
         return f"{self.firstname} {self.lastname} - {self.department}"
+
+class EvaluationForm(models.Model):
+    title = models.CharField(max_length=200)
+    form_type = models.CharField(max_length=50, choices=[('Module', 'Module'), ('Instructor', 'Instructor')])
+    description = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=[('Active', 'Active'), ('Draft', 'Draft')], default='Draft')
+    questions = models.JSONField(default=list)  # List of question objects
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "evaluation_forms"
+        managed = False
+
+    def __str__(self):
+        return self.title

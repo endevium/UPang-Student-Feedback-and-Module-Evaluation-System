@@ -1,5 +1,4 @@
 import React from 'react';
-import Header from '../../components/Header';
 import Sidebar from '../../components/Sidebar';
 import { Users } from 'lucide-react';
 
@@ -9,12 +8,6 @@ const InstructorsPage = () => {
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
       
       {/* Header: Full width */}
-      <Header 
-        userName="Gabriel Esperanza" 
-        userRole="Student" 
-        onLogout={() => alert('Logging out...')} 
-      />
-
       <div className="flex flex-1 flex-row relative">
         {/* Sidebar */}
         <Sidebar 

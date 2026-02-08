@@ -4,6 +4,7 @@ import { BookOpen, Users, History as HistoryIcon, GraduationCap, ClipboardList, 
 
 const Sidebar = ({ role, activeItem, onLogout }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   const handleNavigation = (path) => {
     window.history.pushState({}, '', path);
@@ -39,6 +40,26 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
   };
 
   const menuItems = getMenuItems();
+
+  const handleLogout = () => {
+    setIsConfirmOpen(true);
+  };
+
+  const handleConfirmLogout = () => {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('authUser');
+    if (typeof onLogout === 'function') {
+      onLogout();
+    }
+    window.history.pushState({}, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    setIsOpen(false);
+    setIsConfirmOpen(false);
+  };
+
+  const handleCancelLogout = () => {
+    setIsConfirmOpen(false);
+  };
 
   return (
     <>
@@ -101,7 +122,7 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
 
           {/* Logout Button */}
         <button
-            onClick={onLogout}
+          onClick={handleLogout}
             className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-semibold mt-6 shadow-md shadow-red-200"
             >
             <LogOut size={18} />
@@ -112,6 +133,33 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
 
       {/* Main content spacer for desktop */}
       <div className="hidden lg:block lg:w-64 shrink-0" />
+
+      {isConfirmOpen && (
+        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-black text-slate-800">Confirm Logout</h3>
+              <p className="text-sm text-slate-500 mt-1">Are you sure you want to log out?</p>
+            </div>
+            <div className="px-6 py-5 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancelLogout}
+                className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmLogout}
+                className="px-4 py-2 text-sm font-bold bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

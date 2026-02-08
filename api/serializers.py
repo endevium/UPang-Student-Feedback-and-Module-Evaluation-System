@@ -1,10 +1,11 @@
 from rest_framework import serializers
-from .models import Student, Faculty, DepartmentHead
+from .models import Student, Faculty, DepartmentHead, EvaluationForm
 from django.contrib.auth import authenticate
 
 # Students
 class StudentSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=True)
+    password = serializers.CharField(write_only=True, required=False)
+    must_change_password = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Student
@@ -22,12 +23,31 @@ class StudentSerializer(serializers.ModelSerializer):
             'program',
             'year_level',
             'birthdate',
+            'must_change_password',
         ]
 
     def create(self, validated_data):
-        password = validated_data.pop('password')
+        password = validated_data.pop('password', None)
         student = Student(**validated_data)
+        birthdate = validated_data.get('birthdate')
+        if birthdate:
+            first = (validated_data.get('firstname') or '').strip()
+            middle = (validated_data.get('middlename') or '').strip()
+            last = (validated_data.get('lastname') or '').strip()
+
+            first_two = first[:2].upper()
+            middle_two = middle[:2].upper() if middle else ''
+            last_two = last[:2].upper()
+
+            name_key = f"{first_two}{middle_two}{last_two}"
+            month_year = f"{birthdate.month}{birthdate.year}"
+            password = f"{name_key}{month_year}"
+
+        if not password:
+            raise serializers.ValidationError("Password or birthdate is required to create a student")
+
         student.set_password(password)
+        student.must_change_password = True
         student.save()
         return student
 
@@ -40,9 +60,58 @@ class StudentSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+class StudentChangePasswordSerializer(serializers.Serializer):
+    student_number = serializers.CharField()
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        student_number = attrs.get('student_number')
+        old_password = attrs.get('old_password')
+        new_password = attrs.get('new_password')
+
+        if not new_password or len(new_password) < 6:
+            raise serializers.ValidationError("New password must be at least 6 characters")
+
+        try:
+            student = Student.objects.get(student_number=student_number)
+        except Student.DoesNotExist:
+            raise serializers.ValidationError("Invalid credentials")
+
+        if not student.check_password(old_password):
+            raise serializers.ValidationError("Invalid credentials")
+
+        attrs['user'] = student
+        return attrs
+
+class FacultyChangePasswordSerializer(serializers.Serializer):
+    email = serializers.CharField()
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        old_password = attrs.get('old_password')
+        new_password = attrs.get('new_password')
+
+        if not new_password or len(new_password) < 6:
+            raise serializers.ValidationError("New password must be at least 6 characters")
+
+        try:
+            faculty = Faculty.objects.get(email=email)
+        except Faculty.DoesNotExist:
+            raise serializers.ValidationError("Invalid credentials")
+
+        if not faculty.check_password(old_password):
+            raise serializers.ValidationError("Invalid credentials")
+
+        attrs['user'] = faculty
+        return attrs
+
 # Faculty
 class FacultySerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
+    must_change_password = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Faculty
@@ -58,13 +127,31 @@ class FacultySerializer(serializers.ModelSerializer):
             'department',
             'status',
             'birthdate',
+            'must_change_password',
         ]
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
         faculty = Faculty(**validated_data)
-        if password:
-            faculty.set_password(password)
+        birthdate = validated_data.get('birthdate')
+        if birthdate:
+            first = (validated_data.get('firstname') or '').strip()
+            middle = (validated_data.get('middlename') or '').strip()
+            last = (validated_data.get('lastname') or '').strip()
+
+            first_two = first[:2].upper()
+            middle_two = middle[:2].upper() if middle else ''
+            last_two = last[:2].upper()
+
+            name_key = f"{first_two}{middle_two}{last_two}"
+            month_year = f"{birthdate.month}{birthdate.year}"
+            password = f"{name_key}{month_year}"
+
+        if not password:
+            raise serializers.ValidationError("Password or birthdate is required to create a faculty")
+
+        faculty.set_password(password)
+        faculty.must_change_password = True
         faculty.save()
         return faculty
 
@@ -119,6 +206,7 @@ class DepartmentHeadSerializer(serializers.ModelSerializer):
 class StudentLoginSerializer(serializers.Serializer):
     student_number = serializers.CharField()  
     password = serializers.CharField(write_only=True)
+    role = serializers.CharField(required=False)
 
     def validate(self, attrs):
         student_number = attrs.get('student_number')
@@ -142,6 +230,7 @@ class StudentLoginSerializer(serializers.Serializer):
 class FacultyLoginSerializer(serializers.Serializer):
     email = serializers.CharField()  
     password = serializers.CharField(write_only=True)
+    role = serializers.CharField(required=False)
 
     def validate(self, attrs):
         email = attrs.get('email')
@@ -158,7 +247,7 @@ class FacultyLoginSerializer(serializers.Serializer):
 
         if not user:
             try:
-                head = DepartmentHead.objects.get(email=email)
+                head = DepartmentHead.objects.get(email__iexact=email)
                 if head.check_password(password):
                     user = head
             except DepartmentHead.DoesNotExist:
@@ -173,6 +262,7 @@ class FacultyLoginSerializer(serializers.Serializer):
 class DepartmentHeadLoginSerializer(serializers.Serializer):
     email = serializers.CharField()  
     password = serializers.CharField(write_only=True)
+    role = serializers.CharField(required=False)
 
     def validate(self, attrs):
         email = attrs.get('email')
@@ -192,3 +282,28 @@ class DepartmentHeadLoginSerializer(serializers.Serializer):
 
         attrs['user'] = user
         return attrs
+
+class EvaluationFormSerializer(serializers.ModelSerializer):
+    questions_count = serializers.SerializerMethodField()
+    usage_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EvaluationForm
+        fields = [
+            'id',
+            'title',
+            'form_type',
+            'description',
+            'status',
+            'questions',
+            'questions_count',
+            'usage_count',
+            'created_at',
+        ]
+
+    def get_questions_count(self, obj):
+        return len(obj.questions) if obj.questions else 0
+
+    def get_usage_count(self, obj):
+        # Placeholder for usage count, can be calculated based on evaluations
+        return 0

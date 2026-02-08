@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import Sidebar from '../../components/Sidebar';
-import Header from '../../components/Header';
 import { ArrowLeft, ArrowRight, CheckCircle, Star, Send } from 'lucide-react';
 
 const EvaluationForm = ({ moduleId }) => {
@@ -65,7 +64,6 @@ const EvaluationForm = ({ moduleId }) => {
   if (submitted) {
     return (
       <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
-        <Header userName="Gabriel Esperanza" userRole="Student" onLogout={() => {}} />
         <div className="flex flex-1">
           <Sidebar role="student" activeItem="modules" onLogout={() => {}} />
           <main className="flex-1 flex items-center justify-center p-6">
@@ -85,7 +83,6 @@ const EvaluationForm = ({ moduleId }) => {
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
-      <Header userName="Gabriel Esperanza" userRole="Student" onLogout={() => {}} />
       <div className="flex flex-1">
         <Sidebar role="student" activeItem="modules" onLogout={() => {}} />
         

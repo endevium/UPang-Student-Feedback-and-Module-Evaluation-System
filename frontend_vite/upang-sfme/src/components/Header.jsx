@@ -1,9 +1,36 @@
 import React from 'react';
-import { LogOut } from 'lucide-react';
 // 1. Import your logo here
 import logo from '../assets/header-logo.png'; 
 
-const Header = ({ userName = 'User', userRole = 'Student' }) => {
+const Header = ({ userName, userRole }) => {
+  let storedUser = null;
+  try {
+    storedUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+  } catch {
+    storedUser = null;
+  }
+
+  const resolvedName =
+    userName ||
+    `${storedUser?.firstname || ''} ${storedUser?.lastname || ''}`.trim() ||
+    'User';
+
+  const roleMap = {
+    student: 'Student',
+    faculty: 'Faculty',
+    department_head: 'Department Head',
+  };
+
+  const resolvedRole = userRole || roleMap[storedUser?.user_type] || 'Student';
+
+  const homePathMap = {
+    Student: '/dashboard',
+    Faculty: '/faculty-dashboard',
+    'Department Head': '/depthead-dashboard',
+  };
+
+  const homePath = homePathMap[resolvedRole] || '/';
+
   return (
     <header className="w-full bg-[#1f474d] shadow-lg sticky top-0 z-50 h-[80px] flex items-center border-b border-white/10">
       <div className="w-full px-8"> 
@@ -15,15 +42,15 @@ const Header = ({ userName = 'User', userRole = 'Student' }) => {
                 src={logo} 
                 alt="UPang SFME Logo" 
                 className="h-12 w-auto object-contain cursor-pointer"
-                onClick={() => window.location.href = '/dashboard'}
+                 onClick={() => window.location.href = homePath}
              />
           </div>
 
           {/* Right: User Profile */}
           <div className="flex items-center gap-4">
              <div className="text-right hidden sm:block">
-               <p className="text-white font-semibold text-sm">{userName}</p>
-               <p className="text-cyan-300 text-[10px] uppercase tracking-wider">{userRole}</p>
+               <p className="text-white font-semibold text-sm">{resolvedName}</p>
+               <p className="text-cyan-300 text-[10px] uppercase tracking-wider">{resolvedRole}</p>
              </div>
              
              <div className="relative">

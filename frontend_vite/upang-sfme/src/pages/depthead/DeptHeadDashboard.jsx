@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import Sidebar from '../../components/Sidebar';
-import Header from '../../components/Header';
 import { 
   Users, 
   GraduationCap, 
@@ -114,9 +113,6 @@ const DeptHeadDashboard = () => {
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
-      
-      {/* HEADER: Pinned at top */}
-      <Header userName={deptHeadInfo.name} userRole="Department Head" onLogout={() => alert('Logging out...')} />
       
       <div className="flex flex-1 flex-row relative">
         <Sidebar role="depthead" activeItem="dashboard" onLogout={() => alert('Logging out...')} />
