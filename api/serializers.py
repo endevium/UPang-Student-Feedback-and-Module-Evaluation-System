@@ -21,6 +21,8 @@ class StudentSerializer(serializers.ModelSerializer):
             'contact_number',
             'department',
             'program',
+            'enrolled_subjects',
+            'block_section',
             'year_level',
             'birthdate',
             'must_change_password',

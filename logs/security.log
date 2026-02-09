@@ -120,3 +120,380 @@ WARNING 2026-02-09 14:32:54,420 log 10692 21872 Bad Request: /api/department-hea
 WARNING 2026-02-09 14:32:55,196 log 10692 21872 Bad Request: /api/department-head/login/
 WARNING 2026-02-09 14:33:01,450 log 10692 21872 Too Many Requests: /api/department-head/login/
 WARNING 2026-02-09 14:33:06,688 log 10692 21872 Too Many Requests: /api/department-head/login/
+ERROR 2026-02-09 20:43:21,146 log 5988 6340 Internal Server Error: /api/students/
+Traceback (most recent call last):
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\core\handlers\base.py", line 198, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\views\generic\base.py", line 106, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\generics.py", line 246, in post
+    return self.create(request, *args, **kwargs)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\api\views.py", line 68, in create
+    message=f'Created new student: {student.firstname} {student.lastname} ({student.student_id})',
+                                                                            ^^^^^^^^^^^^^^^^^^
+AttributeError: 'Student' object has no attribute 'student_id'
+WARNING 2026-02-09 20:43:27,634 log 5988 6340 Bad Request: /api/students/
+WARNING 2026-02-09 20:48:29,467 log 25824 13064 Bad Request: /api/students/
+ERROR 2026-02-09 20:49:10,905 log 25824 13064 Internal Server Error: /api/students/
+Traceback (most recent call last):
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.DatatypeMismatch: column "enrolled_subjects" is of type text[] but expression is of type jsonb
+LINE 1: ...2-12'::date, '03-1234-032803', 'CITE', 'BSIT', 3, '["ITE123 ...
+                                                             ^
+HINT:  You will need to rewrite or cast the expression.
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\core\handlers\base.py", line 198, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\views\generic\base.py", line 106, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\generics.py", line 246, in post
+    return self.create(request, *args, **kwargs)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\api\views.py", line 54, in create
+    response = super().create(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\mixins.py", line 19, in create
+    self.perform_create(serializer)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\mixins.py", line 24, in perform_create
+    serializer.save()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\serializers.py", line 210, in save
+    self.instance = self.create(validated_data)
+                    ~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\api\serializers.py", line 53, in create
+    student.save()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 874, in save
+    self.save_base(
+    ~~~~~~~~~~~~~~^
+        using=using,
+        ^^^^^^^^^^^^
+    ...<2 lines>...
+        update_fields=update_fields,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 966, in save_base
+    updated = self._save_table(
+        raw,
+    ...<4 lines>...
+        update_fields,
+    )
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 1169, in _save_table
+    results = self._do_insert(
+        cls._base_manager, using, insert_fields, returning_fields, raw
+    )
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 1220, in _do_insert
+    return manager._insert(
+           ~~~~~~~~~~~~~~~^
+        [self],
+        ^^^^^^^
+    ...<3 lines>...
+        raw=raw,
+        ^^^^^^^^
+    )
+    ^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\query.py", line 1918, in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1925, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\utils.py", line 94, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column "enrolled_subjects" is of type text[] but expression is of type jsonb
+LINE 1: ...2-12'::date, '03-1234-032803', 'CITE', 'BSIT', 3, '["ITE123 ...
+                                                             ^
+HINT:  You will need to rewrite or cast the expression.
+
+ERROR 2026-02-09 20:49:31,775 log 25824 13064 Internal Server Error: /api/students/
+Traceback (most recent call last):
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.DatatypeMismatch: column "enrolled_subjects" is of type text[] but expression is of type jsonb
+LINE 1: ...2-12'::date, '03-1234-032803', 'CITE', 'BSIT', 3, '["ITE123 ...
+                                                             ^
+HINT:  You will need to rewrite or cast the expression.
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\core\handlers\base.py", line 198, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\views\generic\base.py", line 106, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\generics.py", line 246, in post
+    return self.create(request, *args, **kwargs)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\api\views.py", line 54, in create
+    response = super().create(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\mixins.py", line 19, in create
+    self.perform_create(serializer)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\mixins.py", line 24, in perform_create
+    serializer.save()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\serializers.py", line 210, in save
+    self.instance = self.create(validated_data)
+                    ~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\api\serializers.py", line 53, in create
+    student.save()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 874, in save
+    self.save_base(
+    ~~~~~~~~~~~~~~^
+        using=using,
+        ^^^^^^^^^^^^
+    ...<2 lines>...
+        update_fields=update_fields,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 966, in save_base
+    updated = self._save_table(
+        raw,
+    ...<4 lines>...
+        update_fields,
+    )
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 1169, in _save_table
+    results = self._do_insert(
+        cls._base_manager, using, insert_fields, returning_fields, raw
+    )
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 1220, in _do_insert
+    return manager._insert(
+           ~~~~~~~~~~~~~~~^
+        [self],
+        ^^^^^^^
+    ...<3 lines>...
+        raw=raw,
+        ^^^^^^^^
+    )
+    ^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\query.py", line 1918, in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1925, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\utils.py", line 94, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column "enrolled_subjects" is of type text[] but expression is of type jsonb
+LINE 1: ...2-12'::date, '03-1234-032803', 'CITE', 'BSIT', 3, '["ITE123 ...
+                                                             ^
+HINT:  You will need to rewrite or cast the expression.
+
+ERROR 2026-02-09 20:49:43,503 log 25824 13064 Internal Server Error: /api/students/
+Traceback (most recent call last):
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.errors.DatatypeMismatch: column "enrolled_subjects" is of type text[] but expression is of type jsonb
+LINE 1: ...2-12'::date, '03-1234-032803', 'CITE', 'BSIT', 3, '["ITE123 ...
+                                                             ^
+HINT:  You will need to rewrite or cast the expression.
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\core\handlers\base.py", line 198, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\views\generic\base.py", line 106, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\generics.py", line 246, in post
+    return self.create(request, *args, **kwargs)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\api\views.py", line 54, in create
+    response = super().create(request, *args, **kwargs)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\mixins.py", line 19, in create
+    self.perform_create(serializer)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\mixins.py", line 24, in perform_create
+    serializer.save()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\rest_framework\serializers.py", line 210, in save
+    self.instance = self.create(validated_data)
+                    ~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\api\serializers.py", line 53, in create
+    student.save()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 874, in save
+    self.save_base(
+    ~~~~~~~~~~~~~~^
+        using=using,
+        ^^^^^^^^^^^^
+    ...<2 lines>...
+        update_fields=update_fields,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 966, in save_base
+    updated = self._save_table(
+        raw,
+    ...<4 lines>...
+        update_fields,
+    )
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 1169, in _save_table
+    results = self._do_insert(
+        cls._base_manager, using, insert_fields, returning_fields, raw
+    )
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\base.py", line 1220, in _do_insert
+    return manager._insert(
+           ~~~~~~~~~~~~~~~^
+        [self],
+        ^^^^^^^
+    ...<3 lines>...
+        raw=raw,
+        ^^^^^^^^
+    )
+    ^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\query.py", line 1918, in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\models\sql\compiler.py", line 1925, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\utils.py", line 94, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "C:\Users\Gabriel Esperanza\Documents\Projects\UPang-Student-Feedback-and-Module-Evaluation-System\.venv\Lib\site-packages\django\db\backends\utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+django.db.utils.ProgrammingError: column "enrolled_subjects" is of type text[] but expression is of type jsonb
+LINE 1: ...2-12'::date, '03-1234-032803', 'CITE', 'BSIT', 3, '["ITE123 ...
+                                                             ^
+HINT:  You will need to rewrite or cast the expression.
+
+ERROR 2026-02-09 20:52:04,558 log 2920 8736 Internal Server Error: /api/students/
+WARNING 2026-02-09 21:18:44,025 log 2920 20872 Not Found: /api/students/03-2324-032803/
+WARNING 2026-02-09 21:18:49,297 log 2920 20872 Not Found: /api/students/03-2324-032803/
+WARNING 2026-02-09 21:18:49,993 log 2920 20872 Not Found: /api/students/03-2324-032803/
+WARNING 2026-02-09 21:18:50,688 log 2920 20872 Not Found: /api/students/03-2324-032803/
+WARNING 2026-02-09 21:18:50,873 log 2920 20872 Not Found: /api/students/03-2324-032803/
+WARNING 2026-02-09 21:20:02,726 log 2920 20872 Not Found: /api/students/03-2324-032803/
+WARNING 2026-02-09 21:30:35,749 log 2920 15168 Method Not Allowed: /api/audit-logs/
+WARNING 2026-02-09 21:32:50,302 log 2920 15168 Method Not Allowed: /api/audit-logs/

@@ -8,6 +8,8 @@ import {
   Search,
   Download,
   Eye,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 
 const FacultyPages = () => {
@@ -22,18 +24,21 @@ const FacultyPages = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [formErrors, setFormErrors] = useState({});
 
   // Bulk Import State
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [bulkImportResult, setBulkImportResult] = useState(null);
+  const [selectedFaculty, setSelectedFaculty] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [formValues, setFormValues] = useState({
-    
     email: '',
     firstname: '',
     middlename: '',
     lastname: '',
-    department: '',
+    department: 'CITE',
     contact_number: '',
     birthdate: '',
   });
@@ -49,6 +54,29 @@ const FacultyPages = () => {
     rating: Number(f?.rating) || 0,
     status: typeof f?.status === 'boolean' ? (f.status ? 'Active' : 'Inactive') : (f?.status || 'Active'),
   });
+
+  // Helper function to create audit log entries
+  const createAuditLog = async (action, message) => {
+    try {
+      const auditData = {
+        action: action,
+        message: message,
+        category: 'USER MANAGEMENT',
+        status: 'Success',
+      };
+
+      await fetch(`${API_BASE_URL}/audit-logs/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        },
+        body: JSON.stringify(auditData),
+      });
+    } catch (error) {
+      console.error('Failed to create audit log:', error);
+    }
+  };
 
   const fetchFaculty = async () => {
     setIsLoading(true);
@@ -73,10 +101,93 @@ const FacultyPages = () => {
     fetchFaculty();
   }, []);
 
+  const showFacultyDetails = async (facultyId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+      });
+      if (!res.ok) {
+        setErrorMessage('Unable to load faculty details.');
+        return;
+      }
+      const data = await res.json();
+      // include pk for consistency
+      setSelectedFaculty({ ...data, pk: data.id || data.pk || facultyId });
+    } catch {
+      setErrorMessage('Unable to reach the server.');
+    }
+  };
+
+  const startEditFaculty = async (facultyId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+      });
+      if (!res.ok) {
+        setErrorMessage('Unable to load faculty for editing.');
+        return;
+      }
+      const data = await res.json();
+      // populate form
+      setFormValues((prev) => ({
+        ...prev,
+        email: data.email || prev.email,
+        firstname: data.firstname || prev.firstname,
+        middlename: data.middlename || prev.middlename,
+        lastname: data.lastname || prev.lastname,
+        department: data.department || prev.department,
+        contact_number: data.contact_number || prev.contact_number,
+        birthdate: data.birthdate || prev.birthdate,
+      }));
+      setIsEditing(true);
+      setEditingId(facultyId);
+      setIsAddOpen(true);
+    } catch {
+      setErrorMessage('Unable to reach the server.');
+    }
+  };
+
+  const archiveFaculty = async (facultyId) => {
+    const ok = window.confirm('Archive this faculty member? This will remove them from the active list.');
+    if (!ok) return;
+    try {
+      // First get faculty details for logging
+      const facultyRes = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+      });
+      if (!facultyRes.ok) {
+        setErrorMessage('Unable to load faculty details.');
+        return;
+      }
+      const facultyData = await facultyRes.json();
+
+      // Delete the faculty
+      const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+      });
+      if (!res.ok) {
+        setErrorMessage('Unable to archive faculty.');
+        return;
+      }
+
+      // Log the deletion
+      await createAuditLog(
+        'Archived Faculty',
+        `Archived faculty member: ${facultyData.firstname} ${facultyData.lastname} (${facultyData.email})`
+      );
+
+      setFacultyData((prev) => prev.filter((f) => f.id !== facultyId));
+    } catch {
+      setErrorMessage('Unable to reach the server.');
+    }
+  };
+
   // Form Handlers
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormValues((prev) => ({ ...prev, [name]: value }));
+    setFormErrors((prev) => ({ ...prev, [name]: undefined }));
   };
 
   const resetForm = () => {
@@ -85,34 +196,69 @@ const FacultyPages = () => {
       firstname: '',
       middlename: '',
       lastname: '',
-      department: '',
+      department: 'CITE',
       contact_number: '',
       birthdate: '',
     });
     setErrorMessage('');
+    setFormErrors({});
   };
 
   const closeModal = () => {
     setIsAddOpen(false);
     resetForm();
+    setIsEditing(false);
+    setEditingId(null);
+  };
+
+  const validateField = (name) => {
+    const value = String(formValues[name] || '').trim();
+    let error;
+    if (name === 'email') {
+      if (!value) error = 'Email is required.';
+      else if (!/^\S+@\S+\.\S+$/.test(value)) error = 'Enter a valid email address.';
+    } else if (name === 'firstname') {
+      if (!value) error = 'First name is required.';
+    } else if (name === 'middlename') {
+      if (!value) error = 'Middle name is required.';
+    } else if (name === 'lastname') {
+      if (!value) error = 'Last name is required.';
+    } else if (name === 'birthdate') {
+      if (!value) error = 'Birthdate is required.';
+    }
+    setFormErrors((prev) => ({ ...prev, [name]: error }));
+    return !error;
+  };
+
+  const validateForm = () => {
+    const errors = {};
+    if (!String(formValues.email || '').trim()) errors.email = 'Email is required.';
+    else if (!/^\S+@\S+\.\S+$/.test(formValues.email)) errors.email = 'Enter a valid email address.';
+
+    if (!String(formValues.firstname || '').trim()) errors.firstname = 'First name is required.';
+    if (!String(formValues.middlename || '').trim()) errors.middlename = 'Middle name is required.';
+    if (!String(formValues.lastname || '').trim()) errors.lastname = 'Last name is required.';
+    if (!String(formValues.birthdate || '').trim()) errors.birthdate = 'Birthdate is required.';
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleAddFaculty = async (e) => {
     e.preventDefault();
     setErrorMessage('');
-
-    // Basic Validation - only fields accepted by FacultySerializer
-    const required = ['email', 'firstname', 'lastname', 'department'];
-    const missing = required.find(key => !formValues[key].trim());
-    if (missing) {
-      setErrorMessage('Please fill in all required fields.');
+    // Validate required fields and show inline errors
+    if (!validateForm()) {
+      setErrorMessage('Please fix the errors in the form.');
       return;
     }
 
     try {
       setIsSubmitting(true);
-      const response = await fetch(`${API_BASE_URL}/faculty/`, {
-        method: 'POST',
+      const method = isEditing ? 'PUT' : 'POST';
+      const url = isEditing ? `${API_BASE_URL}/faculty/${editingId}/` : `${API_BASE_URL}/faculty/`;
+      const response = await fetch(url, {
+        method: method,
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
@@ -123,12 +269,28 @@ const FacultyPages = () => {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setErrorMessage(data?.detail || 'Unable to add faculty. Please check details.');
+        setErrorMessage(data?.detail || 'Unable to save faculty. Please check details.');
         return;
       }
 
-      setFacultyData((prev) => [mapFaculty(data), ...prev]);
+      if (isEditing) {
+        setFacultyData((prev) => prev.map((f) => f.id === editingId ? mapFaculty(data) : f));
+        // Log the faculty update
+        await createAuditLog(
+          'Updated Faculty',
+          `Updated faculty member: ${data.firstname} ${data.lastname} (${data.email})`
+        );
+      } else {
+        setFacultyData((prev) => [mapFaculty(data), ...prev]);
+        // Log the faculty creation
+        await createAuditLog(
+          'Created Faculty',
+          `Created new faculty member: ${data.firstname} ${data.lastname} (${data.email})`
+        );
+      }
       closeModal();
+      setIsEditing(false);
+      setEditingId(null);
     } catch {
       setErrorMessage('Server connection failed.');
     } finally {
@@ -264,7 +426,7 @@ const FacultyPages = () => {
               </div>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setIsAddOpen(true)}
+                  onClick={() => { setIsEditing(false); setEditingId(null); resetForm(); setIsAddOpen(true); }}
                   className="flex items-center gap-2 px-4 py-2 bg-[#ffcc00] text-[#041c32] rounded-lg text-sm font-bold hover:bg-[#e6b800] transition-all"
                 >
                   + Add Faculty
@@ -330,9 +492,17 @@ const FacultyPages = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <button className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all">
-                          <Eye size={18} />
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button onClick={() => showFacultyDetails(faculty.id)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all" title="View">
+                            <Eye size={18} />
+                          </button>
+                          <button onClick={() => startEditFaculty(faculty.id)} className="p-2 text-sky-600 hover:text-sky-800 hover:bg-slate-100 rounded-lg transition-all" title="Edit">
+                            <Edit size={18} />
+                          </button>
+                          <button onClick={() => archiveFaculty(faculty.id)} className="p-2 text-rose-600 hover:text-rose-800 hover:bg-slate-100 rounded-lg transition-all" title="Archive">
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -359,8 +529,8 @@ const FacultyPages = () => {
           >
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-black text-slate-800">Add Faculty Member</h3>
-                <p className="text-sm text-slate-400">Default password is generated from name + birthdate.</p>
+                <h3 className="text-lg font-black text-slate-800">{isEditing ? 'Edit Faculty Member' : 'Add Faculty Member'}</h3>
+                <p className="text-sm text-slate-400">{isEditing ? 'Update faculty details.' : 'Default password is generated from name + birthdate.'}</p>
               </div>
               <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={closeModal}>
                 &times;
@@ -376,9 +546,11 @@ const FacultyPages = () => {
                     type="email"
                     value={formValues.email}
                     onChange={handleInputChange}
+                    onBlur={() => validateField('email')}
                     placeholder="faculty@upang.edu.ph"
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.email ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.email && <div className="text-rose-600 text-sm mt-1">{formErrors.email}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">First Name</label>
@@ -386,8 +558,10 @@ const FacultyPages = () => {
                     name="firstname"
                     value={formValues.firstname}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    onBlur={() => validateField('firstname')}
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.firstname ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.firstname && <div className="text-rose-600 text-sm mt-1">{formErrors.firstname}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Middle Name</label>
@@ -395,8 +569,10 @@ const FacultyPages = () => {
                     name="middlename"
                     value={formValues.middlename}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    onBlur={() => validateField('middlename')}
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.middlename ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.middlename && <div className="text-rose-600 text-sm mt-1">{formErrors.middlename}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Last Name</label>
@@ -404,8 +580,10 @@ const FacultyPages = () => {
                     name="lastname"
                     value={formValues.lastname}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    onBlur={() => validateField('lastname')}
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.lastname ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.lastname && <div className="text-rose-600 text-sm mt-1">{formErrors.lastname}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Contact Number</label>
@@ -423,8 +601,10 @@ const FacultyPages = () => {
                     name="department"
                     value={formValues.department}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.department ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-slate-100'}`}
+                    disabled
                   />
+                  {formErrors.department && <div className="text-rose-600 text-sm mt-1">{formErrors.department}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Birthdate</label>
@@ -433,8 +613,10 @@ const FacultyPages = () => {
                     type="date"
                     value={formValues.birthdate}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    onBlur={() => validateField('birthdate')}
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.birthdate ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.birthdate && <div className="text-rose-600 text-sm mt-1">{formErrors.birthdate}</div>}
                 </div>
               </div>
 
@@ -453,7 +635,7 @@ const FacultyPages = () => {
                   disabled={isSubmitting}
                   className="px-4 py-2 text-sm font-bold bg-[#1f474d] text-white rounded-lg hover:bg-[#18393e] disabled:opacity-70"
                 >
-                  {isSubmitting ? 'Saving...' : 'Create Faculty'}
+                  {isSubmitting ? 'Saving...' : (isEditing ? 'Update Faculty' : 'Create Faculty')}
                 </button>
               </div>
             </form>
@@ -562,6 +744,30 @@ const FacultyPages = () => {
                 >
                   Close
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedFaculty && (
+        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelectedFaculty(null)}>
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-800">Faculty Details</h3>
+                <p className="text-sm text-slate-400">Details for {selectedFaculty.firstname} {selectedFaculty.lastname}</p>
+              </div>
+              <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={() => setSelectedFaculty(null)}>&times;</button>
+            </div>
+            <div className="p-6 space-y-3">
+              <div><strong>Email:</strong> {selectedFaculty.email}</div>
+              <div><strong>Name:</strong> {selectedFaculty.firstname} {selectedFaculty.middlename} {selectedFaculty.lastname}</div>
+              <div><strong>Department:</strong> {selectedFaculty.department}</div>
+              <div><strong>Contact Number:</strong> {selectedFaculty.contact_number}</div>
+              <div><strong>Birthdate:</strong> {selectedFaculty.birthdate}</div>
+              <div className="flex justify-end pt-4">
+                <button className="px-4 py-2 bg-[#1f474d] text-white rounded-lg" onClick={() => { setSelectedFaculty(null); }}>Close</button>
               </div>
             </div>
           </div>

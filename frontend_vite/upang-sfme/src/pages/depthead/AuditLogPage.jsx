@@ -15,6 +15,13 @@ const AuditLogPage = () => {
   };
   const [query, setQuery] = useState('');
   const [logs, setLogs] = useState([]);
+  const [uniqueCategories, setUniqueCategories] = useState(['All Categories']);
+  const [uniqueStatuses, setUniqueStatuses] = useState(['All Statuses']);
+  const [selectedCategory, setSelectedCategory] = useState('All Categories');
+  const [selectedStatus, setSelectedStatus] = useState('All Statuses');
+  const [ipFilter, setIpFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [stats, setStats] = useState([
     { title: 'Total Activities', value: 0, subtitle: 'Last 24 hours' },
     { title: 'User Management', value: 0, subtitle: 'User changes' },
@@ -40,6 +47,13 @@ const AuditLogPage = () => {
         const logsList = Array.isArray(data) ? data : [];
         setLogs(logsList);
 
+        // Compute unique categories and statuses
+        const categories = [...new Set(logsList.map(log => log.category).filter(Boolean))];
+        setUniqueCategories(['All Categories', ...categories]);
+
+        const statuses = [...new Set(logsList.map(log => log.status).filter(Boolean))];
+        setUniqueStatuses(['All Statuses', ...statuses]);
+
         // Compute stats from logs
         const now = new Date();
         const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -64,6 +78,38 @@ const AuditLogPage = () => {
 
     fetchAuditLogs();
   }, []);
+
+  // Filter logs based on all criteria
+  const filteredLogs = logs.filter(log => {
+    // Text search
+    const matchesQuery = (log.user + log.action + log.message + log.category).toLowerCase().includes(query.toLowerCase());
+
+    // Category filter
+    const matchesCategory = selectedCategory === 'All Categories' || log.category === selectedCategory;
+
+    // Status filter
+    const matchesStatus = selectedStatus === 'All Statuses' || log.status === selectedStatus;
+
+    // IP filter
+    const matchesIP = !ipFilter || (log.ip && log.ip.includes(ipFilter));
+
+    // Date filter
+    let matchesDate = true;
+    if (dateFrom || dateTo) {
+      const logDate = new Date(log.timestamp || log.time);
+      if (dateFrom) {
+        const fromDate = new Date(dateFrom);
+        if (logDate < fromDate) matchesDate = false;
+      }
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999); // End of day
+        if (logDate > toDate) matchesDate = false;
+      }
+    }
+
+    return matchesQuery && matchesCategory && matchesStatus && matchesIP && matchesDate;
+  });
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 overflow-x-hidden flex flex-col lg:flex-row">
@@ -134,19 +180,53 @@ const AuditLogPage = () => {
                 <h2 className="text-lg font-semibold text-slate-900">Activity Logs</h2>
                 <p className="text-sm text-slate-500">Complete history of system events</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search by user, action, or details..."
                   className="bg-white border border-slate-200 placeholder-slate-400 text-slate-700 px-4 py-2 rounded-lg w-80 shadow-sm"
                 />
-                <select className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg">
-                  <option>All Categories</option>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg"
+                >
+                  {uniqueCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
                 </select>
-                <select className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg">
-                  <option>All Statuses</option>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg"
+                >
+                  {uniqueStatuses.map(status => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
                 </select>
+                <input
+                  value={ipFilter}
+                  onChange={(e) => setIpFilter(e.target.value)}
+                  placeholder="Filter by IP address"
+                  className="bg-white border border-slate-200 placeholder-slate-400 text-slate-700 px-4 py-2 rounded-lg w-40 shadow-sm"
+                />
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-slate-600">From:</label>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg"
+                  />
+                  <label className="text-sm text-slate-600">To:</label>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-lg"
+                  />
+                </div>
               </div>
             </div>
 
@@ -158,7 +238,7 @@ const AuditLogPage = () => {
               <div className="text-center py-8 text-slate-500">Loading audit logs...</div>
             ) : (
               <div className="space-y-4">
-                {logs.filter(l => (l.user + l.action + l.message + l.category).toLowerCase().includes(query.toLowerCase())).map((log, idx) => (
+                {filteredLogs.map((log, idx) => (
                   <div key={idx} className="bg-white rounded-lg p-4 shadow-sm flex flex-col mb-2">
                     <div className="flex items-center gap-4">
                       {/* Icon for log category */}
@@ -218,7 +298,7 @@ const AuditLogPage = () => {
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                               <path d="M21 10a9 9 0 11-18 0 9 9 0 0118 0z" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
-                            {log.time}
+                            {new Date(log.timestamp || log.time).toLocaleString('en-US', { timeZone: 'Asia/Manila' })}
                           </div>
                           <div className="flex items-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -231,8 +311,8 @@ const AuditLogPage = () => {
                     </div>
                   </div>
                 ))}
-                {logs.length === 0 && !isLoading && !loadError && (
-                  <div className="text-center py-8 text-slate-500">No audit logs found.</div>
+                {filteredLogs.length === 0 && !isLoading && !loadError && (
+                  <div className="text-center py-8 text-slate-500">No audit logs found matching the filters.</div>
                 )}
               </div>
             )}

@@ -7,7 +7,9 @@ import {
   Star, 
   Search, 
   Download, 
-  Eye 
+  Eye,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 
 const StudentsManagement = () => {
@@ -23,7 +25,11 @@ const StudentsManagement = () => {
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
   const [formValues, setFormValues] = useState({
     student_number: '',
@@ -31,15 +37,25 @@ const StudentsManagement = () => {
     firstname: '',
     middlename: '',
     lastname: '',
-    department: '',
-    program: '',
+    department: 'CITE',
+    program: 'BSIT',
     year_level: '',
     birthdate: '',
+    enrolled_subjects: [],
+    current_subject_input: '',
+    block_section: '',
   });
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormValues((prev) => ({ ...prev, [name]: value }));
+    let newValue = value;
+    // sanitize student number to only digits and hyphens
+    if (name === 'student_number') {
+      newValue = String(value).replace(/[^0-9-]/g, '');
+    }
+    setFormValues((prev) => ({ ...prev, [name]: newValue }));
+    // clear field-specific error when user types
+    setFormErrors((prev) => ({ ...prev, [name]: undefined }));
   };
 
   const resetForm = () => {
@@ -49,17 +65,119 @@ const StudentsManagement = () => {
       firstname: '',
       middlename: '',
       lastname: '',
-      department: '',
-      program: '',
+      department: 'CITE',
+      program: 'BSIT',
       year_level: '',
       birthdate: '',
+      enrolled_subjects: [],
+      current_subject_input: '',
+      block_section: '',
     });
     setErrorMessage('');
+    setFormErrors({});
+  };
+
+  const validateField = (name) => {
+    const value = String(formValues[name] || '').trim();
+    let error;
+    if (name === 'student_number') {
+      if (!value) error = 'Student number is required.';
+      else if (!/^[0-9-]+$/.test(value)) error = 'Only numbers and dashes are allowed.';
+    } else if (name === 'email') {
+      if (!value) error = 'Email is required.';
+      else if (!/^\S+@\S+\.\S+$/.test(value)) error = 'Enter a valid email address.';
+    } else if (name === 'firstname') {
+      if (!value) error = 'First name is required.';
+    } else if (name === 'middlename') {
+      if (!value) error = 'Middle name is required.';
+    } else if (name === 'lastname') {
+      if (!value) error = 'Last name is required.';
+    } else if (name === 'birthdate') {
+      if (!value) error = 'Birthdate is required.';
+    } else if (name === 'year_level') {
+      if (!value) error = 'Year level is required.';
+    } else if (name === 'block_section') {
+      if (!value) error = 'Block / Section is required.';
+    } else if (name === 'enrolled_subjects') {
+      const list = Array.isArray(formValues.enrolled_subjects) ? formValues.enrolled_subjects : [];
+      if (list.length === 0) error = 'Please add at least one enrolled subject.';
+    }
+
+    setFormErrors((prev) => ({ ...prev, [name]: error }));
+    return !error;
+  };
+
+  const validateForm = () => {
+    const errors = {};
+
+    // student number
+    if (!String(formValues.student_number || '').trim()) {
+      errors.student_number = 'Student number is required.';
+    } else if (!/^[0-9-]+$/.test(formValues.student_number)) {
+      errors.student_number = 'Only numbers and dashes are allowed.';
+    }
+
+    // email
+    if (!String(formValues.email || '').trim()) {
+      errors.email = 'Email is required.';
+    } else if (!/^\S+@\S+\.\S+$/.test(formValues.email)) {
+      errors.email = 'Enter a valid email address.';
+    }
+
+    // names
+    if (!String(formValues.firstname || '').trim()) errors.firstname = 'First name is required.';
+    if (!String(formValues.middlename || '').trim()) errors.middlename = 'Middle name is required.';
+    if (!String(formValues.lastname || '').trim()) errors.lastname = 'Last name is required.';
+
+    // birthdate
+    if (!String(formValues.birthdate || '').trim()) errors.birthdate = 'Birthdate is required.';
+
+    // year level
+    if (!String(formValues.year_level || '').trim()) errors.year_level = 'Year level is required.';
+
+    // block / section
+    if (!String(formValues.block_section || '').trim()) errors.block_section = 'Block / Section is required.';
+
+    // enrolled subjects
+    if (!Array.isArray(formValues.enrolled_subjects) || formValues.enrolled_subjects.length === 0) {
+      errors.enrolled_subjects = 'Please add at least one enrolled subject.';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const addSubject = () => {
+    const value = String(formValues.current_subject_input || '').trim();
+    if (!value) return;
+    setFormValues((prev) => ({
+      ...prev,
+      enrolled_subjects: [...(prev.enrolled_subjects || []), value],
+      current_subject_input: '',
+    }));
+    // clear enrolled_subjects error when a subject is added
+    setFormErrors((prev) => ({ ...prev, enrolled_subjects: undefined }));
+  };
+
+  const removeSubject = (index) => {
+    setFormValues((prev) => ({
+      ...prev,
+      enrolled_subjects: prev.enrolled_subjects.filter((_, i) => i !== index),
+    }));
+    // if removing leaves no subjects, set an error
+    setTimeout(() => {
+      setFormErrors((prev) => {
+        const remaining = (formValues.enrolled_subjects || []).filter((_, i) => i !== index);
+        return { ...prev, enrolled_subjects: remaining.length === 0 ? 'Please add at least one enrolled subject.' : undefined };
+      });
+    }, 0);
   };
 
   const closeModal = () => {
     setIsAddOpen(false);
     resetForm();
+    setIsEditing(false);
+    setEditingId(null);
   };
 
   const formatYearLabel = (level) => {
@@ -72,15 +190,44 @@ const StudentsManagement = () => {
   };
 
   const mapStudent = (student) => ({
+    // `id` is the display student number; `pk` is the DB primary key used for API actions
     id: student.student_number,
+    pk: student.id || student.pk || student.student_number,
     name: `${student.firstname || ''} ${student.lastname || ''}`.trim(),
     program: student.program || 'N/A',
+    subject: Array.isArray(student.enrolled_subjects)
+      ? student.enrolled_subjects.join(', ')
+      : student.enrolled_subject || student.subject || 'N/A',
+    block: student.block_section || student.block || 'N/A',
     year: formatYearLabel(student.year_level),
     modules: 0,
     completed: 0,
     pending: 0,
     status: 'Active',
   });
+
+  // Helper function to create audit log entries
+  const createAuditLog = async (action, message) => {
+    try {
+      const auditData = {
+        action: action,
+        message: message,
+        category: 'USER MANAGEMENT',
+        status: 'Success',
+      };
+
+      await fetch(`${API_BASE_URL}/audit-logs/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        },
+        body: JSON.stringify(auditData),
+      });
+    } catch (error) {
+      console.error('Failed to create audit log:', error);
+    }
+  };
 
   const fetchStudents = async () => {
     setIsLoading(true);
@@ -110,11 +257,9 @@ const StudentsManagement = () => {
   const handleAddStudent = async (e) => {
     e.preventDefault();
     setErrorMessage('');
-
-    const requiredFields = ['student_number', 'email', 'firstname', 'lastname', 'department', 'program', 'year_level', 'birthdate'];
-    const missingField = requiredFields.find((key) => !formValues[key].trim());
-    if (missingField) {
-      setErrorMessage('Please fill in all required fields.');
+    // validate and either create or update
+    if (!validateForm()) {
+      setErrorMessage('Please fix the errors in the form.');
       return;
     }
 
@@ -123,10 +268,14 @@ const StudentsManagement = () => {
       const payload = {
         ...formValues,
         year_level: Number(formValues.year_level),
+        enrolled_subjects: formValues.enrolled_subjects || [],
       };
 
-      const response = await fetch(`${API_BASE_URL}/students/`, {
-        method: 'POST',
+      const url = isEditing && editingId ? `${API_BASE_URL}/students/${editingId}/` : `${API_BASE_URL}/students/`;
+      const method = isEditing && editingId ? 'PATCH' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
@@ -135,36 +284,48 @@ const StudentsManagement = () => {
       });
 
       let data = {};
-      try {
-        data = await response.json();
-      } catch {
-        data = {};
-      }
+      try { data = await response.json(); } catch { data = {}; }
 
       if (!response.ok) {
         const fieldErrors = Object.entries(data || {})
           .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages[0] : messages}`)
           .join(' | ');
-        const errorText =
-          data?.detail ||
-          data?.non_field_errors?.[0] ||
-          fieldErrors ||
-          'Unable to add student. Please check the details.';
+        const errorText = data?.detail || data?.non_field_errors?.[0] || fieldErrors || 'Unable to save student.';
         setErrorMessage(errorText);
         return;
       }
 
-      const newStudent = mapStudent({
+      const saved = mapStudent({
         student_number: data.student_number || formValues.student_number,
         firstname: data.firstname || formValues.firstname,
         lastname: data.lastname || formValues.lastname,
         program: data.program || formValues.program,
         year_level: data.year_level || formValues.year_level,
+        enrolled_subjects: data.enrolled_subjects || formValues.enrolled_subjects,
+        block_section: data.block_section || formValues.block_section,
       });
 
-      setStudentData((prev) => [newStudent, ...prev]);
+      if (isEditing && editingId) {
+        setStudentData((prev) => prev.map((s) => (s.pk === editingId ? { ...saved, pk: editingId } : s)));
+        // Log the student update
+        await createAuditLog(
+          'Updated Student',
+          `Updated student: ${saved.name} (${saved.id})`
+        );
+      } else {
+        setStudentData((prev) => [{ ...saved, pk: data.id || data.pk || saved.id }, ...prev]);
+        // Log the student creation
+        await createAuditLog(
+          'Created Student',
+          `Created new student: ${saved.name} (${saved.id})`
+        );
+      }
+
+      // reset edit state and close
+      setIsEditing(false);
+      setEditingId(null);
       closeModal();
-    } catch {
+    } catch  {
       setErrorMessage('Unable to reach the server. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -218,6 +379,92 @@ const StudentsManagement = () => {
       });
     } finally {
       setIsBulkImporting(false);
+    }
+  };
+
+  const showStudentDetails = async (studentId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+      });
+      if (!res.ok) {
+        setErrorMessage('Unable to load student details.');
+        return;
+      }
+      const data = await res.json();
+      // include pk for consistency
+      setSelectedStudent({ ...data, pk: data.id || data.pk || studentId });
+    } catch {
+      setErrorMessage('Unable to reach the server.');
+    }
+  };
+
+  const startEditStudent = async (studentId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+      });
+      if (!res.ok) {
+        setErrorMessage('Unable to load student for editing.');
+        return;
+      }
+      const data = await res.json();
+      // populate form
+      setFormValues((prev) => ({
+        ...prev,
+        student_number: data.student_number || prev.student_number,
+        email: data.email || prev.email,
+        firstname: data.firstname || prev.firstname,
+        middlename: data.middlename || prev.middlename,
+        lastname: data.lastname || prev.lastname,
+        department: data.department || prev.department,
+        program: data.program || prev.program,
+        year_level: data.year_level ? String(data.year_level) : prev.year_level,
+        birthdate: data.birthdate || prev.birthdate,
+        enrolled_subjects: Array.isArray(data.enrolled_subjects) ? data.enrolled_subjects : (data.enrolled_subjects ? [data.enrolled_subjects] : prev.enrolled_subjects),
+        block_section: data.block_section || prev.block_section,
+      }));
+      setIsEditing(true);
+      setEditingId(studentId);
+      setIsAddOpen(true);
+    } catch {
+      setErrorMessage('Unable to reach the server.');
+    }
+  };
+
+  const archiveStudent = async (studentId) => {
+    const ok = window.confirm('Archive this student? This will remove them from the active list.');
+    if (!ok) return;
+    try {
+      // First get student details for logging
+      const studentRes = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+      });
+      if (!studentRes.ok) {
+        setErrorMessage('Unable to load student details.');
+        return;
+      }
+      const studentData = await studentRes.json();
+
+      // Delete the student
+      const res = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+      });
+      if (!res.ok) {
+        setErrorMessage('Unable to archive student.');
+        return;
+      }
+
+      // Log the deletion
+      await createAuditLog(
+        'Archived Student',
+        `Archived student: ${studentData.firstname} ${studentData.lastname} (${studentData.student_number})`
+      );
+
+      setStudentData((prev) => prev.filter((s) => s.id !== studentId));
+    } catch {
+      setErrorMessage('Unable to reach the server.');
     }
   };
 
@@ -285,7 +532,7 @@ const StudentsManagement = () => {
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   className="flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-bold hover:bg-[#18393e] transition-all"
-                  onClick={() => setIsAddOpen(true)}
+                  onClick={() => { setIsEditing(false); setEditingId(null); resetForm(); setIsAddOpen(true); }}
                 >
                   + Add Student
                 </button>
@@ -321,6 +568,8 @@ const StudentsManagement = () => {
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Student ID</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Name</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Program</th>
+                    <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Subjects</th>
+                    <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Block</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Year</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Modules</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Completed</th>
@@ -331,10 +580,12 @@ const StudentsManagement = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {studentData.map((student, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={student.pk || idx} className="hover:bg-slate-50/80 transition-colors">
                       <td className="px-6 py-4 text-xs font-mono text-slate-500">{student.id}</td>
                       <td className="px-6 py-4 text-sm font-black text-slate-800">{student.name}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 font-medium">{student.program}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600 font-medium">{student.subject}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600 text-center font-medium">{student.block}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 text-center font-bold">{student.year}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 text-center font-bold">{student.modules}</td>
                       <td className="px-6 py-4 text-sm text-emerald-600 text-center font-black">{student.completed}</td>
@@ -345,9 +596,17 @@ const StudentsManagement = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <button className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all">
-                          <Eye size={18} />
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button onClick={() => showStudentDetails(student.pk)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all" title="View">
+                            <Eye size={18} />
+                          </button>
+                          <button onClick={() => startEditStudent(student.pk)} className="p-2 text-sky-600 hover:text-sky-800 hover:bg-slate-100 rounded-lg transition-all" title="Edit">
+                            <Edit size={18} />
+                          </button>
+                          <button onClick={() => archiveStudent(student.pk)} className="p-2 text-rose-600 hover:text-rose-800 hover:bg-slate-100 rounded-lg transition-all" title="Archive">
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -373,8 +632,8 @@ const StudentsManagement = () => {
           >
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-black text-slate-800">Add Student</h3>
-                <p className="text-sm text-slate-400">Default password is generated from name + birthdate.</p>
+                <h3 className="text-lg font-black text-slate-800">{isEditing ? 'Edit Student' : 'Add Student'}</h3>
+                <p className="text-sm text-slate-400">{isEditing ? 'Update student details.' : 'Default password is generated from name + birthdate.'}</p>
               </div>
               <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={closeModal}>
                 &times;
@@ -389,9 +648,13 @@ const StudentsManagement = () => {
                     name="student_number"
                     value={formValues.student_number}
                     onChange={handleInputChange}
+                    onBlur={() => validateField('student_number')}
                     placeholder="00-0000-000"
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.student_number ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.student_number && (
+                    <div className="text-rose-600 text-sm mt-1">{formErrors.student_number}</div>
+                  )}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Email</label>
@@ -400,9 +663,11 @@ const StudentsManagement = () => {
                     type="email"
                     value={formValues.email}
                     onChange={handleInputChange}
+                    onBlur={() => validateField('email')}
                     placeholder="student@upang.edu.ph"
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.email ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.email && <div className="text-rose-600 text-sm mt-1">{formErrors.email}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">First Name</label>
@@ -410,8 +675,10 @@ const StudentsManagement = () => {
                     name="firstname"
                     value={formValues.firstname}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    onBlur={() => validateField('firstname')}
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.firstname ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.firstname && <div className="text-rose-600 text-sm mt-1">{formErrors.firstname}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Middle Name</label>
@@ -419,8 +686,10 @@ const StudentsManagement = () => {
                     name="middlename"
                     value={formValues.middlename}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    onBlur={() => validateField('middlename')}
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.middlename ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.middlename && <div className="text-rose-600 text-sm mt-1">{formErrors.middlename}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Last Name</label>
@@ -428,8 +697,10 @@ const StudentsManagement = () => {
                     name="lastname"
                     value={formValues.lastname}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    onBlur={() => validateField('lastname')}
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.lastname ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.lastname && <div className="text-rose-600 text-sm mt-1">{formErrors.lastname}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Birthdate</label>
@@ -438,8 +709,10 @@ const StudentsManagement = () => {
                     type="date"
                     value={formValues.birthdate}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    onBlur={() => validateField('birthdate')}
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.birthdate ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   />
+                  {formErrors.birthdate && <div className="text-rose-600 text-sm mt-1">{formErrors.birthdate}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Department</label>
@@ -447,7 +720,8 @@ const StudentsManagement = () => {
                     name="department"
                     value={formValues.department}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-100"
+                    disabled
                   />
                 </div>
                 <div>
@@ -456,8 +730,49 @@ const StudentsManagement = () => {
                     name="program"
                     value={formValues.program}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-100"
+                    disabled
                   />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Enrolled Subjects</label>
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      name="current_subject_input"
+                      value={formValues.current_subject_input}
+                      onChange={handleInputChange}
+                      placeholder="e.g., COMP101 - Programming Fundamentals"
+                      className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={addSubject}
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(formValues.enrolled_subjects || []).map((s, i) => (
+                      <div key={i} className="px-3 py-1 bg-slate-100 rounded-full flex items-center gap-2 text-sm">
+                        <span>{s}</span>
+                        <button type="button" onClick={() => removeSubject(i)} className="text-rose-600 font-bold">×</button>
+                      </div>
+                    ))}
+                  </div>
+                  {formErrors.enrolled_subjects && <div className="text-rose-600 text-sm mt-2">{formErrors.enrolled_subjects}</div>}
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Block / Section</label>
+                  <input
+                    name="block_section"
+                    value={formValues.block_section}
+                    onChange={handleInputChange}
+                    onBlur={() => validateField('block_section')}
+                    placeholder="e.g., A1, B2"
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.block_section ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
+                  />
+                  {formErrors.block_section && <div className="text-rose-600 text-sm mt-1">{formErrors.block_section}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Year Level</label>
@@ -465,7 +780,8 @@ const StudentsManagement = () => {
                     name="year_level"
                     value={formValues.year_level}
                     onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    onBlur={() => validateField('year_level')}
+                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.year_level ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
                   >
                     <option value="">Select</option>
                     <option value="1">1st Year</option>
@@ -492,13 +808,41 @@ const StudentsManagement = () => {
                   disabled={isSubmitting}
                   className="px-4 py-2 text-sm font-bold bg-[#1f474d] text-white rounded-lg hover:bg-[#18393e] disabled:opacity-70"
                 >
-                  {isSubmitting ? 'Saving...' : 'Create Student'}
+                  {isSubmitting ? 'Saving...' : (isEditing ? 'Update Student' : 'Create Student')}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+        {selectedStudent && (
+          <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelectedStudent(null)}>
+            <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800">Student Details</h3>
+                  <p className="text-sm text-slate-400">Details for {selectedStudent.firstname} {selectedStudent.lastname}</p>
+                </div>
+                <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={() => setSelectedStudent(null)}>&times;</button>
+              </div>
+              <div className="p-6 space-y-3">
+                <div><strong>Student Number:</strong> {selectedStudent.student_number}</div>
+                <div><strong>Email:</strong> {selectedStudent.email}</div>
+                <div><strong>Name:</strong> {selectedStudent.firstname} {selectedStudent.middlename} {selectedStudent.lastname}</div>
+                <div><strong>Department:</strong> {selectedStudent.department}</div>
+                <div><strong>Program:</strong> {selectedStudent.program}</div>
+                <div><strong>Year Level:</strong> {selectedStudent.year_level}</div>
+                <div><strong>Birthdate:</strong> {selectedStudent.birthdate}</div>
+                <div><strong>Block / Section:</strong> {selectedStudent.block_section}</div>
+                <div><strong>Enrolled Subjects:</strong> {Array.isArray(selectedStudent.enrolled_subjects) ? selectedStudent.enrolled_subjects.join(', ') : selectedStudent.enrolled_subjects}</div>
+                <div className="flex justify-end pt-4">
+                  <button className="px-4 py-2 bg-[#1f474d] text-white rounded-lg" onClick={() => { setSelectedStudent(null); }}>Close</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Bulk Import Modal */}
       {isBulkImportOpen && (
@@ -546,13 +890,14 @@ const StudentsManagement = () => {
               </div>
 
               {/* CSV Format Guide */}
-              <div className="bg-slate-50 rounded-lg p-4">
+                <div className="bg-slate-50 rounded-lg p-4">
                 <h5 className="font-semibold text-slate-700 mb-2">CSV Format Requirements:</h5>
                 <div className="text-sm text-slate-600 space-y-1">
                   <div><strong>Required columns:</strong> email, firstname, lastname, student_id</div>
-                  <div><strong>Optional columns:</strong> department, year_level, course</div>
-                  <div><strong>Example:</strong> email,firstname,lastname,student_id,department,year_level</div>
-                  <div><strong>Sample row:</strong> john.doe@upang.edu.ph,John,,Doe,2021-0001,Computer Science,3</div>
+                  <div><strong>Optional columns:</strong> department, year_level, course, enrolled_subjects, block_section</div>
+                  <div><strong>Notes:</strong> For multiple subjects include `enrolled_subjects` as a semicolon-separated list (no spaces after semicolon).</div>
+                  <div><strong>Example:</strong> email,firstname,lastname,student_id,department,year_level,enrolled_subjects,block_section</div>
+                  <div><strong>Sample row:</strong> john.doe@upang.edu.ph,John,,Doe,2021-0001,Computer Science,3,COMP101 - Programming Fundamentals;COMP102 - Data Structures,A1</div>
                 </div>
               </div>
 

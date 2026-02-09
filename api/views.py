@@ -7,6 +7,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .throttles import LoginRateThrottle
 from .models import Student
+from .sentiment_service import predict_sentiment
 import csv
 import io
 
@@ -50,8 +51,13 @@ class StudentListCreateView(generics.ListCreateAPIView):
         except DepartmentHead.DoesNotExist:
             return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        response = super().create(request, *args, **kwargs)
-        
+        try:
+            response = super().create(request, *args, **kwargs)
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            return Response({"detail": str(e), "trace": tb}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         if response.status_code == status.HTTP_201_CREATED:
             # Get the created student
             student = Student.objects.get(id=response.data['id'])
@@ -64,7 +70,7 @@ class StudentListCreateView(generics.ListCreateAPIView):
                 action='Create Student',
                 category='USER MANAGEMENT',
                 status='Success',
-                message=f'Created new student: {student.firstname} {student.lastname} ({student.student_id})',
+                message=f'Created new student: {student.firstname} {student.lastname} ({student.student_number})',
                 ip=request.META.get('REMOTE_ADDR', 'Unknown')
             )
         
@@ -440,19 +446,32 @@ class StudentBulkImportView(APIView):
                         errors.append(f"Row {row_num}: Student with email '{row['email']}' already exists")
                         continue
 
-                    if Student.objects.filter(student_id=row['student_id']).exists():
+                    if Student.objects.filter(student_number=row['student_id']).exists():
                         errors.append(f"Row {row_num}: Student with ID '{row['student_id']}' already exists")
                         continue
 
+                    # Parse enrolled_subjects (semicolon-separated) and block
+                    raw_subjects = row.get('enrolled_subjects', '').strip()
+                    subjects_list = [s.strip() for s in raw_subjects.split(';') if s.strip()] if raw_subjects else []
+                    block_val = row.get('block_section', '').strip()
+
                     # Create student
+                    year_val = row.get('year_level', '').strip()
+                    try:
+                        year_val_parsed = int(year_val) if year_val else None
+                    except ValueError:
+                        year_val_parsed = None
+
                     student = Student.objects.create(
                         email=row['email'].strip(),
                         firstname=row['firstname'].strip(),
                         lastname=row['lastname'].strip(),
-                        student_id=row['student_id'].strip(),
+                        student_number=row['student_id'].strip(),
                         department=row.get('department', '').strip(),
-                        year_level=row.get('year_level', '').strip(),
-                        course=row.get('course', '').strip(),
+                        program=row.get('course', '').strip(),
+                        year_level=year_val_parsed,
+                        enrolled_subjects=subjects_list,
+                        block_section=block_val or None,
                         must_change_password=True
                     )
                     created_count += 1
@@ -579,8 +598,8 @@ class FacultyBulkImportView(APIView):
             return Response({"detail": f"Error processing CSV: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class AuditLogListView(generics.ListAPIView):
-    queryset = AuditLog.objects.filter(role='Depthead')
+class AuditLogListView(generics.ListCreateAPIView):
+    queryset = AuditLog.objects.filter(role__in=['Depthead', 'Department Head'])
     serializer_class = AuditLogSerializer
 
     def list(self, request, *args, **kwargs):
@@ -598,3 +617,59 @@ class AuditLogListView(generics.ListAPIView):
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
         return super().list(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        # Manual authentication for department head
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        dept_head_id = decoded_token.get("legacy_user_id")
+        if not dept_head_id:
+            return Response({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            dept_head = DepartmentHead.objects.get(id=dept_head_id)
+        except DepartmentHead.DoesNotExist:
+            return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Create the audit log with the correct user
+        data = request.data.copy()
+        data['user'] = f"{dept_head.firstname} {dept_head.lastname}".strip() or dept_head.email or 'Depthead User'
+        data['role'] = 'Depthead'
+        data['ip'] = request.META.get('REMOTE_ADDR', 'Unknown')
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class SentimentTestView(APIView):
+    """Temporary view to test sentiment model integration.
+
+    POST JSON: { "text": "..." }
+    Returns: { "label": "positive" }
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        text = request.data.get("text")
+        if not text:
+            return Response({"detail": 'Missing "text" field'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            label = predict_sentiment(text)
+        except Exception as e:
+            return Response({"detail": "Model error", "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({"label": label}, status=status.HTTP_200_OK)

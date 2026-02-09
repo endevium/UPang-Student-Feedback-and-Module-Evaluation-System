@@ -11,6 +11,8 @@
 body {
   margin: 0;
   font-family: 'Optima-Medium', 'Optima', 'Candara', 'Segoe UI', sans-serif; /* A clean font similar to your design */
-  background-color: var(--up-dark-blue);
-  color: var(--white);
+  /* Use a page-neutral background to avoid thin seam lines showing through
+     (matches Tailwind's bg-slate-50 used in page containers) */
+  background-color: #f8fafc;
+  color: #0f172a;
 }
