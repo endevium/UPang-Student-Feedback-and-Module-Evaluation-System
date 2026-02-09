@@ -12,5 +12,13 @@ urlpatterns = [
 
     path("department-heads/", views.DepartmentHeadListCreateView.as_view(), name="department-head-list-create"),
     path("department-heads/<int:pk>/", views.DepartmentHeadDetailView.as_view(), name="department-head-detail"),
-    path("department-head/login/", views.StudentLoginView.as_view(), name="department-head-login"),
+    path("department-head/login/", views.DepartmentHeadLoginView.as_view(), name="department-head-login"),
+
+    path("module/", views.ModuleListCreateView.as_view(), name="module-list-create"),
+    path("modules/<int:pk>/", views.ModuleDetailView.as_view(), name="module-detail"),
+
+    path("assign-module/", views.ModuleAssignmentListCreateView.as_view(), name="module-assignment-list-create"),
+    path("assign-module/<int:pk>/", views.ModuleAssignmentDetailView.as_view(), name="module-assignment-detail"),
+
+    path("debug-auth/", views.DebugAuthView.as_view(), name="debug-auth")
 ]
