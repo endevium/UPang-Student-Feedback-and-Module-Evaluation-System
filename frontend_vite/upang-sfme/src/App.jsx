@@ -66,6 +66,27 @@ function App() {
 
   // Routing Logic
   const renderContent = () => {
+    // If user is authenticated and requests the root landing path,
+    // render their dashboard instead of the public LandingPage.
+    if (isLoggedIn && (route === '/' || route === '' || route === '/home')) {
+      let storedUser = null;
+      try {
+        storedUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+      } catch {
+        storedUser = null;
+      }
+
+      const roleMap = {
+        student: 'Student',
+        faculty: 'Faculty',
+        department_head: 'Department Head',
+      };
+      const resolvedRole = roleMap[storedUser?.user_type] || 'Student';
+
+      if (resolvedRole === 'Student') return <StudentDashboard />;
+      if (resolvedRole === 'Faculty') return <FacultyDashboard />;
+      return <DeptHeadDashboard />;
+    }
     // Basic Pages
     if (route === '/about') return <About />;
     if (route === '/contact') return <ContactPage />;

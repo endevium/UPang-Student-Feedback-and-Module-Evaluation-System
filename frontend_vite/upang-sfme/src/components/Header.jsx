@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 // 1. Import your logo here
 import logo from '../assets/header-logo.png'; 
+import SafeImg from './SafeImg';
 
 const Header = ({ userName, userRole }) => {
   let storedUser = null;
@@ -21,7 +22,47 @@ const Header = ({ userName, userRole }) => {
     department_head: 'Department Head',
   };
 
-  const resolvedRole = userRole || roleMap[storedUser?.user_type] || 'Student';
+  let resolvedRole = userRole || roleMap[storedUser?.user_type] || 'Student';
+
+  const [fetchedDepartment, setFetchedDepartment] = useState(null);
+
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+
+  // Fetch department from backend when logged-in user is a department head
+  useEffect(() => {
+    if (storedUser?.user_type === 'department_head' && storedUser?.id) {
+      // If localStorage already has department, prefer that to avoid extra call
+      if (storedUser.department) {
+        setFetchedDepartment(storedUser.department);
+        return;
+      }
+
+      const token = localStorage.getItem('authToken');
+      const url = `${API_BASE_URL}/department-heads/${storedUser.id}/`;
+
+      fetch(url, {
+        method: 'GET',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error('Failed to fetch department');
+          return res.json();
+        })
+        .then((data) => {
+          // DepartmentHeadDetailView returns the serialized object
+          if (data && data.department) setFetchedDepartment(data.department);
+        })
+        .catch(() => {
+          // ignore failures - header will fall back to default role
+        });
+    }
+  }, [storedUser]);
+
+  // Show department for department head (use fetched value when available)
+  if (storedUser?.user_type === 'department_head' && (fetchedDepartment || storedUser?.department)) {
+    const dept = (fetchedDepartment || storedUser.department).toUpperCase();
+    resolvedRole = `${dept} Department Head`;
+  }
 
   const homePathMap = {
     Student: '/dashboard',
@@ -29,7 +70,15 @@ const Header = ({ userName, userRole }) => {
     'Department Head': '/depthead-dashboard',
   };
 
-  const homePath = homePathMap[resolvedRole] || '/';
+  // If `resolvedRole` contains the department name (e.g. "COMPUTER_SCIENCE Department Head")
+  // the map lookup above will fail. Detect the Department Head suffix and route
+  // to the department head dashboard in that case.
+  let homePath = '/';
+  if (typeof resolvedRole === 'string' && resolvedRole.includes('Department Head')) {
+    homePath = homePathMap['Department Head'];
+  } else {
+    homePath = homePathMap[resolvedRole] || '/';
+  }
 
   return (
     <header className="w-full bg-[#1f474d] shadow-lg sticky top-0 z-50 h-[80px] flex items-center border-b border-white/10">
@@ -37,14 +86,14 @@ const Header = ({ userName, userRole }) => {
         <div className="flex justify-between items-center">
           
           {/* Left: Brand Logo Area */}
-          <div className="flex items-center gap-3">
-             <img 
-                src={logo} 
-                alt="UPang SFME Logo" 
-                className="h-12 w-auto object-contain cursor-pointer"
-                 onClick={() => window.location.href = homePath}
-             />
-          </div>
+         <div className="flex items-center gap-3">
+           <SafeImg
+            src={logo}
+            alt="UPang SFME Logo"
+            className="h-12 w-auto object-contain cursor-pointer"
+            onClick={() => window.location.href = homePath}
+           />
+         </div>
 
           {/* Right: User Profile */}
           <div className="flex items-center gap-4">
@@ -54,7 +103,7 @@ const Header = ({ userName, userRole }) => {
              </div>
              
              <div className="relative">
-               <img
+               <SafeImg
                  src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
                  className="w-10 h-10 rounded-full border-2 border-[#ffcc00]/50 object-cover"
                  alt="avatar"

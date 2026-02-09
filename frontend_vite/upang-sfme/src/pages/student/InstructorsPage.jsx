@@ -13,7 +13,7 @@ const InstructorsPage = () => {
         <Sidebar 
           role="student" 
           activeItem="instructors" 
-          onLogout={() => alert('Logging out...')} 
+          
         />
         
         {/* Main Content */}

@@ -115,7 +115,7 @@ const DeptHeadDashboard = () => {
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
       
       <div className="flex flex-1 flex-row relative">
-        <Sidebar role="depthead" activeItem="dashboard" onLogout={() => alert('Logging out...')} />
+        <Sidebar role="depthead" activeItem="dashboard" />
         
         <main className="flex-1 overflow-y-auto">
           

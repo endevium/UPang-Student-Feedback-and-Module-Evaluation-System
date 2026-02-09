@@ -210,7 +210,7 @@ const StudentsManagement = () => {
       // Refresh the student list
       fetchStudents();
 
-    } catch (error) {
+    } catch {
       setBulkImportResult({
         success: false,
         message: 'Unable to reach the server. Please try again.',
@@ -224,7 +224,7 @@ const StudentsManagement = () => {
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">      
       <div className="flex flex-1 flex-row relative">
-        <Sidebar role="depthead" activeItem="students" onLogout={() => alert('Logout')} />
+        <Sidebar role="depthead" activeItem="students" />
         
         <main className="flex-1 p-8 overflow-y-auto">
           {/* Page Title */}

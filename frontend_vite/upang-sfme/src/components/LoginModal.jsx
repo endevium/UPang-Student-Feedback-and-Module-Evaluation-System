@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../assets/navbar-logo.png';
 import studentGroupImg from '../assets/group-student2.png';
+import SafeImg from './SafeImg';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
@@ -57,6 +58,35 @@ const LoginModal = ({ isOpen, onClose }) => {
       setConfirmPassword('');
       setChangeError('');
     };
+  }, [isOpen]);
+
+  // If the modal is opened but the user is already authenticated,
+  // immediately redirect them to their dashboard and close the modal.
+  useEffect(() => {
+    if (!isOpen) return;
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+
+    let storedUser = null;
+    try {
+      storedUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+    } catch {
+      storedUser = null;
+    }
+
+    const returnedRole = storedUser?.user_type;
+    if (returnedRole === 'student') {
+      window.history.replaceState({}, '', '/dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } else if (returnedRole === 'faculty') {
+      window.history.replaceState({}, '', '/faculty-dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
+      window.history.replaceState({}, '', '/depthead-dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+
+    onClose();
   }, [isOpen]);
 
   useEffect(() => {
@@ -256,10 +286,10 @@ const LoginModal = ({ isOpen, onClose }) => {
           
           {/* Left Side: Students Image (Hidden on mobile/tablet) */}
           <div className="hidden lg:flex lg:flex-1 relative bg-transparent items-end justify-center overflow-visible p-12">
-            <img 
-              src={studentGroupImg} 
-              alt="Students" 
-              className="w-full h-auto z-0 object-contain translate-x-[10%] scale-[1.3]" 
+            <SafeImg
+              src={studentGroupImg}
+              alt="Students"
+              className="w-full h-auto z-0 object-contain translate-x-[10%] scale-[1.3]"
             />
           </div>
 
@@ -267,7 +297,7 @@ const LoginModal = ({ isOpen, onClose }) => {
           <div className="flex-1 lg:flex-[1.2] p-6 sm:p-10 lg:p-12">
             {/* Logo Section */}
             <div className="flex justify-center lg:justify-start items-center mb-6">
-              <img src={logo} alt="Logo" className="w-[220px] sm:w-[300px] lg:w-[400px] h-auto" />
+              <SafeImg src={logo} alt="Logo" className="w-[220px] sm:w-[300px] lg:w-[400px] h-auto" />
             </div>
 
             {!mustChangePassword ? (
@@ -322,13 +352,24 @@ const LoginModal = ({ isOpen, onClose }) => {
                 </div>
 
                 <div>
-                  <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Password</label>
+                  <label className="
+                  block mb-2 
+                  text-xs font-bold 
+                  uppercase tracking-wider 
+                  opacity-80">Password</label>
                   <div className="flex items-center bg-white rounded-xl py-3 px-4">
                     <Lock className="text-slate-400 mr-3 shrink-0" size={20} />
                     <input 
                       type={showPassword ? "text" : "password"} 
                       placeholder="••••••••" 
-                      className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
+                      className="
+                      flex-1 
+                      border-none 
+                      outline-none 
+                      font-medium 
+                      text-slate-800
+                      bg-transparent 
+                      placeholder:text-slate-300"
                       value={password}
                       onChange={handlePasswordChange}
                       autoComplete="current-password"

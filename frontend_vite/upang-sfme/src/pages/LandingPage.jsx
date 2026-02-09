@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import SafeImg from '../components/SafeImg';
 import studentCutout from '../assets/students-cutout.png';
 import heroTextPng from '../assets/hero-text.png';
 import studentGroupImg from '../assets/group-students.png';
@@ -15,6 +16,29 @@ import featureIcon3 from '../assets/featurecardlogo3.png';
 import featureIcon4 from '../assets/featurecardlogo4.png';
 
 const LandingPage = () => {
+  useEffect(() => {
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+
+    let storedUser = null;
+    try {
+      storedUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+    } catch {
+      storedUser = null;
+    }
+
+    const returnedRole = storedUser?.user_type;
+    if (returnedRole === 'student') {
+      window.history.replaceState({}, '', '/dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } else if (returnedRole === 'faculty') {
+      window.history.replaceState({}, '', '/faculty-dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
+      window.history.replaceState({}, '', '/depthead-dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  }, []);
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-white selection:bg-yellow-400 selection:text-slate-900 overflow-x-hidden">
       
@@ -34,10 +58,10 @@ const LandingPage = () => {
             <div className="container mx-auto px-6 max-w-6xl grid grid-cols-1 md:grid-cols-2 items-center gap-12">
               
               <div className="hero-content flex flex-col items-center md:items-start text-center md:text-left">
-                <img 
-                  src={heroTextPng} 
-                  alt="YOUR VOICE SHAPES OUR FUTURE" 
-                  className="w-full max-w-[500px] lg:max-w-[700px] mb-8 md:-translate-x-10 lg:-translate-x-20 transition-transform duration-500" 
+                <SafeImg
+                  src={heroTextPng}
+                  alt="YOUR VOICE SHAPES OUR FUTURE"
+                  className="w-full max-w-[500px] lg:max-w-[700px] mb-8 md:-translate-x-10 lg:-translate-x-20 transition-transform duration-500"
                 />
                 <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
                   <button className="bg-[#ffcc00] text-[#041c32] px-8 py-4 rounded-lg font-bold hover:scale-105 transition-all shadow-lg text-center">
@@ -50,9 +74,9 @@ const LandingPage = () => {
               </div>
 
               <div className="relative flex justify-center items-end mt-12 md:mt-0">
-                <img 
-                  src={studentCutout} 
-                  alt="Students" 
+                <SafeImg
+                  src={studentCutout}
+                  alt="Students"
                   className="w-full max-w-[450px] lg:max-w-[600px] drop-shadow-2xl z-10"
                 />
               </div>
@@ -62,7 +86,7 @@ const LandingPage = () => {
           {/* WHY SECTION */}
           <section className="py-16 md:py-24 bg-slate-900/60 backdrop-blur-sm">
             <div className="container mx-auto px-6 max-w-6xl">
-              <img src={sectionText2} alt="Title" className="max-w-full h-auto mb-6 mx-auto md:mx-0" />
+              <SafeImg src={sectionText2} alt="Title" className="max-w-full h-auto mb-6 mx-auto md:mx-0" />
               <p className="text-lg md:text-xl opacity-90 tracking-wide leading-relaxed max-w-2xl mb-12 text-center md:text-left">
                 A modern, streamlined approach to course evaluation designed with students in mind.
               </p>
@@ -79,8 +103,8 @@ const LandingPage = () => {
                     key={i} 
                     className="bg-gradient-to-b from-[#23334a] to-[#254148] p-8 rounded-[24px] border border-white/10 hover:-translate-y-3 hover:shadow-2xl transition-all duration-300 flex flex-col items-start"
                   >
-                    <div className="w-full flex justify-center mb-6">
-                      <img src={feature.img} alt="Icon" className="w-20 h-20 object-contain" />
+                      <div className="w-full flex justify-center mb-6">
+                      <SafeImg src={feature.img} alt="Icon" className="w-20 h-20 object-contain" />
                     </div>
                     <p className="text-[0.95rem] leading-relaxed opacity-80 text-left">
                       {feature.text}
@@ -91,11 +115,11 @@ const LandingPage = () => {
 
               {/* Student Group Decoration */}
               <div className="relative mt-20 flex flex-col items-center md:items-start">
-                <img src={studentGroupImg} alt="Students" className="w-full max-w-[600px] z-10 rounded-2xl" />
-                <img 
-                  src={starDoodleImg} 
-                  alt="Decoration" 
-                  className="hidden lg:block absolute -right-20 -bottom-20 w-[300px] z-0 opacity-50" 
+                <SafeImg src={studentGroupImg} alt="Students" className="w-full max-w-[600px] z-10 rounded-2xl" />
+                <SafeImg
+                  src={starDoodleImg}
+                  alt="Decoration"
+                  className="hidden lg:block absolute -right-20 -bottom-20 w-[300px] z-0 opacity-50"
                 />
               </div>
             </div>
@@ -107,7 +131,7 @@ const LandingPage = () => {
       <section className="py-20 bg-[#0d1b2a]">
         <div className="container mx-auto px-6 max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
           <div className="order-2 lg:order-1">
-            <img src={sectionText} alt="Voice" className="max-w-full h-auto mb-8" />
+            <SafeImg src={sectionText} alt="Voice" className="max-w-full h-auto mb-8" />
             <p className="text-base opacity-85 mb-8 leading-relaxed">
               Your feedback is crucial in helping Upang maintain high educational standards.
             </p>
@@ -145,7 +169,7 @@ const LandingPage = () => {
         
         <div className="container mx-auto px-6 max-w-6xl relative z-0">
           <div className="text-center mb-16">
-            <img src={sectionText3} alt="How it works" className="mx-auto mb-6 max-w-full" />
+            <SafeImg src={sectionText3} alt="How it works" className="mx-auto mb-6 max-w-full" />
             <p className="text-lg opacity-80">Simple, straightforward evaluation process.</p>
           </div>
 

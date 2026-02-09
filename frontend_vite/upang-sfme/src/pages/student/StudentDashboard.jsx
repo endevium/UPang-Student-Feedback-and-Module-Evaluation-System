@@ -72,7 +72,7 @@ const StudentDashboard = () => {
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
       
       <div className="flex flex-1 flex-row relative">
-        <Sidebar role="student" activeItem="dashboard" onLogout={() => alert('Logging out...')} />
+        <Sidebar role="student" activeItem="dashboard" />
         
         <main className="flex-1 overflow-y-auto px-6 py-12">
           <div className="container mx-auto max-w-6xl space-y-12">

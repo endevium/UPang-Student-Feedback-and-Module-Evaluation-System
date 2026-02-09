@@ -4,6 +4,7 @@ import LoginModal from './LoginModal';
 
 const Navbar = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const isLoggedIn = Boolean(localStorage.getItem('authToken'));
 
   return (
     <>
@@ -56,12 +57,14 @@ const Navbar = () => {
               </li>
             </ul>
             <div className="nav-actions">
-              <button 
-                className="bg-white text-[#102a43] border-none py-2 px-6 rounded font-bold cursor-pointer transition-all duration-300 hover:bg-[#fbbf24] hover:-translate-y-0.5" 
-                onClick={() => setIsModalOpen(true)}
-              >
-                Log In
-              </button>
+              {!isLoggedIn && (
+                <button 
+                  className="bg-white text-[#102a43] border-none py-2 px-6 rounded font-bold cursor-pointer transition-all duration-300 hover:bg-[#fbbf24] hover:-translate-y-0.5" 
+                  onClick={() => setIsModalOpen(true)}
+                >
+                  Log In
+                </button>
+              )}
             </div>
           </div>
         </div>
