@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { ArrowLeft, ArrowRight, CheckCircle, Star, Send } from 'lucide-react';
 
@@ -7,40 +7,180 @@ const EvaluationForm = ({ moduleId }) => {
   const [responses, setResponses] = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [hoverStar, setHoverStar] = useState(null);
+  const [moduleData, setModuleData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+
+  useEffect(() => {
+    const fetchModuleData = async () => {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        setError('Not authenticated');
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE_URL}/students/me/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data?.detail || 'Failed to load module data');
+          return;
+        }
+        const list = data?.enrolled_modules || [];
+        const module = list.find(m => m.id === moduleId);
+        if (module) {
+          setModuleData({
+            code: module.code,
+            name: module.name,
+            instructor: module.instructor,
+          });
+        } else {
+          setError('Module not found');
+        }
+      } catch (err) {
+        setError('Failed to load module data');
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (moduleId) {
+      fetchModuleData();
+    }
+  }, [moduleId]);
 
   // Mock data matching your second example's structure
-  const moduleData = {
-    code: "CS401",
-    name: "Advanced Database Systems",
-    instructor: "Prof. Maria Santos",
-  };
+  const formType = 'Module'; // Change to 'Instructor' for instructor forms
 
-  const sections = [
+  const moduleSections = [
     {
       title: "Instructor Effectiveness",
-      description: "Evaluate the instructor's teaching methods and effectiveness",
+      description: "Evaluation of teaching methods and effectiveness",
       questions: [
         { id: "inst_1", category: "Instructor", question: "The instructor demonstrates mastery of the subject matter", type: "scale" },
         { id: "inst_2", category: "Instructor", question: "The instructor explains concepts clearly and effectively", type: "scale" },
+        { id: "inst_3", category: "Instructor", question: "The instructor is well-prepared for each class session", type: "scale" },
+        { id: "inst_4", category: "Instructor", question: "The instructor encourages student participation and questions", type: "scale" },
+        { id: "inst_5", category: "Instructor", question: "The instructor is available and responsive during consultation hours", type: "scale" },
       ],
     },
     {
-      title: "Course Content",
-      description: "Rate the quality and relevance of course materials",
+      title: "Course Content & Materials",
+      description: "Rating the quality and relevance of materials",
       questions: [
-        { id: "cont_1", category: "Content", question: "The course content is relevant to my program of study", type: "scale" },
-        { id: "cont_2", category: "Content", question: "Learning materials are helpful and clear", type: "scale" },
+        { id: "content_1", category: "Content", question: "The course content is relevant to my program of study", type: "scale" },
+        { id: "content_2", category: "Content", question: "Learning materials (slides, handouts, readings) are helpful and clear", type: "scale" },
+        { id: "content_3", category: "Content", question: "Assignments and activities reinforce learning objectives", type: "scale" },
+        { id: "content_4", category: "Content", question: "The workload is appropriate for the credit hours", type: "scale" },
+        { id: "content_5", category: "Content", question: "The course syllabus was followed consistently", type: "scale" },
       ],
     },
     {
-      title: "Overall Rating",
-      description: "Provide your overall assessment and feedback",
+      title: "Assessment & Feedback",
+      description: "Evaluation of grading and feedback mechanisms",
       questions: [
-        { id: "ovr_1", category: "Overall", question: "Overall rating of this course", type: "rating" },
-        { id: "feed_1", category: "Feedback", question: "What are the strengths of this course?", type: "text" },
+        { id: "assess_1", category: "Assessment", question: "Grading criteria are clear and fair", type: "scale" },
+        { id: "assess_2", category: "Assessment", question: "Feedback on assignments is timely and constructive", type: "scale" },
+        { id: "assess_3", category: "Assessment", question: "Examinations fairly assess understanding of course material", type: "scale" },
+        { id: "assess_4", category: "Assessment", question: "I received adequate feedback to improve my performance", type: "scale" },
+      ],
+    },
+    {
+      title: "Learning Environment",
+      description: "Rating the overall classroom experience",
+      questions: [
+        { id: "env_1", category: "Environment", question: "The classroom environment is conducive to learning", type: "scale" },
+        { id: "env_2", category: "Environment", question: "Technology and resources used in class are effective", type: "scale" },
+        { id: "env_3", category: "Environment", question: "The instructor creates an inclusive and respectful atmosphere", type: "scale" },
+        { id: "env_4", category: "Environment", question: "Overall, this course met my learning expectations", type: "scale" },
+      ],
+    },
+    {
+      title: "Overall Rating & Comments",
+      description: "Final assessment and open-ended feedback",
+      questions: [
+        { id: "overall_rating", category: "Overall", question: "Overall rating of this course", type: "rating" },
+        { id: "overall_instructor", category: "Overall", question: "Overall rating of the instructor", type: "rating" },
+        { id: "strengths", category: "Feedback", question: "What are the strengths of this course?", type: "text" },
+        { id: "improvements", category: "Feedback", question: "What improvements would you suggest?", type: "text" },
+        { id: "additional", category: "Feedback", question: "Additional comments or feedback", type: "text" },
       ],
     },
   ];
+
+  const instructorSections = [
+    {
+      title: "Teaching Competence",
+      description: "Focuses on the instructor's expertise and clarity",
+      questions: [
+        { id: "comp_1", category: "Competence", question: "Demonstrates comprehensive knowledge of the subject matter", type: "scale" },
+        { id: "comp_2", category: "Competence", question: "Explains concepts in a clear and understandable manner", type: "scale" },
+        { id: "comp_3", category: "Competence", question: "Uses relevant examples and real-world applications", type: "scale" },
+        { id: "comp_4", category: "Competence", question: "Answers student questions effectively and accurately", type: "scale" },
+        { id: "comp_5", category: "Competence", question: "Stays current with developments in the field", type: "scale" },
+      ],
+    },
+    {
+      title: "Teaching Methods & Delivery",
+      description: "Focuses on how the material is presented",
+      questions: [
+        { id: "method_1", category: "Methods", question: "Uses diverse teaching methods appropriate to the subject", type: "scale" },
+        { id: "method_2", category: "Methods", question: "Paces lessons appropriately for student comprehension", type: "scale" },
+        { id: "method_3", category: "Methods", question: "Presents material in an organized and logical manner", type: "scale" },
+        { id: "method_4", category: "Methods", question: "Integrates technology effectively in teaching", type: "scale" },
+        { id: "method_5", category: "Methods", question: "Provides clear instructions for assignments and activities", type: "scale" },
+      ],
+    },
+    {
+      title: "Student Engagement & Interaction",
+      description: "Focuses on classroom atmosphere and participation",
+      questions: [
+        { id: "engage_1", category: "Engagement", question: "Encourages active student participation in class", type: "scale" },
+        { id: "engage_2", category: "Engagement", question: "Creates opportunities for class discussion and collaboration", type: "scale" },
+        { id: "engage_3", category: "Engagement", question: "Shows enthusiasm and passion for the subject", type: "scale" },
+        { id: "engage_4", category: "Engagement", question: "Respects diverse perspectives and student opinions", type: "scale" },
+        { id: "engage_5", category: "Engagement", question: "Makes students feel comfortable asking questions", type: "scale" },
+      ],
+    },
+    {
+      title: "Assessment & Feedback",
+      description: "Focuses on how the instructor evaluates student work",
+      questions: [
+        { id: "feedback_1", category: "Feedback", question: "Provides clear grading criteria and expectations", type: "scale" },
+        { id: "feedback_2", category: "Feedback", question: "Returns graded work in a timely manner", type: "scale" },
+        { id: "feedback_3", category: "Feedback", question: "Gives constructive feedback that helps improve learning", type: "scale" },
+        { id: "feedback_4", category: "Feedback", question: "Assessments fairly measure course learning objectives", type: "scale" },
+        { id: "feedback_5", category: "Feedback", question: "Is fair and consistent in grading student work", type: "scale" },
+      ],
+    },
+    {
+      title: "Professionalism & Availability",
+      description: "Focuses on conduct, punctuality, and responsiveness",
+      questions: [
+        { id: "prof_1", category: "Professionalism", question: "Starts and ends classes on time", type: "scale" },
+        { id: "prof_2", category: "Professionalism", question: "Is well-prepared for each class session", type: "scale" },
+        { id: "prof_3", category: "Professionalism", question: "Maintains regular and announced office/consultation hours", type: "scale" },
+        { id: "prof_4", category: "Professionalism", question: "Responds to emails and inquiries promptly", type: "scale" },
+        { id: "prof_5", category: "Professionalism", question: "Demonstrates professionalism and respect toward students", type: "scale" },
+      ],
+    },
+    {
+      title: "Overall Rating & Comments",
+      description: "Final summary and qualitative feedback",
+      questions: [
+        { id: "overall_rating", category: "Overall", question: "Overall rating of this instructor's teaching effectiveness", type: "rating" },
+        { id: "overall_recommend", category: "Overall", question: "Would you recommend this instructor to other students?", type: "rating" },
+        { id: "strengths", category: "Feedback", question: "What are the instructor's greatest strengths?", type: "text" },
+        { id: "improvements", category: "Feedback", question: "What areas could the instructor improve?", type: "text" },
+        { id: "additional", category: "Feedback", question: "Additional comments or feedback", type: "text" },
+      ],
+    },
+  ];
+
+  const sections = formType === 'Module' ? moduleSections : instructorSections;
 
   const totalQuestions = sections.reduce((acc, s) => acc + s.questions.length, 0);
   const answeredCount = Object.keys(responses).length;
@@ -61,19 +201,32 @@ const EvaluationForm = ({ moduleId }) => {
     setSubmitted(true);
   };
 
-  if (submitted) {
+  if (loading) {
     return (
       <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
         <div className="flex flex-1">
-          <Sidebar role="student" activeItem="modules" onLogout={() => {}} />
+          <Sidebar role="student" activeItem="modules" />
           <main className="flex-1 flex items-center justify-center p-6">
-            <div className="text-center max-w-md bg-white p-12 rounded-3xl border border-slate-200 shadow-xl">
-              <div className="bg-emerald-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <CheckCircle className="h-10 w-10 text-emerald-500" />
-              </div>
-              <h1 className="text-3xl font-black text-slate-900 mb-2">Submitted!</h1>
-              <p className="text-slate-500 mb-8">Your feedback for {moduleData.name} has been recorded.</p>
-              <button onClick={() => window.history.back()} className="w-full bg-[#1f474d] text-white py-3 rounded-xl font-bold">Back to Modules</button>
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
+              <p className="text-slate-500">Loading evaluation form...</p>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !moduleData) {
+    return (
+      <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
+        <div className="flex flex-1">
+          <Sidebar role="student" activeItem="modules" />
+          <main className="flex-1 flex items-center justify-center p-6">
+            <div className="text-center max-w-md">
+              <h1 className="text-2xl font-bold text-slate-900 mb-2">Error</h1>
+              <p className="text-slate-500 mb-4">{error || 'Module not found'}</p>
+              <button onClick={() => window.history.back()} className="bg-[#1f474d] text-white px-4 py-2 rounded">Back to Modules</button>
             </div>
           </main>
         </div>
@@ -95,9 +248,9 @@ const EvaluationForm = ({ moduleId }) => {
                 <ArrowLeft size={16} /> Back to Modules
               </button>
               <div>
-                <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded text-xs font-mono font-bold">{moduleData.code}</span>
-                <h1 className="text-4xl font-black text-slate-900 mt-2">{moduleData.name}</h1>
-                <p className="text-slate-500">{moduleData.instructor}</p>
+                {formType === 'Module' && <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded text-xs font-mono font-bold">{moduleData.code}</span>}
+                <h1 className="text-4xl font-black text-slate-900 mt-2">{formType === 'Module' ? moduleData.name : moduleData.instructor}</h1>
+                {formType === 'Module' && <p className="text-slate-500">{moduleData.instructor}</p>}
               </div>
             </div>
 

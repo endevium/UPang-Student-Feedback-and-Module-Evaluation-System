@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Sidebar from "../../components/Sidebar";
 import { Search, BookOpen, CheckCircle, User, Clock } from "lucide-react";
 
@@ -6,18 +6,96 @@ const ModulePage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
 
-  const modules = [
-    { id: "CS401", code: "CS401", name: "Advanced Database Systems", instructor: "Prof. Maria Santos", credits: 3, status: "pending", description: "Advanced concepts in database design, optimization, and distributed databases." },
-    { id: "CS402", code: "CS402", name: "Software Engineering", instructor: "Dr. Juan Dela Cruz", credits: 3, status: "pending", description: "Software development lifecycle, agile methodologies, and project management." },
-    { id: "CS403", code: "CS403", name: "Web Development", instructor: "Prof. Ana Reyes", credits: 3, status: "completed", description: "Modern web technologies including React, Node.js, and full-stack development." },
-    { id: "MATH301", code: "MATH301", name: "Discrete Mathematics", instructor: "Prof. Lisa Gonzales", credits: 3, status: "completed", description: "Logic, set theory, graph theory, and combinatorics." },
-  ];
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  const [modulesFromApi, setModulesFromApi] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const searchedModules = modules.filter(
+  useEffect(() => {
+    const token = localStorage.getItem('authToken');
+    const fetchModules = async () => {
+      if (!token) {
+        setLoading(false);
+        return; // not logged in
+      }
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/students/me/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setLoadError(data?.detail || 'Unable to load modules');
+          return;
+        }
+        // API may return recent_modules, modules, or enrolled_modules
+        const list = data?.modules || data?.enrolled_modules || data?.recent_modules || [];
+        // fetch available module evaluation forms and create a set of subject codes
+        let availableModuleCodes = new Set();
+        // also build a set of the student's enrolled subject codes
+        let enrolledSubjectCodes = new Set();
+        // try to read enrolled subjects from common response shapes
+        const rawEnrolled = data?.enrolled_subjects || data?.student?.enrolled_subjects || null;
+        if (Array.isArray(rawEnrolled)) {
+          rawEnrolled.forEach(s => {
+            if (s && typeof s === 'object' && s.code) {
+              enrolledSubjectCodes.add(String(s.code).trim().toUpperCase());
+            }
+          });
+        }
+        try {
+          const formsRes = await fetch(`${API_BASE_URL}/module-evaluation-forms/`, { headers: { Authorization: `Bearer ${token}` } });
+          const formsData = await formsRes.json().catch(() => []);
+          if (formsRes.ok && Array.isArray(formsData)) {
+            formsData.forEach(f => {
+              if (f.status === 'Active') {
+                const raw = (f.title || f.subject_code || '').toString();
+                const code = raw.trim().toUpperCase();
+                if (code) availableModuleCodes.add(code);
+              }
+            });
+          }
+        } catch  {
+          // ignore form fetch errors; modules will just show no form available
+        }
+        // normalize minimal shape expected by this page
+        const normalized = Array.isArray(list)
+          ? list.map(m => {
+              const code = (m.code || m.module_code || m.id || '').toString();
+              // Only show a form if a form exists for the subject code AND the student is enrolled in that subject
+              const form_available = (
+                !!m.form_available || !!m.has_form || !!m.form_id ||
+                (availableModuleCodes.has(code.trim().toUpperCase()) && enrolledSubjectCodes.has(code.trim().toUpperCase()))
+              );
+              return ({
+                id: m.id || m.code || m.module_id || m.module || m.module_code,
+                code: code,
+                name: m.name || m.title || m.module_name || m.code,
+                instructor: m.instructor || m.instructor_name || m.lecturer || 'TBA',
+                credits: m.credits ?? 3,
+                status: form_available ? 'pending' : 'completed',
+                description: m.description || m.summary || '',
+                form_available: form_available,
+              })
+            })
+          : [];
+
+        setModulesFromApi(normalized.filter(m => m.form_available));
+      } catch  {
+        setLoadError('Unable to reach server');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchModules();
+  }, []);
+
+  const sourceModules = modulesFromApi || [];
+  const searchedModules = sourceModules.filter(
     (module) =>
-      module.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      module.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      module.instructor.toLowerCase().includes(searchQuery.toLowerCase())
+      (module.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (module.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (module.instructor || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredModules = searchedModules.filter((module) => {
@@ -61,6 +139,10 @@ const ModulePage = () => {
           {module.status === "completed" ? (
             <button className="w-full flex items-center justify-center py-2 px-4 rounded-md border border-slate-200 text-slate-400 cursor-not-allowed text-sm font-medium" disabled>
               <CheckCircle className="h-4 w-4 mr-2" /> Evaluation Completed
+            </button>
+          ) : !module.form_available ? (
+            <button className="w-full flex items-center justify-center py-2 px-4 rounded-md border border-slate-200 text-slate-400 text-sm font-medium cursor-not-allowed" disabled>
+              No Form Available
             </button>
           ) : (
             <button 
@@ -123,7 +205,18 @@ const ModulePage = () => {
 
             {/* Module Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {filteredModules.length > 0 ? (
+              {loading ? (
+                <div className="col-span-full py-20 text-center">
+                  <Clock className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-slate-800">Loading modules...</h3>
+                </div>
+              ) : loadError ? (
+                <div className="col-span-full py-20 text-center">
+                  <Clock className="h-12 w-12 text-red-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-slate-800">Error loading modules</h3>
+                  <p className="text-slate-500">{loadError}</p>
+                </div>
+              ) : filteredModules.length > 0 ? (
                 filteredModules.map((module) => <ModuleCard key={module.id} module={module} />)
               ) : (
                 <div className="col-span-full py-20 text-center bg-white border border-dashed border-slate-300 rounded-xl">

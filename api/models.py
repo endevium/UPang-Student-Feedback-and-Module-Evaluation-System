@@ -91,6 +91,9 @@ class EvaluationForm(models.Model):
     description = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=[('Active', 'Active'), ('Draft', 'Draft')], default='Draft')
     questions = models.JSONField(default=list)  # List of question objects
+    # Counters for quick display (kept in sync by application logic)
+    questions_count = models.PositiveIntegerField(default=0)
+    usage_count = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -100,6 +103,37 @@ class EvaluationForm(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class ModuleEvaluationForm(models.Model):
+    subject_code = models.CharField(max_length=200)
+    subject_description = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=[('Active', 'Active'), ('Draft', 'Draft')], default='Draft')
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "module_evaluation_forms"
+        managed = True
+
+    def __str__(self):
+        return self.subject_code
+
+
+class InstructorEvaluationForm(models.Model):
+    instructor_name = models.CharField(max_length=200)
+    status = models.CharField(max_length=20, choices=[('Active', 'Active'), ('Draft', 'Draft')], default='Draft')
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "instructor_evaluation_forms"
+        managed = True
+
+    def __str__(self):
+        return self.instructor_name
 
 class AuditLog(models.Model):
     user = models.CharField(max_length=100)  # User who performed the action

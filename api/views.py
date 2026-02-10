@@ -251,27 +251,46 @@ class StudentMeView(APIView):
 
         try:
             student = Student.objects.get(id=student_id)
+            # Provide enrolled subjects/modules so frontend can determine available forms
+            enrolled = student.enrolled_subjects or []
+            enrolled_codes = [item.get('code', '').strip().upper() for item in enrolled if isinstance(item, dict) and item.get('code')]
+            # Normalize into a minimal module shape expected by frontend
+            enrolled_modules = []
+            if isinstance(enrolled, list):
+                for item in enrolled:
+                    if isinstance(item, dict) and item.get('code'):
+                        c = item['code'].strip()
+                        enrolled_modules.append({
+                            "id": c,
+                            "code": c,
+                            "name": item.get('description', c),
+                            "instructor": 'TBA',
+                            "description": item.get('description', ''),
+                            "form_available": False,
+                        })
+
+            return Response({
+                "student": {
+                    "id": student.id,
+                    "student_number": student.student_number,
+                    "email": student.email,
+                    "firstname": student.firstname,
+                    "lastname": student.lastname,
+                    "program": student.program,
+                    "year_level": student.year_level,
+                    "enrolled_subjects": enrolled,
+                },
+                "stats": {
+                    "total_modules": len(enrolled_modules),
+                    "instructors": 0,
+                    "completed": 0,
+                    "pending": 0,
+                },
+                "enrolled_modules": enrolled_modules,
+                "recent_modules": enrolled_modules[:5],
+            }, status=status.HTTP_200_OK)
         except Student.DoesNotExist:
             return Response({"detail": "Student not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        return Response({
-            "student": {
-                "id": student.id,
-                "student_number": student.student_number,
-                "email": student.email,
-                "firstname": student.firstname,
-                "lastname": student.lastname,
-                "program": student.program,
-                "year_level": student.year_level,
-            },
-            "stats": {
-                "total_modules": 0,
-                "instructors": 0,
-                "completed": 0,
-                "pending": 0,
-            },
-            "recent_modules": [],
-        }, status=status.HTTP_200_OK)
 class EvaluationFormListCreateView(generics.ListCreateAPIView):
     queryset = EvaluationForm.objects.all()
     serializer_class = EvaluationFormSerializer
@@ -386,6 +405,195 @@ class EvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
             category='FORM MANAGEMENT',
             status='Success',
             message=f'Deleted form: {instance.title}',
+            ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
+        )
+        super().perform_destroy(instance)
+
+
+class ModuleEvaluationFormListCreateView(generics.ListCreateAPIView):
+    queryset = ModuleEvaluationForm.objects.all()
+    serializer_class = ModuleEvaluationFormSerializer
+
+    def get_queryset(self):
+        queryset = ModuleEvaluationForm.objects.filter(status='Active')
+        token = _get_bearer_token(self.request)
+        if token:
+            try:
+                decoded_token = AccessToken(token)
+                if decoded_token.get("role") == "student":
+                    student_id = decoded_token.get("legacy_user_id")
+                    if student_id:
+                        try:
+                            student = Student.objects.get(id=student_id)
+                            enrolled = student.enrolled_subjects or []
+                            enrolled_codes = [item.get('code', '').strip().upper() for item in enrolled if isinstance(item, dict) and item.get('code')]
+                            if enrolled_codes:
+                                queryset = queryset.filter(title__in=enrolled_codes)
+                        except Student.DoesNotExist:
+                            pass
+            except:
+                pass
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded_token = AccessToken(token)
+        except:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        request.user = None
+        response = super().create(request, *args, **kwargs)
+        if response.status_code == status.HTTP_201_CREATED:
+            form_data = response.data
+            user_name = 'System'
+            AuditLog.objects.create(
+                user=user_name,
+                role='Depthead',
+                action='Created Module Evaluation Form',
+                category='FORM MANAGEMENT',
+                status='Success',
+                message=f'Created new module form: {form_data.get("title", "Unknown")}',
+                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+            )
+        return response
+
+
+class ModuleEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = ModuleEvaluationForm.objects.all()
+    serializer_class = ModuleEvaluationFormSerializer
+
+    def perform_update(self, serializer):
+        token = _get_bearer_token(self.request)
+        if token:
+            try:
+                decoded_token = AccessToken(token)
+                if decoded_token.get("role") == "department_head":
+                    dept_head_id = decoded_token.get("legacy_user_id")
+                    if dept_head_id:
+                        try:
+                            dept_head = DepartmentHead.objects.get(id=dept_head_id)
+                            self.request.user = dept_head
+                        except DepartmentHead.DoesNotExist:
+                            pass
+            except:
+                pass
+
+        old_instance = self.get_object()
+        super().perform_update(serializer)
+        new_instance = serializer.instance
+        user_name = 'System'
+        if hasattr(self.request, 'user') and self.request.user:
+            user_name = f"{self.request.user.firstname} {self.request.user.lastname}".strip() or self.request.user.email or 'Depthead User'
+        AuditLog.objects.create(
+            user=user_name,
+            role='Depthead',
+            action='Updated Module Evaluation Form',
+            category='FORM MANAGEMENT',
+            status='Success',
+            message=f'Updated module form: {getattr(new_instance, "subject_code", "Unknown")}',
+            ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
+        )
+
+    def perform_destroy(self, instance):
+        user_name = 'System'
+        if hasattr(self.request, 'user') and self.request.user:
+            user_name = f"{self.request.user.firstname} {self.request.user.lastname}".strip() or self.request.user.email or 'Depthead User'
+        AuditLog.objects.create(
+            user=user_name,
+            role='Depthead',
+            action='Deleted Module Evaluation Form',
+            category='FORM MANAGEMENT',
+            status='Success',
+            message=f'Deleted module form: {getattr(instance, "subject_code", "Unknown")}',
+            ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
+        )
+        super().perform_destroy(instance)
+
+
+class InstructorEvaluationFormListCreateView(generics.ListCreateAPIView):
+    queryset = InstructorEvaluationForm.objects.all()
+    serializer_class = InstructorEvaluationFormSerializer
+
+    def create(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded_token = AccessToken(token)
+        except:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        request.user = None
+        response = super().create(request, *args, **kwargs)
+        if response.status_code == status.HTTP_201_CREATED:
+            form_data = response.data
+            user_name = 'System'
+            AuditLog.objects.create(
+                user=user_name,
+                role='Depthead',
+                action='Created Instructor Evaluation Form',
+                category='FORM MANAGEMENT',
+                status='Success',
+                message=f'Created new instructor form: {form_data.get("title", "Unknown")}',
+                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+            )
+        return response
+
+
+class InstructorEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = InstructorEvaluationForm.objects.all()
+    serializer_class = InstructorEvaluationFormSerializer
+
+    def perform_update(self, serializer):
+        token = _get_bearer_token(self.request)
+        if token:
+            try:
+                decoded_token = AccessToken(token)
+                if decoded_token.get("role") == "department_head":
+                    dept_head_id = decoded_token.get("legacy_user_id")
+                    if dept_head_id:
+                        try:
+                            dept_head = DepartmentHead.objects.get(id=dept_head_id)
+                            self.request.user = dept_head
+                        except DepartmentHead.DoesNotExist:
+                            pass
+            except:
+                pass
+
+        old_instance = self.get_object()
+        super().perform_update(serializer)
+        new_instance = serializer.instance
+        user_name = 'System'
+        if hasattr(self.request, 'user') and self.request.user:
+            user_name = f"{self.request.user.firstname} {self.request.user.lastname}".strip() or self.request.user.email or 'Depthead User'
+        AuditLog.objects.create(
+            user=user_name,
+            role='Depthead',
+            action='Updated Instructor Evaluation Form',
+            category='FORM MANAGEMENT',
+            status='Success',
+            message=f'Updated instructor form: {getattr(new_instance, "instructor_name", "Unknown")}',
+            ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
+        )
+
+    def perform_destroy(self, instance):
+        user_name = 'System'
+        if hasattr(self.request, 'user') and self.request.user:
+            user_name = f"{self.request.user.firstname} {self.request.user.lastname}".strip() or self.request.user.email or 'Depthead User'
+        AuditLog.objects.create(
+            user=user_name,
+            role='Depthead',
+            action='Deleted Instructor Evaluation Form',
+            category='FORM MANAGEMENT',
+            status='Success',
+            message=f'Deleted instructor form: {getattr(instance, "instructor_name", "Unknown")}',
             ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
         )
         super().perform_destroy(instance)

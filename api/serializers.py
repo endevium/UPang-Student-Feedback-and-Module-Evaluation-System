@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Student, Faculty, DepartmentHead, EvaluationForm, AuditLog
+from .models import Student, Faculty, DepartmentHead, EvaluationForm, AuditLog, ModuleEvaluationForm, InstructorEvaluationForm
 from django.contrib.auth import authenticate
 
 # Students
@@ -359,6 +359,52 @@ class EvaluationFormSerializer(serializers.ModelSerializer):
     def get_usage_count(self, obj):
         # Placeholder for usage count, can be calculated based on evaluations
         return 0
+
+
+class ModuleEvaluationFormSerializer(serializers.ModelSerializer):
+    # expose `subject_code` as `title` for frontend compatibility
+    title = serializers.CharField(source='subject_code')
+
+    class Meta:
+        model = ModuleEvaluationForm
+        fields = [
+            'id',
+            'title',
+            'subject_description',
+            'description',
+            'status',
+            'created_at',
+        ]
+
+    def create(self, validated_data):
+        # `title` is mapped to subject_code via source
+        # If frontend sent `description` but not `subject_description`, copy it over
+        if 'subject_description' not in validated_data and 'description' in validated_data:
+            validated_data['subject_description'] = validated_data.get('description')
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if 'subject_description' not in validated_data and 'description' in validated_data:
+            validated_data['subject_description'] = validated_data.get('description')
+        return super().update(instance, validated_data)
+
+
+class InstructorEvaluationFormSerializer(serializers.ModelSerializer):
+    # expose `instructor_name` as `title` for frontend compatibility
+    title = serializers.CharField(source='instructor_name')
+
+    class Meta:
+        model = InstructorEvaluationForm
+        fields = [
+            'id',
+            'title',
+            'description',
+            'status',
+            'created_at',
+        ]
+
+    def create(self, validated_data):
+        return super().create(validated_data)
 
 class AuditLogSerializer(serializers.ModelSerializer):
     time = serializers.SerializerMethodField()

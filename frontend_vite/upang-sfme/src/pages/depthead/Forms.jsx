@@ -17,6 +17,10 @@ import {
 const EvaluationForms = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
+  const getEndpointForType = (type) => {
+    return type === 'Module' ? 'module-evaluation-forms' : 'instructor-evaluation-forms';
+  };
+
   // Helper function to get auth headers
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken');
@@ -36,7 +40,9 @@ const EvaluationForms = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [formValues, setFormValues] = useState({
-    title: '',
+    subject_code: '',
+    subject_description: '',
+    instructor_name: '',
     form_type: 'Module',
     description: '',
     status: 'Draft',
@@ -47,16 +53,23 @@ const EvaluationForms = () => {
       setIsLoading(true);
       setLoadError('');
       try {
-        const res = await fetch(`${API_BASE_URL}/evaluation-forms/`, {
-          headers: getAuthHeaders(),
-        });
-        const data = await res.json().catch(() => []);
-        if (!res.ok) {
-          setLoadError(data?.detail || 'Unable to load forms.');
-          return;
-        }
-        const list = Array.isArray(data) ? data : [];
-        setFormsList(list);
+          const [modulesRes, instructorsRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/${getEndpointForType('Module')}/`, { headers: getAuthHeaders() }),
+            fetch(`${API_BASE_URL}/${getEndpointForType('Instructor')}/`, { headers: getAuthHeaders() }),
+          ]);
+
+          const modules = await modulesRes.json().catch(() => []);
+          const instructors = await instructorsRes.json().catch(() => []);
+
+          if (!modulesRes.ok && !instructorsRes.ok) {
+            setLoadError('Unable to load forms.');
+            return;
+          }
+
+          const mappedModules = Array.isArray(modules) ? modules.map(m => ({ ...m, form_type: 'Module' })) : [];
+          const mappedInstructors = Array.isArray(instructors) ? instructors.map(i => ({ ...i, form_type: 'Instructor' })) : [];
+
+          setFormsList([...mappedModules, ...mappedInstructors]);
       } catch {
         setLoadError('Unable to reach the server. Please try again.');
       } finally {
@@ -75,7 +88,9 @@ const EvaluationForms = () => {
 
   const resetForm = () => {
     setFormValues({
-      title: '',
+      subject_code: '',
+      subject_description: '',
+      instructor_name: '',
       form_type: 'Module',
       description: '',
       status: 'Draft',
@@ -97,22 +112,34 @@ const EvaluationForms = () => {
     setErrorMessage('');
 
     // Basic Validation
-    const required = ['title', 'form_type'];
+    let required = [];
+    if (formValues.form_type === 'Module') {
+      required = ['subject_code', 'subject_description'];
+    } else {
+      required = ['instructor_name'];
+    }
     const missing = required.find(key => !formValues[key].trim());
     if (missing) {
       setErrorMessage('Please fill in all required fields.');
       return;
     }
 
+    const dataToSend = {
+      title: formValues.form_type === 'Module' ? formValues.subject_code : formValues.instructor_name,
+      description: formValues.form_type === 'Module' ? formValues.subject_description : formValues.description,
+      status: formValues.status,
+    };
+
     try {
       setIsSubmitting(true);
-      const response = await fetch(`${API_BASE_URL}/evaluation-forms/`, {
+      const endpoint = getEndpointForType(formValues.form_type);
+      const response = await fetch(`${API_BASE_URL}/${endpoint}/`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           ...getAuthHeaders()
         },
-        body: JSON.stringify(formValues),
+        body: JSON.stringify(dataToSend),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -122,7 +149,9 @@ const EvaluationForms = () => {
         return;
       }
 
-      setFormsList((prev) => [data, ...prev]);
+      // Ensure created item has form_type for UI
+      const created = { ...data, form_type: formValues.form_type };
+      setFormsList((prev) => [created, ...prev]);
       closeModal();
     } catch {
       setErrorMessage('Server connection failed.');
@@ -136,32 +165,78 @@ const EvaluationForms = () => {
     setErrorMessage('');
 
     // Basic Validation
-    const required = ['title', 'form_type'];
+    let required = [];
+    if (formValues.form_type === 'Module') {
+      required = ['subject_code', 'subject_description'];
+    } else {
+      required = ['instructor_name'];
+    }
     const missing = required.find(key => !formValues[key].trim());
     if (missing) {
       setErrorMessage('Please fill in all required fields.');
       return;
     }
 
+    const dataToSend = {
+      title: formValues.form_type === 'Module' ? formValues.subject_code : formValues.instructor_name,
+      description: formValues.form_type === 'Module' ? formValues.subject_description : formValues.description,
+      status: formValues.status,
+    };
+
     try {
       setIsSubmitting(true);
-      const response = await fetch(`${API_BASE_URL}/evaluation-forms/${selectedForm.id}/`, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        },
-        body: JSON.stringify(formValues),
-      });
+      // If form type changed during edit, create new record then delete old one
+      const originalType = selectedForm.form_type || selectedForm.formType || 'Module';
+      const targetType = formValues.form_type;
 
-      const data = await response.json().catch(() => ({}));
+      if (originalType === targetType) {
+        const endpoint = getEndpointForType(targetType);
+        const response = await fetch(`${API_BASE_URL}/${endpoint}/${selectedForm.id}/`, {
+          method: 'PUT',
+          headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+          },
+          body: JSON.stringify(dataToSend),
+        });
 
-      if (!response.ok) {
-        setErrorMessage(data?.detail || 'Unable to update form. Please check details.');
-        return;
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          setErrorMessage(data?.detail || 'Unable to update form. Please check details.');
+          return;
+        }
+
+        const updated = { ...data, form_type: targetType };
+        setFormsList((prev) => prev.map(f => f.id === selectedForm.id ? updated : f));
+      } else {
+        // create new in target, then delete original
+        const targetEndpoint = getEndpointForType(targetType);
+        const createRes = await fetch(`${API_BASE_URL}/${targetEndpoint}/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify(dataToSend),
+        });
+
+        const created = await createRes.json().catch(() => ({}));
+        if (!createRes.ok) {
+          setErrorMessage(created?.detail || 'Unable to move form to new type.');
+          return;
+        }
+
+        const createdWithType = { ...created, form_type: targetType };
+        // delete original
+        const origEndpoint = getEndpointForType(originalType);
+        await fetch(`${API_BASE_URL}/${origEndpoint}/${selectedForm.id}/`, {
+          method: 'DELETE',
+          headers: getAuthHeaders(),
+        }).catch(() => {});
+
+        setFormsList((prev) => prev.map(f => f.id === selectedForm.id ? createdWithType : f));
       }
-
-      setFormsList((prev) => prev.map(f => f.id === selectedForm.id ? data : f));
       closeModal();
     } catch {
       setErrorMessage('Server connection failed.');
@@ -177,22 +252,48 @@ const EvaluationForms = () => {
 
   const handleEdit = (form) => {
     setSelectedForm(form);
-    setFormValues({
-      title: form.title,
-      form_type: form.form_type,
-      description: form.description || '',
-      status: form.status,
-    });
+    if (form.form_type === 'Module') {
+      setFormValues({
+        subject_code: form.title,
+        subject_description: form.description || '',
+        instructor_name: '',
+        form_type: form.form_type,
+        description: '',
+        status: form.status,
+      });
+    } else {
+      setFormValues({
+        subject_code: '',
+        subject_description: '',
+        instructor_name: form.title,
+        form_type: form.form_type,
+        description: form.description || '',
+        status: form.status,
+      });
+    }
     setIsEditOpen(true);
   };
 
   const handleDuplicate = (form) => {
-    setFormValues({
-      title: `${form.title} (Copy)`,
-      form_type: form.form_type,
-      description: form.description || '',
-      status: 'Draft',
-    });
+    if (form.form_type === 'Module') {
+      setFormValues({
+        subject_code: `${form.title} (Copy)`,
+        subject_description: form.description || '',
+        instructor_name: '',
+        form_type: form.form_type,
+        description: '',
+        status: 'Draft',
+      });
+    } else {
+      setFormValues({
+        subject_code: '',
+        subject_description: '',
+        instructor_name: `${form.title} (Copy)`,
+        form_type: form.form_type,
+        description: form.description || '',
+        status: 'Draft',
+      });
+    }
     setIsAddOpen(true);
   };
 
@@ -204,7 +305,8 @@ const EvaluationForms = () => {
   const confirmDelete = async () => {
     try {
       setIsSubmitting(true);
-      const response = await fetch(`${API_BASE_URL}/evaluation-forms/${selectedForm.id}/`, {
+      const endpoint = getEndpointForType(selectedForm.form_type);
+      const response = await fetch(`${API_BASE_URL}/${endpoint}/${selectedForm.id}/`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
@@ -388,52 +490,78 @@ const EvaluationForms = () => {
             </div>
 
             <form className="p-6 space-y-4" onSubmit={isEditOpen ? handleEditForm : handleAddForm}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Title</label>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Form Type</label>
+                <select
+                  name="form_type"
+                  value={formValues.form_type}
+                  onChange={handleInputChange}
+                  className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                >
+                  <option value="Module">Module</option>
+                  <option value="Instructor">Instructor</option>
+                </select>
+              </div>
+
+              {formValues.form_type === 'Module' ? (
+                <>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Subject Code</label>
+                    <input
+                      name="subject_code"
+                      value={formValues.subject_code}
+                      onChange={handleInputChange}
+                      placeholder="e.g., CS101"
+                      className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Subject Description</label>
+                    <input
+                      name="subject_description"
+                      value={formValues.subject_description}
+                      onChange={handleInputChange}
+                      placeholder="e.g., Introduction to Computer Science"
+                      className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Name of the Instructor</label>
                   <input
-                    name="title"
-                    value={formValues.title}
+                    name="instructor_name"
+                    value={formValues.instructor_name}
                     onChange={handleInputChange}
-                    placeholder="e.g., Standard Module Evaluation Form"
+                    placeholder="e.g., John Doe"
                     className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
                   />
                 </div>
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Form Type</label>
-                  <select
-                    name="form_type"
-                    value={formValues.form_type}
-                    onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  >
-                    <option value="Module">Module</option>
-                    <option value="Instructor">Instructor</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</label>
-                  <select
-                    name="status"
-                    value={formValues.status}
-                    onChange={handleInputChange}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  >
-                    <option value="Draft">Draft</option>
-                    <option value="Active">Active</option>
-                  </select>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Description</label>
-                  <textarea
-                    name="description"
-                    value={formValues.description}
-                    onChange={handleInputChange}
-                    placeholder="Brief description of the form..."
-                    rows={3}
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  />
-                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</label>
+                <select
+                  name="status"
+                  value={formValues.status}
+                  onChange={handleInputChange}
+                  className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                >
+                  <option value="Draft">Draft</option>
+                  <option value="Active">Active</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Description</label>
+                <textarea
+                  name="description"
+                  value={formValues.description}
+                  onChange={handleInputChange}
+                  placeholder="Brief description..."
+                  rows={3}
+                  className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                />
               </div>
 
               {errorMessage && (
@@ -479,7 +607,9 @@ const EvaluationForms = () => {
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Title</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    {selectedForm.form_type === 'Module' ? 'Subject Code' : 'Name of the Instructor'}
+                  </label>
                   <p className="mt-2 text-sm text-slate-800">{selectedForm.title}</p>
                 </div>
                 <div>
@@ -497,7 +627,9 @@ const EvaluationForms = () => {
                   <p className="mt-2 text-sm text-slate-800">{selectedForm.created_at ? new Date(selectedForm.created_at).toLocaleDateString() : 'N/A'}</p>
                 </div>
                 <div className="md:col-span-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Description</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    {selectedForm.form_type === 'Module' ? 'Subject Description' : 'Description'}
+                  </label>
                   <p className="mt-2 text-sm text-slate-800">{selectedForm.description || 'No description provided'}</p>
                 </div>
                 <div>

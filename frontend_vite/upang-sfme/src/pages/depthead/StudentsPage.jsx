@@ -42,7 +42,8 @@ const StudentsManagement = () => {
     year_level: '',
     birthdate: '',
     enrolled_subjects: [],
-    current_subject_input: '',
+    subject_code_input: '',
+    subject_description_input: '',
     block_section: '',
   });
 
@@ -70,7 +71,8 @@ const StudentsManagement = () => {
       year_level: '',
       birthdate: '',
       enrolled_subjects: [],
-      current_subject_input: '',
+      subject_code_input: '',
+      subject_description_input: '',
       block_section: '',
     });
     setErrorMessage('');
@@ -148,12 +150,14 @@ const StudentsManagement = () => {
   };
 
   const addSubject = () => {
-    const value = String(formValues.current_subject_input || '').trim();
-    if (!value) return;
+    const code = String(formValues.subject_code_input || '').trim();
+    const desc = String(formValues.subject_description_input || '').trim();
+    if (!code || !desc) return;
     setFormValues((prev) => ({
       ...prev,
-      enrolled_subjects: [...(prev.enrolled_subjects || []), value],
-      current_subject_input: '',
+      enrolled_subjects: [...(prev.enrolled_subjects || []), { code, description: desc }],
+      subject_code_input: '',
+      subject_description_input: '',
     }));
     // clear enrolled_subjects error when a subject is added
     setFormErrors((prev) => ({ ...prev, enrolled_subjects: undefined }));
@@ -196,7 +200,7 @@ const StudentsManagement = () => {
     name: `${student.firstname || ''} ${student.lastname || ''}`.trim(),
     program: student.program || 'N/A',
     subject: Array.isArray(student.enrolled_subjects)
-      ? student.enrolled_subjects.join(', ')
+      ? student.enrolled_subjects.map(s => typeof s === 'object' ? `${s.code} - ${s.description}` : s).join(', ')
       : student.enrolled_subject || student.subject || 'N/A',
     block: student.block_section || student.block || 'N/A',
     year: formatYearLabel(student.year_level),
@@ -421,7 +425,7 @@ const StudentsManagement = () => {
         program: data.program || prev.program,
         year_level: data.year_level ? String(data.year_level) : prev.year_level,
         birthdate: data.birthdate || prev.birthdate,
-        enrolled_subjects: Array.isArray(data.enrolled_subjects) ? data.enrolled_subjects : (data.enrolled_subjects ? [data.enrolled_subjects] : prev.enrolled_subjects),
+        enrolled_subjects: Array.isArray(data.enrolled_subjects) ? data.enrolled_subjects.map(s => typeof s === 'object' ? s : { code: s, description: '' }) : [],
         block_section: data.block_section || prev.block_section,
       }));
       setIsEditing(true);
@@ -738,10 +742,17 @@ const StudentsManagement = () => {
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Enrolled Subjects</label>
                   <div className="flex gap-2 mt-2">
                     <input
-                      name="current_subject_input"
-                      value={formValues.current_subject_input}
+                      name="subject_code_input"
+                      value={formValues.subject_code_input}
                       onChange={handleInputChange}
-                      placeholder="e.g., COMP101 - Programming Fundamentals"
+                      placeholder="Subject Code (e.g., COMP101)"
+                      className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    />
+                    <input
+                      name="subject_description_input"
+                      value={formValues.subject_description_input}
+                      onChange={handleInputChange}
+                      placeholder="Subject Description"
                       className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
                     />
                     <button
@@ -755,7 +766,7 @@ const StudentsManagement = () => {
                   <div className="mt-2 flex flex-wrap gap-2">
                     {(formValues.enrolled_subjects || []).map((s, i) => (
                       <div key={i} className="px-3 py-1 bg-slate-100 rounded-full flex items-center gap-2 text-sm">
-                        <span>{s}</span>
+                        <span>{s.code} - {s.description}</span>
                         <button type="button" onClick={() => removeSubject(i)} className="text-rose-600 font-bold">×</button>
                       </div>
                     ))}
@@ -835,7 +846,7 @@ const StudentsManagement = () => {
                 <div><strong>Year Level:</strong> {selectedStudent.year_level}</div>
                 <div><strong>Birthdate:</strong> {selectedStudent.birthdate}</div>
                 <div><strong>Block / Section:</strong> {selectedStudent.block_section}</div>
-                <div><strong>Enrolled Subjects:</strong> {Array.isArray(selectedStudent.enrolled_subjects) ? selectedStudent.enrolled_subjects.join(', ') : selectedStudent.enrolled_subjects}</div>
+                <div><strong>Enrolled Subjects:</strong> {Array.isArray(selectedStudent.enrolled_subjects) ? selectedStudent.enrolled_subjects.map(s => typeof s === 'object' ? `${s.code} - ${s.description}` : s).join(', ') : selectedStudent.enrolled_subjects}</div>
                 <div className="flex justify-end pt-4">
                   <button className="px-4 py-2 bg-[#1f474d] text-white rounded-lg" onClick={() => { setSelectedStudent(null); }}>Close</button>
                 </div>
@@ -895,9 +906,9 @@ const StudentsManagement = () => {
                 <div className="text-sm text-slate-600 space-y-1">
                   <div><strong>Required columns:</strong> email, firstname, lastname, student_id</div>
                   <div><strong>Optional columns:</strong> department, year_level, course, enrolled_subjects, block_section</div>
-                  <div><strong>Notes:</strong> For multiple subjects include `enrolled_subjects` as a semicolon-separated list (no spaces after semicolon).</div>
+                  <div><strong>Notes:</strong> For enrolled_subjects, use JSON format like <code>{`[{'code': 'COMP101', 'description': 'Programming Fundamentals'}, ...]`}</code></div>
                   <div><strong>Example:</strong> email,firstname,lastname,student_id,department,year_level,enrolled_subjects,block_section</div>
-                  <div><strong>Sample row:</strong> john.doe@upang.edu.ph,John,,Doe,2021-0001,Computer Science,3,COMP101 - Programming Fundamentals;COMP102 - Data Structures,A1</div>
+                  <div><strong>Sample row:</strong> john.doe@upang.edu.ph,John,,Doe,2021-0001,Computer Science,3,{`[{'code': 'COMP101', 'description': 'Programming Fundamentals'}]`},A1</div>
                 </div>
               </div>
 
@@ -906,7 +917,7 @@ const StudentsManagement = () => {
                 <div className={`rounded-lg p-4 ${bulkImportResult.success ? 'bg-emerald-50 border border-emerald-200' : 'bg-rose-50 border border-rose-200'}`}>
                   <div className="flex items-start gap-3">
                     <div className={`text-lg ${bulkImportResult.success ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {bulkImportResult.success ? '✅' : '❌'}
+                      {bulkImportResult.success ? 'OK' : 'FAIL'}
                     </div>
                     <div className="flex-1">
                       <h5 className={`font-semibold ${bulkImportResult.success ? 'text-emerald-800' : 'text-rose-800'}`}>
@@ -925,7 +936,7 @@ const StudentsManagement = () => {
                           <p className="text-sm font-semibold text-rose-800">Errors:</p>
                           <ul className="text-sm text-rose-700 mt-1 space-y-1 max-h-32 overflow-y-auto">
                             {bulkImportResult.errors.map((error, index) => (
-                              <li key={index}>• {error}</li>
+                              <li key={index}>- {error}</li>
                             ))}
                           </ul>
                         </div>

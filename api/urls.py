@@ -19,6 +19,10 @@ urlpatterns = [
 
     path("evaluation-forms/", views.EvaluationFormListCreateView.as_view(), name="evaluation-form-list-create"),
     path("evaluation-forms/<int:pk>/", views.EvaluationFormDetailView.as_view(), name="evaluation-form-detail"),
+    path("module-evaluation-forms/", views.ModuleEvaluationFormListCreateView.as_view(), name="module-evaluation-form-list-create"),
+    path("module-evaluation-forms/<int:pk>/", views.ModuleEvaluationFormDetailView.as_view(), name="module-evaluation-form-detail"),
+    path("instructor-evaluation-forms/", views.InstructorEvaluationFormListCreateView.as_view(), name="instructor-evaluation-form-list-create"),
+    path("instructor-evaluation-forms/<int:pk>/", views.InstructorEvaluationFormDetailView.as_view(), name="instructor-evaluation-form-detail"),
 
     path("students/bulk-import/", views.StudentBulkImportView.as_view(), name="student-bulk-import"),
     path("faculty/bulk-import/", views.FacultyBulkImportView.as_view(), name="faculty-bulk-import"),
