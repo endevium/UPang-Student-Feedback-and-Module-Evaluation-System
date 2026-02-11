@@ -17,6 +17,8 @@ from .models.DepartmentHead import DepartmentHead
 from .models.EvaluationForm import EvaluationForm
 from .models.Faculty import Faculty
 from .models.InstructorEvaluationForm import InstructorEvaluationForm
+from .models.Module import Module
+from .models.ModuleAssignment import ModuleAssignment
 from .models.ModuleEvaluationForm import ModuleEvaluationForm
 from .models.Student import Student
 from .models.FeedbackResponse import FeedbackResponse
@@ -123,8 +125,58 @@ class StudentListCreateView(generics.ListCreateAPIView):
     
 # Retrieve, update, or delete a single student
 class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
+    authentication_classes = []
+    permission_classes = []
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
+
+    def retrieve(self, request, *args, **kwargs):
+        # Manual authentication for department head
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except Exception as e:
+            return Response({"detail": "Invalid token", "error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden - token role mismatch"}, status=status.HTTP_403_FORBIDDEN)
+
+        return super().retrieve(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        # Manual authentication for department head
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except Exception as e:
+            return Response({"detail": "Invalid token", "error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden - token role mismatch"}, status=status.HTTP_403_FORBIDDEN)
+
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        # Manual authentication for department head
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except Exception as e:
+            return Response({"detail": "Invalid token", "error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden - token role mismatch"}, status=status.HTTP_403_FORBIDDEN)
+
+        return super().destroy(request, *args, **kwargs)
 
 class FacultyListCreateView(generics.ListCreateAPIView):
     authentication_classes = []
@@ -307,11 +359,20 @@ class StudentMeView(APIView):
                 for item in enrolled:
                     if isinstance(item, dict) and item.get('code'):
                         c = item['code'].strip()
+                        instructor_name = ''
+                        try:
+                            module = Module.objects.get(subject_code=c)
+                            assignment = ModuleAssignment.objects.filter(module=module).first()
+                            if assignment:
+                                faculty = assignment.faculty
+                                instructor_name = f"{faculty.firstname} {faculty.lastname}"
+                        except:
+                            pass
                         enrolled_modules.append({
                             "id": c,
                             "code": c,
                             "name": item.get('description', c),
-                            "instructor": 'TBA',
+                            "instructor": instructor_name,
                             "description": item.get('description', ''),
                             "form_available": False,
                         })
@@ -883,6 +944,8 @@ class FacultyBulkImportView(APIView):
 
 
 class AuditLogListView(generics.ListCreateAPIView):
+    authentication_classes = []
+    permission_classes = []
     queryset = AuditLog.objects.filter(role__in=['Depthead', 'Department Head'])
     serializer_class = AuditLogSerializer
 

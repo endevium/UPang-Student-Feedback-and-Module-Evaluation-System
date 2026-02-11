@@ -1,4 +1,3 @@
-'''
 from django.db import models
 
 class Module(models.Model):
@@ -12,4 +11,3 @@ class Module(models.Model):
     class Meta:
         db_table = 'modules'
         managed = False
-'''

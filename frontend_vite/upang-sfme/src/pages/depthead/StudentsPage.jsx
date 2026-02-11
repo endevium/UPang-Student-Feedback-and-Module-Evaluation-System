@@ -200,7 +200,7 @@ const StudentsManagement = () => {
   const mapStudent = (student) => ({
     // `id` is the display student number; `pk` is the DB primary key used for API actions
     id: student.student_number,
-    pk: student.id || student.pk || student.student_number,
+    pk: student.id,
     name: `${student.firstname || ''} ${student.lastname || ''}`.trim(),
     program: student.program || 'N/A',
     subject: Array.isArray(student.enrolled_subjects)
@@ -321,7 +321,7 @@ const StudentsManagement = () => {
           `Updated student: ${saved.name} (${saved.id})`
         );
       } else {
-        setStudentData((prev) => [{ ...saved, pk: data.id || data.pk || saved.id }, ...prev]);
+        setStudentData((prev) => [{ ...saved, pk: data.id || data.pk }, ...prev]);
         // Log the student creation
         await createAuditLog(
           'Created Student',
@@ -401,7 +401,7 @@ const StudentsManagement = () => {
       }
       const data = await res.json();
       // include pk for consistency
-      setSelectedStudent({ ...data, pk: data.id || data.pk || studentId });
+      setSelectedStudent({ ...data, pk: data.student_number || data.id || studentId });
     } catch {
       setErrorMessage('Unable to reach the server.');
     }
@@ -470,7 +470,7 @@ const StudentsManagement = () => {
         `Archived student: ${studentData.firstname} ${studentData.lastname} (${studentData.student_number})`
       );
 
-      setStudentData((prev) => prev.filter((s) => s.id !== studentId));
+      setStudentData((prev) => prev.filter((s) => s.pk !== studentId));
     } catch {
       setErrorMessage('Unable to reach the server.');
     }

@@ -8,9 +8,38 @@ const Badge = ({children, className = ''}) => (
 const AuditLogPage = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
-  // Helper function to get auth headers
+  // Helper: find and normalize stored token from several possible keys
+  const getTokenFromStorage = () => {
+    const candidates = ['authToken','token','access','accessToken','jwt'];
+    let raw = null;
+    for (const k of candidates) {
+      const v = localStorage.getItem(k);
+      if (v) { raw = v; break; }
+    }
+    if (!raw) return null;
+    // If it's a JSON string like '{"token":"..."}' parse it
+    try {
+      const maybeObj = JSON.parse(raw);
+      if (maybeObj) {
+        if (typeof maybeObj === 'string') {
+          raw = maybeObj;
+        } else if (typeof maybeObj === 'object') {
+          raw = maybeObj.token || maybeObj.access || maybeObj.authToken || maybeObj.accessToken || maybeObj.jwt || Object.values(maybeObj)[0] || '';
+        }
+      }
+    } catch (e) {
+      // not JSON, continue with raw
+    }
+    if (!raw) return null;
+    // strip surrounding quotes that may have been double-serialized
+    raw = String(raw).trim().replace(/^"|"$/g, '');
+    // if it already contains the Bearer prefix, remove it (we'll add canonical prefix later)
+    if (raw.toLowerCase().startsWith('bearer ')) raw = raw.split(' ').slice(1).join(' ');
+    return raw || null;
+  };
+
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('authToken');
+    const token = getTokenFromStorage();
     return token ? { 'Authorization': `Bearer ${token}` } : {};
   };
   const [query, setQuery] = useState('');
@@ -36,12 +65,26 @@ const AuditLogPage = () => {
       setIsLoading(true);
       setLoadError('');
       try {
+        // ensure a token exists (check common localStorage keys)
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token') || localStorage.getItem('access') || localStorage.getItem('accessToken') || localStorage.getItem('jwt');
+        if (!token) {
+          setLoadError('Unauthorized: no authentication token found. Please sign in.');
+          return;
+        }
+
         const res = await fetch(`${API_BASE_URL}/audit-logs/`, {
           headers: getAuthHeaders(),
         });
+
+        // handle 401 explicitly to give clearer feedback
+        if (res.status === 401) {
+          setLoadError('Unauthorized: your session may have expired. Please sign in again.');
+          return;
+        }
+
         const data = await res.json().catch(() => []);
         if (!res.ok) {
-          setLoadError(data?.detail || 'Unable to load audit logs.');
+          setLoadError(data?.detail || `Unable to load audit logs (status ${res.status}).`);
           return;
         }
         const logsList = Array.isArray(data) ? data : [];

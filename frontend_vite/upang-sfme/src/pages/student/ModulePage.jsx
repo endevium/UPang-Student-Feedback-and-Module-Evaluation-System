@@ -32,15 +32,25 @@ const ModulePage = () => {
         const list = data?.modules || data?.enrolled_modules || data?.recent_modules || [];
         // fetch available module evaluation forms and create a set of subject codes
         let availableModuleCodes = new Set();
-        // also build a set of the student's enrolled subject codes
+        // also build a set of the student's enrolled subject codes and a map of instructor-by-code
         let completedModuleCodes = new Set();
         let enrolledSubjectCodes = new Set();
+        let enrolledByCode = new Map();
         // try to read enrolled subjects from common response shapes
         const rawEnrolled = data?.enrolled_subjects || data?.student?.enrolled_subjects || null;
         if (Array.isArray(rawEnrolled)) {
           rawEnrolled.forEach(s => {
-            if (s && typeof s === 'object' && s.code) {
-              enrolledSubjectCodes.add(String(s.code).trim().toUpperCase());
+            if (!s) return;
+            if (typeof s === 'string') {
+              const code = String(s).trim().toUpperCase();
+              if (code) enrolledSubjectCodes.add(code);
+            } else if (typeof s === 'object') {
+              const code = String(s.code || s.subject_code || s.module_code || '').trim().toUpperCase();
+              if (code) {
+                enrolledSubjectCodes.add(code);
+                const instr = s.instructor || s.instructor_name || s.lecturer || s.lecturer_name || '';
+                if (instr) enrolledByCode.set(code, instr);
+              }
             }
           });
         }
@@ -64,8 +74,8 @@ const ModulePage = () => {
         const normalized = Array.isArray(list)
           ? list.map(m => {
               const code = (m.code || m.module_code || m.id || '').toString();
-              const CODE = code.trim().toUpperCase();
-              
+                const CODE = code.trim().toUpperCase();
+
               // Only show a form if a form exists for the subject code AND the student is enrolled in that subject
               const form_available = (
                 !!m.form_available || !!m.has_form || !!m.form_id ||
@@ -74,12 +84,16 @@ const ModulePage = () => {
 
               const isCompleted = completedModuleCodes.has(CODE);
 
+              // Prefer instructor info from the module object, otherwise use enrolled subject's instructor (if provided)
+              const instructor = m.instructor || m.instructor_name || m.lecturer || enrolledByCode.get(CODE) || '';
+
               return ({
                 id: m.id || m.code || m.module_id || m.module || m.module_code,
                 code: code,
                 name: m.name || m.title || m.module_name || m.code,
-                instructor: m.instructor || m.instructor_name || m.lecturer || 'TBA',
+                instructor: instructor,
                 credits: m.credits ?? 3,
+                enrolled: enrolledSubjectCodes.has(CODE),
                 status: isCompleted ? 'completed' : (form_available ? 'pending' : 'unavailable'),
                 description: m.description || m.summary || '',
                 form_available: form_available,
@@ -139,7 +153,7 @@ const ModulePage = () => {
       </div>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="flex items-center gap-2 text-slate-600"><User className="h-4 w-4" /><span>{module.instructor}</span></div>
+          <div className="flex items-center gap-2 text-slate-600"><User className="h-4 w-4" /><span>{module.instructor || 'TBA'}</span></div>
           <div className="flex items-center gap-2 text-slate-600"><BookOpen className="h-4 w-4" /><span>{module.credits} Credits</span></div>
         </div>
         <div className="pt-2">

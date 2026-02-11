@@ -1,4 +1,3 @@
-'''
 from django.db import models
 from .Module import Module
 from .Faculty import Faculty
@@ -15,4 +14,3 @@ class ModuleAssignment(models.Model):
 
     def __str__(self):
         return f"{self.module} -> {self.faculty}"
-'''
