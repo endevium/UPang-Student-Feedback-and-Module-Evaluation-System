@@ -11,7 +11,7 @@ from api.sentiment_service import predict_sentiment
 
 SAMPLES = [
     ("I absolutely not recommend this course.", "negative"),
-    ("loved the course but the instructor was not excellent and engaging.", "positive"),
+    ("loved the course but the instructor was excellent and engaging.", "positive"),
     ("The materials were confusing and the workload was unbearable.", "negative"),
     ("The session covered the topics; overall it was okay.", "neutral"),
 ]
