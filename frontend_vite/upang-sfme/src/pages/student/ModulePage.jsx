@@ -76,15 +76,19 @@ const ModulePage = () => {
               const code = (m.code || m.module_code || m.id || '').toString();
                 const CODE = code.trim().toUpperCase();
 
-              // Only show a form if a form exists for the subject code AND the student is enrolled in that subject
-              const form_available = (
-                !!m.form_available || !!m.has_form || !!m.form_id ||
-                (availableModuleCodes.has(CODE) && enrolledSubjectCodes.has(CODE))
-              );
+                // Only show a form if a form exists for the subject code AND the student is enrolled in that subject
+                let form_available = (
+                  !!m.form_available || !!m.has_form || !!m.form_id ||
+                  (availableModuleCodes.has(CODE) && enrolledSubjectCodes.has(CODE))
+                );
 
-              const isCompleted = completedModuleCodes.has(CODE);
+                // Consider module-level completion flags (from different API shapes) as well
+                const isCompleted = Boolean(m.is_completed || m.completed || completedModuleCodes.has(CODE));
 
-              // Prefer instructor info from the module object, otherwise use enrolled subject's instructor (if provided)
+                // If the evaluation is already completed, ensure no form is shown / start button enabled
+                if (isCompleted) form_available = false;
+
+                // Prefer instructor info from the module object, otherwise use enrolled subject's instructor (if provided)
               const instructor = m.instructor || m.instructor_name || m.lecturer || enrolledByCode.get(CODE) || '';
 
               return ({

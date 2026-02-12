@@ -225,7 +225,7 @@ const LoginModal = ({ isOpen, onClose }) => {
             return { valid: false, message: 'Password must not contain your username.' };
           }
         }
-      } catch (e) {
+      } catch {
         // ignore username parsing errors and continue
       }
     }

@@ -427,26 +427,57 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
 
                     <div className="pl-12">
                         {q.type === 'scale' && (
-                           <div className="flex flex-col gap-2 max-w-md">
+                           // For sections 1-4 render a horizontal 5→1 pill selector with colored styles
+                           (currentSection >= 0 && currentSection < 4) ? (
+                            <div className="flex items-center gap-4 max-w-3xl">
+              
+                              <div className="flex items-center gap-3 flex-1 justify-center">
                                 {[
-                                    {v: "5", l: "Strongly Agree", c: "bg-emerald-500"},
-                                    {v: "4", l: "Agree", c: "bg-emerald-400"},
-                                    {v: "3", l: "Neutral", c: "bg-amber-400"},
-                                    {v: "2", l: "Disagree", c: "bg-orange-400"},
-                                    {v: "1", l: "Strongly Disagree", c: "bg-red-500"}
-                                ].map(s => (
-                                    <button 
-                                        key={s.v}
-                                        onClick={() => handleResponse(q.id, s.v)}
-                                        className={`flex items-center p-3 rounded-xl border-2 transition-all ${
-                                            responses[q.id] === s.v ? "border-teal-600 bg-teal-50" : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"
-                                        }`}
+                                  {v:1, label: 'Strongly Disagree', selected: 'bg-red-500 border-red-600 text-white', normal: 'bg-white border-slate-200 text-slate-700'},
+                                  {v:2, label: 'Disagree', selected: 'bg-orange-400 border-orange-500 text-white', normal: 'bg-white border-slate-200 text-slate-700'},
+                                  {v:3, label: 'Neutral', selected: 'bg-amber-400 border-amber-500 text-white', normal: 'bg-white border-slate-200 text-slate-700'},
+                                  {v:4, label: 'Agree', selected: 'bg-emerald-400 border-emerald-500 text-white', normal: 'bg-white border-slate-200 text-slate-700'},
+                                  {v:5, label: 'Strongly Agree', selected: 'bg-emerald-600 border-emerald-700 text-white', normal: 'bg-white border-slate-200 text-slate-700'},
+                                ].map(opt => {
+                                  const selected = responses[q.id] === opt.v.toString();
+                                  return (
+                                    <button
+                                      key={opt.v}
+                                      onClick={() => handleResponse(q.id, opt.v.toString())}
+                                      className={`flex items-center gap-3 px-4 py-2 rounded-lg border transition-shadow ${selected ? opt.selected : opt.normal}`}
+                                      aria-pressed={selected}
                                     >
-                                        <div className={`w-7 h-7 rounded flex items-center justify-center text-white text-xs font-black mr-4 ${s.c}`}>{s.v}</div>
-                                        <span className="text-sm font-bold text-slate-700">{s.l}</span>
+                                      <div className={`w-7 h-7 rounded-full flex items-center justify-center font-black ${selected ? 'bg-white/10' : 'bg-slate-100'}`}>
+                                        {opt.v}
+                                      </div>
+                                      <span className="text-sm font-semibold">{opt.label}</span>
                                     </button>
-                                ))}
-                           </div>
+                                  );
+                                })}
+                              </div>
+                              
+                            </div>
+                           ) : (
+                            <div className="flex flex-col gap-2 max-w-md">
+                                 {[
+                                     {v: "5", l: "Strongly Agree", c: "bg-emerald-500"},
+                                     {v: "4", l: "Agree", c: "bg-emerald-400"},
+                                     {v: "3", l: "Neutral", c: "bg-amber-400"},
+                                     {v: "2", l: "Disagree", c: "bg-orange-400"},
+                                     {v: "1", l: "Strongly Disagree", c: "bg-red-500"}
+                                 ].map(s => (
+                                     <button 
+                                         key={s.v}
+                                         onClick={() => handleResponse(q.id, s.v)}
+                                         className={`flex items-center p-3 rounded-xl border-2 transition-all ${
+                                             responses[q.id] === s.v ? "border-teal-600 bg-teal-50" : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"
+                                         }`}>
+                                         <div className={`w-7 h-7 rounded flex items-center justify-center text-white text-xs font-black mr-4 ${s.c}`}>{s.v}</div>
+                                         <span className="text-sm font-bold text-slate-700">{s.l}</span>
+                                     </button>
+                                 ))}
+                            </div>
+                           )
                         )}
 
                         {q.type === 'rating' && (

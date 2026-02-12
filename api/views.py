@@ -6,7 +6,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.contrib.contenttypes.models import ContentType
 
-from .throttles import LoginRateThrottle
+from .throttles import AIRequestRateThrottle, LoginRateThrottle
 from .models import Student
 from .sentiment_service import predict_sentiment
 import csv
@@ -1144,11 +1144,7 @@ class FeedbackResponseListView(generics.ListAPIView):
         return Response(serializer.data)
 
 class SentimentTestView(APIView):
-    """Temporary view to test sentiment model integration.
-
-    POST JSON: { "text": "..." }
-    Returns: { "label": "positive" }
-    """
+    throttle_classes = []
     authentication_classes = []
     permission_classes = []
 
