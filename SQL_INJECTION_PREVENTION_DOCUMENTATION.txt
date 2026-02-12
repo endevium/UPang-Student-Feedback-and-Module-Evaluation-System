@@ -298,17 +298,106 @@ python manage.py shell -c "from django.conf import settings; print('SQLInjection
 6. Update security rules if needed
 
 8.2 LOG ANALYSIS
-----------------
 # Find most active IPs
 grep "SQL injection attempt" logs/security.log | cut -d' ' -f10 | sort | uniq -c | sort -nr
 
-# Check for patterns
-grep "suspicious" logs/security.log | tail -20
-
 8.3 RECOVERY PROCEDURES
------------------------
-1. Stop the application
-2. Review and fix vulnerabilities
+3.5.1 DATABASE SECURITY — DETAILED GUIDANCE
+-------------------------------------------
+This section expands on database hardening, access control, encryption,
+backup/recovery, monitoring, and operational best practices.
+
+Access control & roles:
+- Principle of Least Privilege: create separate DB users for the
+   application, migrations, and DB admins. Application user should have
+   only the privileges necessary (SELECT, INSERT, UPDATE, DELETE) on
+   specific schemas/tables. Avoid `SUPERUSER` for application roles.
+- Role separation: use a read-only role for reporting tasks and a
+   separate write role for the application when appropriate.
+- Use row-level security (RLS) where multi-tenant or per-user data
+   isolation is required.
+
+Network & connection security:
+- Enforce TLS/SSL for all client-server connections. Configure
+   `sslmode=require` in production connection strings and provide
+   server certificates.
+- Restrict network access with firewall rules and VPC/SGs so that only
+   application servers and DB admin IPs can access the DB port.
+- Use private networking (no public IP) for production DB instances.
+
+Authentication & secrets management:
+- Do not store DB credentials in repository. Use environment variables
+   or a secrets manager (Azure Key Vault, AWS Secrets Manager, HashiCorp
+   Vault) and rotate credentials regularly.
+- Prefer short-lived credentials or IAM-based database auth when
+   supported (cloud-managed DBs).
+
+Encryption & data protection:
+- Enable encryption at rest (cloud provider-managed or file-system
+   level). For highly sensitive data, use application-level field
+   encryption and per-field key management.
+- Encrypt backups and any exported data. Store backups in an access-
+   controlled location.
+
+Backups, recovery & testing:
+- Implement automated backups with regular retention and off-site
+   copies. Maintain retention policy according to data retention rules.
+- Test recovery procedures periodically (full and point-in-time
+   restores) and document Recovery Time Objective (RTO) and Recovery
+   Point Objective (RPO).
+
+Configuration hardening:
+- Secure `postgresql.conf` and `pg_hba.conf`:
+   - Disable trust authentication; use `md5`/`scram-sha-256` or
+      cloud-managed IAM options.
+   - Restrict admin connections to specific IPs.
+   - Disable unused extensions and functions (e.g., `dblink`) unless
+      explicitly required.
+- Limit superuser accounts and audit their use.
+
+Monitoring, logging & auditing:
+- Enable and ship audit logging (statement or CSV logs) to a
+   centralized logging/SIEM system with restricted access.
+- Track slow queries and excessive privilege escalations; alert on
+   spikes in `ERROR`/`FATAL` messages or repeated `IntegrityError`.
+- Keep audit logs for an appropriate retention period and protect
+   their integrity.
+
+Maintenance, patching & lifecycle:
+- Apply security patches promptly for the DB engine and OS. Test
+   patches in staging before production rollout.
+- Rotate user passwords and service account credentials on a schedule.
+
+Operational safeguards:
+- Use connection pooling (e.g., pgbouncer) to reduce DB resource
+   exhaustion and avoid exposing DB directly to the internet.
+- Implement limits and quotas where supported (e.g., per-user
+   connections, statement_timeout, lock_timeout) to mitigate DoS.
+
+Example PostgreSQL settings (production recommendations):
+- `password_encryption = scram-sha-256`
+- `ssl = on` and configure certs
+- `log_min_error_statement = error`
+- `log_statement = 'ddl'` (or use an audit extension for more control)
+- `statement_timeout = 30000` (30s) for long-running query protection
+
+Quick checklist for production readiness:
+- [ ] Use TLS/SSL for DB connections and disable public access
+- [ ] Enforce least-privilege roles for application accounts
+- [ ] Store DB credentials in a secrets manager and rotate them
+- [ ] Enable encryption at rest and encrypt backups
+- [ ] Configure and retain audit logs in a secure location
+- [ ] Test backup restores and patching in staging
+- [ ] Configure connection pooling and resource limits
+- [ ] Monitor for anomalous queries and errors; alert on spikes
+
+Notes specific to migrations and schema changes:
+- Run schema migrations via a CI/CD pipeline with a migration user
+   that has only the required privileges during deployment (and
+   revoke extra privileges afterward) or run migrations from an
+   isolated management environment.
+- Avoid running unreviewed migrations in production. Back up before
+   large schema changes and have a rollback plan.
 3. Update dependencies
 4. Test security measures
 5. Gradual rollout with monitoring
@@ -392,11 +481,69 @@ Each bulk import operation creates an audit log entry containing:
 
 11.4 ERROR HANDLING
 -------------------
-The system handles various import errors:
-- Duplicate email/student_id/employee_id detection
-- Missing required fields validation
-- Data format validation
-- Database constraint violations
+The system handles various import and application-level errors with
+clear, consistent rules that avoid leaking sensitive information while
+providing actionable diagnostics for operators.
+
+Principles:
+- Do not expose raw SQL, stack traces, or internal exception details in
+   API responses. Return generic messages to clients and include a
+   reference/correlation ID for troubleshooting.
+- Differentiate client errors (4xx) from server errors (5xx). Use
+   `400/422` for validation and data issues, `403` for permission issues,
+   and `500` for unexpected server failures.
+- Log full diagnostic details (including sanitized request context,
+   user, IP, endpoint, and traceback) to secured logs or an error
+   tracking system (e.g., Sentry). Keep logs access-controlled.
+
+Django / DRF implementation details:
+- Use serializer validation (`serializers.ValidationError`) to return
+   structured 400 responses for bad input.
+- Wrap multi-row operations (bulk imports, updates) in
+   `django.db.transaction.atomic()` so partial failures rollback and
+   maintain consistency.
+- Catch database exceptions such as `IntegrityError`, `DataError`, and
+   map them to appropriate 4xx/5xx responses. For example, unique
+   constraint violations should be translated into a 422 response with
+   a sanitized message and row-level error details.
+- Configure a global DRF exception handler (e.g.,
+   `api.exceptions.custom_exception_handler`) to centralize mapping of
+   exceptions to HTTP responses and to emit correlation IDs.
+- Add an exception-logging middleware that records context and returns
+   a user-friendly error payload: {"error": "An internal error
+   occurred", "ref": "<correlation-id>"}.
+
+Bulk import specifics:
+- Validate each CSV row and collect per-row errors rather than failing
+   the entire job when reasonable. Produce an import summary with counts
+   of successful rows and a separate list (or file) of failed rows and
+   error messages.
+- Audit logs for bulk import must include: total rows, successful
+   count, failed count, and a link/reference to exported failed rows.
+- Store failed-row payloads (or hashes) securely for later reprocessing
+   and avoid logging sensitive fields (PII) in plaintext.
+
+Logging and monitoring:
+- Log structure: include `timestamp`, `level`, `module`, `user_id`,
+   `ip`, `endpoint`, `correlation_id`, `error_type`, and `sanitized_message`.
+- Push internal errors to an error-tracking system and create alerts for
+   spike patterns (e.g., many 500s or repeated IntegrityErrors).
+- Retain detailed tracebacks only in secure logs; truncate or redact
+   sensitive values when writing to less-protected destinations.
+
+Operational recommendations:
+- Return a short, actionable message to clients and a `ref` id for
+   support (e.g., "An internal error occurred. Reference: 20260212-abc123").
+- Implement retries with exponential backoff for transient database
+   connectivity errors, but avoid retrying idempotent operations that
+   may cause duplicates unless idempotency is explicitly supported.
+- Add unit and integration tests that assert proper HTTP codes and
+   sanitized messages for common failure modes.
+
+Examples:
+- Validation error (bad CSV row): HTTP 400/422 with {"errors": [{"row": 12, "message": "Missing required field: email"}], "summary": {"imported": 48, "failed": 2}}
+- Internal server error: HTTP 500 with {"error": "Internal server error", "ref": "20260212-abc123"}
+
 
 All errors are logged and reported back to the user with specific row numbers
 and error descriptions.

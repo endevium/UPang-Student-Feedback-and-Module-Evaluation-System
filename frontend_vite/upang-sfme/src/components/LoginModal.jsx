@@ -192,6 +192,50 @@ const LoginModal = ({ isOpen, onClose }) => {
     }
   };
 
+  // A small list of very common passwords to check against (lowercase)
+  const commonPasswords = [
+    '123456','password','123456789','12345678','12345','111111','1234567','sunshine','qwerty','iloveyou',
+    'princess','admin','welcome','666666','abc123','football','123123','monkey','letmein','dragon',
+    'baseball','master','shadow','killer','trustno1'
+  ];
+
+  // Validate password against policy:
+  // - at least 12 chars
+  // - at least one uppercase, one lowercase, one number, one special char
+  // - must not contain username/email/local-part
+  // - must not be a common password
+  const validatePassword = (pwd, username) => {
+    if (!pwd || typeof pwd !== 'string') return { valid: false, message: 'Invalid password.' };
+    if (pwd.length < 12) return { valid: false, message: 'Password must be at least 12 characters long.' };
+    if (!/[A-Z]/.test(pwd)) return { valid: false, message: 'Password must contain at least one uppercase letter.' };
+    if (!/[a-z]/.test(pwd)) return { valid: false, message: 'Password must contain at least one lowercase letter.' };
+    if (!/[0-9]/.test(pwd)) return { valid: false, message: 'Password must contain at least one number.' };
+    if (!/[^A-Za-z0-9]/.test(pwd)) return { valid: false, message: 'Password must contain at least one special character.' };
+
+    if (username) {
+      try {
+        const uname = String(username).toLowerCase().replace(/\s+/g, '');
+        if (uname && pwd.toLowerCase().includes(uname)) {
+          return { valid: false, message: 'Password must not contain your username.' };
+        }
+        // If email, also check local-part (before @)
+        if (String(username).includes('@')) {
+          const local = String(username).split('@')[0].toLowerCase();
+          if (local && pwd.toLowerCase().includes(local)) {
+            return { valid: false, message: 'Password must not contain your username.' };
+          }
+        }
+      } catch (e) {
+        // ignore username parsing errors and continue
+      }
+    }
+
+    const lowered = pwd.toLowerCase();
+    if (commonPasswords.includes(lowered)) return { valid: false, message: 'This password is too common. Choose a less common password.' };
+
+    return { valid: true };
+  };
+
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setChangeError('');
@@ -204,8 +248,10 @@ const LoginModal = ({ isOpen, onClose }) => {
       return;
     }
 
-    if (trimmedNewPassword.length < 6) {
-      setChangeError('New password must be at least 6 characters.');
+    // Run full password policy validation
+    const validation = validatePassword(trimmedNewPassword, studentId);
+    if (!validation.valid) {
+      setChangeError(validation.message);
       return;
     }
 
