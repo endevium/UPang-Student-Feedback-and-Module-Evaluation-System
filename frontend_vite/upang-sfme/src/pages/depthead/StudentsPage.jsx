@@ -9,7 +9,7 @@ import {
   Download, 
   Eye,
   Edit,
-  Trash2,
+  Folder,
 } from 'lucide-react';
 
 const StudentsManagement = () => {
@@ -22,6 +22,11 @@ const StudentsManagement = () => {
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [bulkImportResult, setBulkImportResult] = useState(null);
+
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [archivedStudents, setArchivedStudents] = useState([]);
+  const [isLoadingArchived, setIsLoadingArchived] = useState(false);
+  const [archiveError, setArchiveError] = useState('');
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -258,6 +263,58 @@ const StudentsManagement = () => {
     }
   };
 
+  const fetchArchivedStudents = async () => {
+    setIsLoadingArchived(true);
+    setArchiveError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/students/archived/`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+      });
+      if (!res.ok) {
+        setArchiveError('Unable to load archived students.');
+        setArchivedStudents([]);
+        return;
+      }
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : [];
+      setArchivedStudents(list.map(mapStudent));
+    } catch (e) {
+      setArchiveError('Unable to reach the server.');
+      setArchivedStudents([]);
+    } finally {
+      setIsLoadingArchived(false);
+    }
+  };
+
+  const restoreStudent = async (studentId) => {
+    const ok = window.confirm('Restore this student? This will make them active again.');
+    if (!ok) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        },
+        body: JSON.stringify({ archived: false }),
+      });
+      if (!res.ok) {
+        setArchiveError('Unable to restore student.');
+        return;
+      }
+      const data = await res.json();
+      await createAuditLog(
+        'Restored Student',
+        `Restored student: ${data.firstname || ''} ${data.lastname || ''} (${data.student_number || data.id || studentId})`
+      );
+      // refresh lists
+      fetchStudents();
+      fetchArchivedStudents();
+    } catch (e) {
+      setArchiveError('Unable to reach the server.');
+    }
+  };
+
   useEffect(() => {
     fetchStudents();
   }, []);
@@ -444,34 +501,28 @@ const StudentsManagement = () => {
     const ok = window.confirm('Archive this student? This will remove them from the active list.');
     if (!ok) return;
     try {
-      // First get student details for logging
-      const studentRes = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
-      });
-      if (!studentRes.ok) {
-        setErrorMessage('Unable to load student details.');
-        return;
-      }
-      const studentData = await studentRes.json();
-
-      // Delete the student
+      // PATCH to mark archived=true (soft-delete)
       const res = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        },
+        body: JSON.stringify({ archived: true }),
       });
       if (!res.ok) {
         setErrorMessage('Unable to archive student.');
         return;
       }
-
-      // Log the deletion
+      const studentData = await res.json();
+      // Log the archive action
       await createAuditLog(
         'Archived Student',
-        `Archived student: ${studentData.firstname} ${studentData.lastname} (${studentData.student_number})`
+        `Archived student: ${studentData.firstname || ''} ${studentData.lastname || ''} (${studentData.student_number || studentId})`
       );
 
       setStudentData((prev) => prev.filter((s) => s.pk !== studentId));
-    } catch {
+    } catch (e) {
       setErrorMessage('Unable to reach the server.');
     }
   };
@@ -545,6 +596,12 @@ const StudentsManagement = () => {
                   + Add Student
                 </button>
                 <button
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-200 transition-all"
+                  onClick={() => { setIsArchiveOpen(true); fetchArchivedStudents(); }}
+                >
+                  <Folder size={16} /> Archived Students
+                </button>
+                <button
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 transition-all"
                   onClick={() => setIsBulkImportOpen(true)}
                 >
@@ -579,9 +636,9 @@ const StudentsManagement = () => {
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Subjects</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Block</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Year</th>
-                    <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Modules</th>
-                    <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Completed</th>
-                    <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Pending</th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Modules</th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Completed</th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Pending</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Actions</th>
                   </tr>
@@ -595,9 +652,9 @@ const StudentsManagement = () => {
                       <td className="px-6 py-4 text-sm text-slate-600 font-medium">{student.subject}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 text-center font-medium">{student.block}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 text-center font-bold">{student.year}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600 text-center font-bold">{student.modules}</td>
-                      <td className="px-6 py-4 text-sm text-emerald-600 text-center font-black">{student.completed}</td>
-                      <td className="px-6 py-4 text-sm text-amber-500 text-center font-black">{student.pending}</td>
+                      <td className="px-3 py-3 text-sm text-slate-600 text-center font-bold">{student.modules}</td>
+                      <td className="px-3 py-3 text-sm text-emerald-600 text-center font-black">{student.completed}</td>
+                      <td className="px-3 py-3 text-sm text-amber-500 text-center font-black">{student.pending}</td>
                       <td className="px-6 py-4">
                         <span className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black uppercase rounded-lg tracking-wider">
                           {student.status}
@@ -612,7 +669,7 @@ const StudentsManagement = () => {
                             <Edit size={18} />
                           </button>
                           <button onClick={() => archiveStudent(student.pk)} className="p-2 text-rose-600 hover:text-rose-800 hover:bg-slate-100 rounded-lg transition-all" title="Archive">
-                            <Trash2 size={18} />
+                            <Folder size={18} />
                           </button>
                         </div>
                       </td>
@@ -834,6 +891,63 @@ const StudentsManagement = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Archived Students Modal */}
+      {isArchiveOpen && (
+        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsArchiveOpen(false)}>
+          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-800">Archived Students</h3>
+                <p className="text-sm text-slate-400">Students that were archived</p>
+              </div>
+              <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={() => setIsArchiveOpen(false)}>&times;</button>
+            </div>
+
+            <div className="p-6">
+              {isLoadingArchived && <div className="text-sm text-slate-500">Loading archived students...</div>}
+              {archiveError && <div className="text-sm text-rose-600">{archiveError}</div>}
+              {!isLoadingArchived && !archiveError && archivedStudents.length === 0 && (
+                <div className="text-sm text-slate-500">No archived students found.</div>
+              )}
+
+              {!isLoadingArchived && archivedStudents.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-100">
+                      <tr>
+                        <th className="px-4 py-3 text-sm text-slate-500">Student ID</th>
+                        <th className="px-4 py-3 text-sm text-slate-500">Name</th>
+                        <th className="px-4 py-3 text-sm text-slate-500">Program</th>
+                        <th className="px-4 py-3 text-sm text-slate-500 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {archivedStudents.map((s, i) => (
+                        <tr key={s.pk || i} className="hover:bg-slate-50/80">
+                          <td className="px-4 py-3 text-xs font-mono text-slate-500">{s.id}</td>
+                          <td className="px-4 py-3 text-sm font-black text-slate-800">{s.name}</td>
+                          <td className="px-4 py-3 text-sm text-slate-600">{s.program}</td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <button onClick={() => { setIsArchiveOpen(false); showStudentDetails(s.pk); }} className="px-3 py-1 bg-slate-100 rounded-lg text-sm font-semibold">View</button>
+                              <button onClick={() => restoreStudent(s.pk)} className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-lg text-sm font-semibold">Restore</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex justify-end mt-4">
+                <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm" onClick={() => setIsArchiveOpen(false)}>Close</button>
+              </div>
+            </div>
           </div>
         </div>
       )}

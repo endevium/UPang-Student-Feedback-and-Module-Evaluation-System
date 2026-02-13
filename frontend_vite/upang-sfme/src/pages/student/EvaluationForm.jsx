@@ -6,7 +6,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
   const [currentSection, setCurrentSection] = useState(0);
   const [responses, setResponses] = useState({});
   const [submitted, setSubmitted] = useState(false);
-  const [hoverStar, setHoverStar] = useState(null);
+  const [hoverStar, setHoverStar] = useState({});
   const [moduleData, setModuleData] = useState(null);
   const [instructorData, setInstructorData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -428,7 +428,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
                     <div className="pl-12">
                         {q.type === 'scale' && (
                            // For sections 1-4 render a horizontal 5→1 pill selector with colored styles
-                           (currentSection >= 0 && currentSection < 4) ? (
+                           (currentSection >= 0 && currentSection < 5) ? (
                             <div className="flex items-center gap-4 max-w-3xl">
               
                               <div className="flex items-center gap-3 flex-1 justify-center">
@@ -483,18 +483,18 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
                         {q.type === 'rating' && (
                             <div className="flex items-center gap-3">
                                 {[1,2,3,4,5].map(star => (
-                                    <button 
-                                        key={star}
-                                        onMouseEnter={() => setHoverStar(star)}
-                                        onMouseLeave={() => setHoverStar(null)}
-                                        onClick={() => handleResponse(q.id, star.toString())}
-                                        className="transition-transform hover:scale-110"
-                                    >
-                                        <Star 
-                                            size={40} 
-                                            className={`${(hoverStar || responses[q.id]) >= star ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} 
-                                        />
-                                    </button>
+                                  <button 
+                                    key={star}
+                                    onMouseEnter={() => setHoverStar(prev => ({ ...prev, [q.id]: star }))}
+                                    onMouseLeave={() => setHoverStar(prev => ({ ...prev, [q.id]: null }))}
+                                    onClick={() => handleResponse(q.id, star.toString())}
+                                    className="transition-transform hover:scale-110"
+                                  >
+                                    <Star 
+                                      size={40} 
+                                      className={`${Number(hoverStar[q.id] ?? responses[q.id] ?? 0) >= star ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} 
+                                    />
+                                  </button>
                                 ))}
                                 {responses[q.id] && <span className="ml-4 text-xl font-black text-slate-800">{responses[q.id]} / 5</span>}
                             </div>

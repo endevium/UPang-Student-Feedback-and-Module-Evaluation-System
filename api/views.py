@@ -228,6 +228,8 @@ class FacultyListCreateView(generics.ListCreateAPIView):
         return response
 
 class FacultyDetailView(generics.RetrieveUpdateDestroyAPIView):
+    authentication_classes = []
+    permission_classes = []
     queryset = Faculty.objects.all()
     serializer_class = FacultySerializer
 

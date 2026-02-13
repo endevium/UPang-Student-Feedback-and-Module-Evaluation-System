@@ -56,7 +56,7 @@ const Header = ({ userName, userRole }) => {
           // ignore failures - header will fall back to default role
         });
     }
-  }, [storedUser]);
+  }, [storedUser?.user_type, storedUser?.id]);
 
   // Show department for department head (use fetched value when available)
   if (storedUser?.user_type === 'department_head' && (fetchedDepartment || storedUser?.department)) {
