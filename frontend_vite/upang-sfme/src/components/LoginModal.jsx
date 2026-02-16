@@ -3,6 +3,7 @@ import { User, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../assets/navbar-logo.png';
 import studentGroupImg from '../assets/group-student2.png';
 import SafeImg from './SafeImg';
+import OTPModal from './OTPModal';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
@@ -17,6 +18,10 @@ const LoginModal = ({ isOpen, onClose }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changeError, setChangeError] = useState('');
+  const [otpOpen, setOtpOpen] = useState(false);
+  const [otpPendingToken, setOtpPendingToken] = useState(null);
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpExpiresAt, setOtpExpiresAt] = useState(null);
 
   const handleIdChange = (e) => {
     const value = e.target.value;
@@ -150,6 +155,16 @@ const LoginModal = ({ isOpen, onClose }) => {
         return;
       }
 
+      // If backend indicates OTP is required, open OTP modal and pass initial token/email
+      if (data?.otp_required && loginRole !== 'student') {
+        setOtpPendingToken(data.pending_token || null);
+        // prefer email from response, otherwise use the identifier we sent
+        setOtpEmail(data.email || (payload.email || ''));
+        setOtpExpiresAt(data.expires_at || null);
+        setOtpOpen(true);
+        return;
+      }
+
       if (data?.token) {
         // Ensure stored user has a normalized `user_type`
         if (!data.user_type) {
@@ -190,6 +205,44 @@ const LoginModal = ({ isOpen, onClose }) => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleOTPVerified = (data) => {
+    if (!data?.token) return;
+
+    if (!data.user_type) {
+      data.user_type = loginRole === 'depthead' ? 'department_head' : loginRole;
+    }
+
+    localStorage.setItem('authToken', data.token);
+    localStorage.setItem('authUser', JSON.stringify(data));
+
+    const returnedRole = data.user_type;
+    if (returnedRole === 'student') {
+      if (data?.must_change_password) {
+        setMustChangePassword(true);
+        setChangeError('');
+        setOtpOpen(false);
+        return;
+      }
+      window.history.pushState({}, '', '/dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } else if (returnedRole === 'faculty') {
+      if (data?.must_change_password) {
+        setMustChangePassword(true);
+        setChangeError('');
+        setOtpOpen(false);
+        return;
+      }
+      window.history.pushState({}, '', '/faculty-dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
+      window.history.pushState({}, '', '/depthead-dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+
+    setOtpOpen(false);
+    onClose();
   };
 
   // A small list of very common passwords to check against (lowercase)
@@ -396,6 +449,15 @@ const LoginModal = ({ isOpen, onClose }) => {
                     />
                   </div>
                 </div>
+                <OTPModal
+                  isOpen={otpOpen}
+                  onClose={() => setOtpOpen(false)}
+                  onVerified={handleOTPVerified}
+                  initialPendingToken={otpPendingToken}
+                  initialEmail={otpEmail}
+                  initialExpiresAt={otpExpiresAt}
+                  initialRole={loginRole === 'depthead' ? 'department_head' : loginRole}
+                />
 
                 <div>
                   <label className="

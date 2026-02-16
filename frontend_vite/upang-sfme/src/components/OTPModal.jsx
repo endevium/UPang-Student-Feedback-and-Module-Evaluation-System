@@ -1,0 +1,278 @@
+import React, { useEffect, useState } from 'react'
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
+
+const OTPModal = ({
+  isOpen,
+  onClose,
+  onVerified,
+  sendEndpoint = '/otp/send/',
+  verifyEndpoint = '/otp/verify/',
+  initialPendingToken = null,
+  initialEmail = '',
+  initialExpiresAt = null,
+  initialRole = 'student',
+  initialPurpose = 'login',
+}) => {
+  const [email, setEmail] = useState(initialEmail)
+  const [role, setRole] = useState(initialRole)
+  const [purpose, setPurpose] = useState(initialPurpose)
+
+  const [isSending, setIsSending] = useState(false)
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [pendingToken, setPendingToken] = useState(null)
+  const [otp, setOtp] = useState('')
+  const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
+  const [expiresAt, setExpiresAt] = useState(null)
+  const [countdown, setCountdown] = useState(null)
+
+  useEffect(() => {
+    if (!expiresAt) return
+    const tick = () => {
+      const ms = new Date(expiresAt).getTime() - Date.now()
+      if (ms <= 0) {
+        setCountdown('00:00')
+        return
+      }
+      const mins = Math.floor(ms / 60000).toString().padStart(2, '0')
+      const secs = Math.floor((ms % 60000) / 1000).toString().padStart(2, '0')
+      setCountdown(`${mins}:${secs}`)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [expiresAt])
+
+  useEffect(() => {
+    if (!isOpen) {
+      // reset on close
+      setEmail(initialEmail || '')
+      setRole(initialRole || 'student')
+      setPurpose(initialPurpose || 'login')
+      setPendingToken(null)
+      setOtp('')
+      setError('')
+      setInfo('')
+      setExpiresAt(null)
+      setCountdown(null)
+    } else {
+      // when opened, if initial pending token provided, prefill and show verify form
+      if (initialPendingToken) {
+        setPendingToken(initialPendingToken)
+        setEmail(initialEmail || '')
+        if (initialExpiresAt) setExpiresAt(initialExpiresAt)
+      }
+    }
+  }, [isOpen])
+
+  const sendOtp = async (e) => {
+    e && e.preventDefault()
+    setError('')
+    setInfo('')
+    if (!email) return setError('Please enter an email')
+    setIsSending(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}${sendEndpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, role, purpose }),
+      })
+      const data = await res.json()
+      console.log('sendOtp response', res.status, data)
+      if (!res.ok) {
+        setError(data.detail || data.error || 'Failed to send OTP')
+        return
+      }
+
+      // Expecting at least `pending_token` and optionally `expires_at` in ISO format
+      setPendingToken(data.pending_token || data.pendingToken || null)
+      if (data.expires_at) setExpiresAt(data.expires_at)
+      else setExpiresAt(new Date(Date.now() + (data.ttl_minutes || 5) * 60000).toISOString())
+      setInfo('OTP sent. Check your email for the code.')
+    } catch  {
+      setError('Network error while sending OTP')
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  const verifyOtp = async (e) => {
+    e && e.preventDefault()
+    setError('')
+    setIsVerifying(true)
+    if (!pendingToken) return setError('No pending verification in progress')
+    if (!otp || otp.length < 4) return setError('Enter the code')
+    try {
+      const res = await fetch(`${API_BASE_URL}${verifyEndpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pending_token: pendingToken, otp }),
+      })
+      const data = await res.json()
+      console.log('verifyOtp response', res.status, data)
+      if (!res.ok) {
+        // Map backend message to a user-friendly error
+        const detail = (data.detail || data.error || '').toString()
+        if (detail.toLowerCase().includes('invalid otp')) {
+          setError('OTP is incorrect')
+        } else {
+          setError(detail || 'Verification failed')
+        }
+        return
+      }
+
+      // On success we call onVerified with returned data (token/user/etc.)
+      if (onVerified) {
+        onVerified(data)
+      } else if (data?.token) {
+        // fallback: save token locally and redirect based on returned role
+        try {
+          const userType = data.user_type || data.userType || 'student'
+          localStorage.setItem('authToken', data.token)
+          localStorage.setItem('authUser', JSON.stringify(data))
+          if (userType === 'student') {
+            window.history.pushState({}, '', '/dashboard')
+            window.dispatchEvent(new PopStateEvent('popstate'))
+            window.location.reload()
+          } else if (userType === 'faculty') {
+            window.history.pushState({}, '', '/faculty-dashboard')
+            window.dispatchEvent(new PopStateEvent('popstate'))
+            window.location.reload()
+          } else if (userType === 'department_head' || userType === 'depthead') {
+            window.history.pushState({}, '', '/depthead-dashboard')
+            window.dispatchEvent(new PopStateEvent('popstate'))
+            window.location.reload()
+          }
+        } catch (e) {
+          console.error('fallback login failed', e)
+        }
+      }
+
+      setInfo('OTP verified — logging you in...')
+      onClose && onClose()
+    } catch  {
+      console.error('Network error while verifying OTP')
+      setError('Network error while verifying OTP')
+    } finally {
+      setIsVerifying(false)
+    }
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div
+      className="fixed inset-0 w-full h-full bg-black/85 flex justify-center items-center z-[9999] backdrop-blur-[5px] p-4"
+      onClick={onClose}
+    >
+      <div
+        className="font-upang bg-[#23344E] bg-gradient-to-b from-[#28625C] to-[#23344E] w-full max-w-md rounded-[20px] relative overflow-hidden text-white shadow-2xl p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          className="absolute top-3 right-4 z-50 text-white text-[24px] hover:text-[#ffcc00]"
+          onClick={onClose}
+          aria-label="close"
+        >
+          &times;
+        </button>
+
+        <div className="mb-4">
+          <h1 className="text-2xl font-black">Verification Code</h1>
+          <p className="opacity-70 text-sm mt-1">Enter the code sent to your email to continue.</p>
+        </div>
+
+        {!pendingToken ? (
+          <div role="form" aria-label="send-otp-form">
+            <div className="space-y-4">
+              <div>
+                <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Email</label>
+                <div className="flex items-center bg-white rounded-xl py-3 px-4">
+                  <input
+                    type="email"
+                    placeholder="name@upang.edu.ph"
+                    className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { sendOtp(); } }}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Role</label>
+                  <div className="bg-white rounded-xl py-2 px-3">
+                    <select className="w-full bg-transparent outline-none" value={role} onChange={(e) => setRole(e.target.value)}>
+                      <option value="student">Student</option>
+                      <option value="faculty">Faculty</option>
+                      <option value="department_head">Dept Head</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="w-36">
+                  <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Purpose</label>
+                  <div className="bg-white rounded-xl py-2 px-3">
+                    <select className="w-full bg-transparent outline-none" value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+                      <option value="login">Login</option>
+                      <option value="reset_password">Reset Password</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {error && <div className="mt-2 text-sm text-[#ffcc00] font-semibold">{error}</div>}
+              {info && <div className="mt-2 text-sm text-white/80">{info}</div>}
+            </div>
+
+            <button type="button" onClick={sendOtp} disabled={isSending} className="w-full py-4 bg-[#ffcc00] text-[#041c32] font-black rounded-xl mt-6">
+              {isSending ? 'SENDING...' : 'SEND CODE'}
+            </button>
+          </div>
+        ) : (
+          <div role="form" aria-label="verify-otp-form">
+            <div className="space-y-4">
+              <p className="text-sm mb-1">We sent a code to <b>{email}</b>. Enter it below.</p>
+
+              <div>
+                <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Code</label>
+                <div className="flex items-center bg-white rounded-xl py-3 px-4">
+                  <input
+                    type="text"
+                    className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { verifyOtp(); } }}
+                    inputMode="numeric"
+                    maxLength={8}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-sm text-white/80">
+                <div>Token: {pendingToken ? `${pendingToken.slice(0, 8)}...` : '-'}</div>
+                <div>Expires: {countdown || '—'}</div>
+              </div>
+
+              {error && <div className="mt-2 text-sm text-[#ffcc00] font-semibold">{error}</div>}
+            </div>
+
+            <div className="flex gap-2 mt-4">
+              <button type="button" onClick={verifyOtp} disabled={isVerifying} className="flex-1 py-3 bg-[#0f172a] text-white font-bold rounded-xl">
+                {isVerifying ? 'VERIFYING...' : 'VERIFY'}
+              </button>
+              <button type="button" className="py-3 px-4 border rounded-xl bg-white/5" onClick={sendOtp} disabled={isSending}>
+                {isSending ? 'RESENDING...' : 'RESEND'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default OTPModal
