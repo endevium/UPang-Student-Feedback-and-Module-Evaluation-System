@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from ..models.Student import Student
+from ..password_rules import validate_strong_password
 
 class StudentChangePasswordSerializer(serializers.Serializer):
     student_number = serializers.CharField()
@@ -11,9 +12,6 @@ class StudentChangePasswordSerializer(serializers.Serializer):
         old_password = attrs.get('old_password')
         new_password = attrs.get('new_password')
 
-        if not new_password or len(new_password) < 6:
-            raise serializers.ValidationError("New password must be at least 6 characters")
-
         try:
             student = Student.objects.get(student_number=student_number)
         except Student.DoesNotExist:
@@ -21,6 +19,11 @@ class StudentChangePasswordSerializer(serializers.Serializer):
 
         if not student.check_password(old_password):
             raise serializers.ValidationError("Invalid credentials")
+
+        validate_strong_password(new_password, user=student)
+
+        if old_password == new_password:
+            raise serializers.ValidationError("New password must be different from the old password.")
 
         attrs['user'] = student
         return attrs

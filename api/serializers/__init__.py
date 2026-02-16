@@ -10,6 +10,7 @@ from .ModuleEvaluationForm import ModuleEvaluationFormSerializer
 from .Student import StudentSerializer
 from .StudentChangePassword import StudentChangePasswordSerializer
 from .StudentLogin import StudentLoginSerializer
+from .OTP import SendOTPSerializer, VerifyOTPSerializer
 
 __all__ = [
     "AuditLogSerializer",
@@ -23,5 +24,7 @@ __all__ = [
     "ModuleEvaluationFormSerializer",
     "StudentSerializer",
     "StudentChangePasswordSerializer",
-    "StudentLoginSerializer"
+    "StudentLoginSerializer",
+    "SendOTPSerializer",
+    "VerifyOTPSerializer"
 ]

@@ -6,6 +6,7 @@ from .Faculty import Faculty
 from .InstructorEvaluationForm import InstructorEvaluationForm
 from .ModuleEvaluationForm import ModuleEvaluationForm
 from .Student import Student
+from .OTP import EmailOTP
 
 __all__ = [
     "AuditLog",
@@ -17,4 +18,5 @@ __all__ = [
     "InstructorEvaluationForm",
     "ModuleEvaluationForm",
     "Student",
+    "EmailOTP"
 ]

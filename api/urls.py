@@ -31,4 +31,7 @@ urlpatterns = [
     path("feedback/submissions/", views.FeedbackResponseListView.as_view(), name="student-feedback-detail"),
 
     path("audit-logs/", views.AuditLogListView.as_view(), name="audit-log-list"),
+
+    path("otp/send/", views.SendOTPView.as_view(), name="otp-send"),
+    path("otp/verify/", views.VerifyOTPView.as_view(), name="otp-verify"),
 ]

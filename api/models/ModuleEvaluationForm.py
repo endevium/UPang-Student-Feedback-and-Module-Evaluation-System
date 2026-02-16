@@ -10,7 +10,7 @@ class ModuleEvaluationForm(models.Model):
 
     class Meta:
         db_table = "module_evaluation_forms"
-        managed = True
+        managed = False
 
     def __str__(self):
         return self.subject_code

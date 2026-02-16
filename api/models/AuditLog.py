@@ -12,7 +12,7 @@ class AuditLog(models.Model):
 
     class Meta:
         db_table = "audit_logs"
-        managed = True
+        managed = False
         ordering = ['-timestamp']
 
     def __str__(self):

@@ -5,6 +5,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.contrib.contenttypes.models import ContentType
+from django.utils import timezone
 
 from .throttles import AIRequestRateThrottle, LoginRateThrottle
 from .models import Student
@@ -22,6 +23,7 @@ from .models.ModuleAssignment import ModuleAssignment
 from .models.ModuleEvaluationForm import ModuleEvaluationForm
 from .models.Student import Student
 from .models.FeedbackResponse import FeedbackResponse
+from .models.OTP import EmailOTP
 
 from .serializers.AuditLog import AuditLogSerializer
 from .serializers.DepartmentHead import DepartmentHeadSerializer
@@ -36,6 +38,9 @@ from .serializers.Student import StudentSerializer
 from .serializers.StudentChangePassword import StudentChangePasswordSerializer
 from .serializers.StudentLogin import StudentLoginSerializer
 from .serializers.FeedbackResponse import FeedbackResponseSerializer
+from .serializers.OTP import SendOTPSerializer, VerifyOTPSerializer
+
+from .utils import create_and_send_otp
 
 def _issue_jwt(role: str, legacy_user_id: int) -> str:
     token = AccessToken()
@@ -249,18 +254,31 @@ class StudentLoginView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
 
-        token = _issue_jwt("student", user.id)
+        try:
+            record = create_and_send_otp(
+                email=user.email,
+                ttl_minutes=5,
+                purpose=EmailOTP.Purpose.LOGIN,
+                role=EmailOTP.Role.STUDENT
+            )
+        except Exception:
+            return Response(
+                {"detail": "Failed to send OTP email. Please try again later."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
-        return Response({
-            "id": user.id,
-            "student_number": user.student_number,
-            "firstname": user.firstname,
-            "lastname": user.lastname,
-            "user_type": "student",
-            "must_change_password": user.must_change_password,
-            "token": token
-        },
-        status=status.HTTP_200_OK)
+
+        return Response(
+            {
+                "otp_required": True,
+                "detail": "OTP has been sent to your email",
+                "pending_token": record.pending_token,
+                "expires_at": record.expires_at,
+                "user_type": "student",
+                "must_change_password": user.must_change_password,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 class FacultyLoginView(APIView):
     throttle_classes = [LoginRateThrottle]
@@ -270,18 +288,31 @@ class FacultyLoginView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
 
-        token = _issue_jwt("faculty", user.id)
+        try:
+            record = create_and_send_otp(
+                email=user.email,
+                ttl_minutes=5,
+                purpose=EmailOTP.Purpose.LOGIN,
+                role=EmailOTP.Role.FACULTY
+            )
+        except Exception:
+            return Response(
+                {"detail": "Failed to send OTP email. Please try again later."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
-        return Response({
-            "id": user.id,
-            "email": user.email,
-            "firstname": user.firstname,
-            "lastname": user.lastname,
-            "user_type": "faculty",
-            "must_change_password": user.must_change_password,
-            "token": token
-        },
-        status=status.HTTP_200_OK)
+
+        return Response(
+            {
+                "otp_required": True,
+                "detail": "OTP has been sent to your email",
+                "pending_token": record.pending_token,
+                "expires_at": record.expires_at,
+                "user_type": "faculty",
+                "must_change_password": user.must_change_password,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 class DepartmentHeadLoginView(APIView):
     throttle_classes = [LoginRateThrottle]
@@ -291,17 +322,28 @@ class DepartmentHeadLoginView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
 
-        token = _issue_jwt("department_head", user.id)
+        try:
+            record = create_and_send_otp(
+                email=user.email,
+                ttl_minutes=5,
+                purpose=EmailOTP.Purpose.LOGIN,
+                role=EmailOTP.Role.DEPARTMENT_HEAD
+            )
+        except Exception:
+            return Response(
+                {"detail": "Failed to send OTP email. Please try again later."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
-        return Response({
-            "id": user.id,
-            "email": user.email,
-            "firstname": user.firstname,
-            "lastname": user.lastname,
-            "user_type": "department_head",
-            "token": token
-        },
-        status=status.HTTP_200_OK)
+        return Response(
+            {
+                "otp_required": True,
+                "detail": "OTP has been sent to your email",
+                "pending_token": record.pending_token,
+                "expires_at": record.expires_at,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 class StudentChangePasswordView(APIView):
     def post(self, request):
@@ -1160,3 +1202,149 @@ class SentimentTestView(APIView):
             return Response({"detail": "Model error", "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({"label": label}, status=status.HTTP_200_OK)
+    
+class SendOTPView(APIView):
+    throttle_classes = [LoginRateThrottle]
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        serializer = SendOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"].strip().lower()
+
+        role = None
+        if Student.objects.filter(email__iexact=email).exists():
+            role = EmailOTP.Role.STUDENT
+        elif Faculty.objects.filter(email__iexact=email).exists():
+            role = EmailOTP.Role.FACULTY
+        elif DepartmentHead.objects.filter(email__iexact=email).exists():
+            role = EmailOTP.Role.DEPARTMENT_HEAD
+        else:
+            return Response({"detail": "Email not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        record = create_and_send_otp(
+            email=email,
+            ttl_minutes=5,
+            purpose=EmailOTP.Purpose.LOGIN,
+            role=role,
+        )
+
+        return Response(
+            {
+                "detail": "OTP has been sent to your email",
+                "pending_token": record.pending_token,
+                "expires_at": record.expires_at,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+class VerifyOTPView(APIView):
+    throttle_classes = [LoginRateThrottle]
+    authentication_classes = []
+    permission_classes = []
+
+    MAX_ATTEMPTS = 5
+
+    def post(self, request):
+        serializer = VerifyOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        pending_token = serializer.validated_data["pending_token"].strip()
+        otp = serializer.validated_data["otp"].strip()
+
+        record = EmailOTP.objects.filter(pending_token=pending_token).order_by("-created_at").first()
+        if not record:
+            return Response({"detail": "Invalid pending token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if record.is_used:
+            return Response({"detail": "OTP already used"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if record.is_expired():
+            return Response({"detail": "OTP expired"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if record.attempts >= self.MAX_ATTEMPTS:
+            return Response({"detail": "Too many attempts"}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        if record.otp != otp:
+            record.attempts = record.attempts + 1
+            record.save(update_fields=["attempts"])
+            return Response({"detail": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # success
+        record.is_used = True
+        record.save(update_fields=["is_used"])
+
+        # For LOGIN: issue JWT for the linked user
+        if record.purpose == EmailOTP.Purpose.LOGIN:
+            # STUDENT
+            if record.role == EmailOTP.Role.STUDENT:
+                user = Student.objects.filter(email__iexact=record.email).first()
+                if not user:
+                    return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+                token = _issue_jwt("student", user.id)
+                return Response(
+                    {
+                        "detail": "OTP verified",
+                        "token": token,
+                        "user_type": "student",
+                        "id": user.id,
+                        "student_number": user.student_number,
+                        "email": user.email,
+                        "firstname": user.firstname,
+                        "lastname": user.lastname,
+                        "must_change_password": user.must_change_password,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            # FACULTY
+            if record.role == EmailOTP.Role.FACULTY:
+                user = Faculty.objects.filter(email__iexact=record.email).first()
+                if not user:
+                    return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+                token = _issue_jwt("faculty", user.id)
+                return Response(
+                    {
+                        "detail": "OTP verified",
+                        "token": token,
+                        "user_type": "faculty",
+                        "id": user.id,
+                        "email": user.email,
+                        "firstname": user.firstname,
+                        "lastname": user.lastname,
+                        "must_change_password": user.must_change_password,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            # DEPARTMENT HEAD
+            if record.role == EmailOTP.Role.DEPARTMENT_HEAD:
+                user = DepartmentHead.objects.filter(email__iexact=record.email).first()
+                if not user:
+                    return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+                token = _issue_jwt("department_head", user.id)
+                return Response(
+                    {
+                        "detail": "OTP verified",
+                        "token": token,
+                        "user_type": "department_head",
+                        "id": user.id,
+                        "email": user.email,
+                        "firstname": user.firstname,
+                        "lastname": user.lastname,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            return Response({"detail": "Unsupported role"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # For RESET_PASSWORD: (leave as-is if you implemented it already)
+        if record.purpose == EmailOTP.Purpose.RESET_PASSWORD:
+            return Response({"detail": "Unsupported purpose"}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"detail": "Unsupported purpose"}, status=status.HTTP_400_BAD_REQUEST)

@@ -24,6 +24,7 @@ class FeedbackResponse(models.Model):
             models.UniqueConstraint(fields=['form_content_type','form_object_id','student'], name='unique_form_student', condition=Q(student__isnull=False)),
             models.UniqueConstraint(fields=['form_content_type','form_object_id','pseudonym'], name='unique_form_pseudonym', condition=Q(pseudonym__isnull=False)),
         ]
+        managed = False
 
     def __str__(self):
         return f"FeedbackResponse {self.id} for {self.form_content_type}({self.form_object_id})"

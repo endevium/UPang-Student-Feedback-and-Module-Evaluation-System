@@ -18,6 +18,7 @@ class EvaluationQuestion(models.Model):
     class Meta:
         db_table = 'evaluation_questions'
         unique_together = ('position',)
+        managed = False
 
     def __str__(self):
         return self.code or (self.question_text[:50] + '...')

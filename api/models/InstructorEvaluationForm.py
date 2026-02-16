@@ -9,7 +9,7 @@ class InstructorEvaluationForm(models.Model):
 
     class Meta:
         db_table = "instructor_evaluation_forms"
-        managed = True
+        managed = False
 
     def __str__(self):
         return self.instructor_name
