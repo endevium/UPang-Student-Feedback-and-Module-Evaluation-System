@@ -1,4 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
+import logo from '../assets/navbar-logo.png'
+import studentGroupImg from '../assets/group-student2.png'
+import SafeImg from './SafeImg'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
@@ -26,6 +29,7 @@ const OTPModal = ({
   const [info, setInfo] = useState('')
   const [expiresAt, setExpiresAt] = useState(null)
   const [countdown, setCountdown] = useState(null)
+  const inputsRef = useRef([])
 
   useEffect(() => {
     if (!expiresAt) return
@@ -167,109 +171,183 @@ const OTPModal = ({
       onClick={onClose}
     >
       <div
-        className="font-upang bg-[#23344E] bg-gradient-to-b from-[#28625C] to-[#23344E] w-full max-w-md rounded-[20px] relative overflow-hidden text-white shadow-2xl p-6"
+        className="font-upang bg-[#23344E] bg-gradient-to-b from-[#28625C] to-[#23344E] w-full max-w-[1100px] max-h-[95vh] rounded-[20px] relative overflow-y-auto lg:overflow-hidden text-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
-          className="absolute top-3 right-4 z-50 text-white text-[24px] hover:text-[#ffcc00]"
+          className="absolute top-4 right-5 z-50 text-white text-[32px] hover:text-[#ffcc00] transition-colors"
           onClick={onClose}
           aria-label="close"
         >
           &times;
         </button>
 
-        <div className="mb-4">
-          <h1 className="text-2xl font-black">Verification Code</h1>
-          <p className="opacity-70 text-sm mt-1">Enter the code sent to your email to continue.</p>
+        <div className="flex flex-col lg:flex-row min-h-[320px] select-none">
+          <div className="hidden lg:flex lg:flex-1 relative bg-transparent items-end justify-center overflow-visible p-12">
+            <SafeImg
+              src={studentGroupImg}
+              alt="Students"
+              className="w-full h-auto z-0 object-contain translate-x-[10%] scale-[1.15]"
+            />
+          </div>
+
+          <div className="flex-1 lg:flex-[1.2] p-6 sm:p-10 lg:p-12">
+            <div className="flex justify-center lg:justify-start items-center mb-6">
+              <SafeImg src={logo} alt="Logo" className="w-[220px] sm:w-[300px] lg:w-[400px] h-auto" />
+            </div>
+            <div className="mb-4">
+              <h1 className="text-2xl font-black">Verification Code</h1>
+              <p className="opacity-70 text-sm mt-1">Enter the code sent to your email to continue.</p>
+            </div>
+
+            {!pendingToken ? (
+              <div role="form" aria-label="send-otp-form">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Email</label>
+                    <div className="flex items-center bg-white rounded-xl py-3 px-4">
+                      <input
+                        type="email"
+                        placeholder="name@upang.edu.ph"
+                        className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { sendOtp(); } }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Role</label>
+                      <div className="bg-white rounded-xl py-2 px-3">
+                        <select className="w-full bg-transparent outline-none" value={role} onChange={(e) => setRole(e.target.value)}>
+                          <option value="student">Student</option>
+                          <option value="faculty">Faculty</option>
+                          <option value="department_head">Dept Head</option>
+                          
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="w-36">
+                      <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Purpose</label>
+                      <div className="bg-white rounded-xl py-2 px-3">
+                        <select className="w-full bg-transparent outline-none" value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+                          <option value="login">Login</option>
+                          <option value="reset_password">Reset Password</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {error && <div className="mt-2 text-sm text-[#ffcc00] font-semibold">{error}</div>}
+                  {info && <div className="mt-2 text-sm text-white/80">{info}</div>}
+                </div>
+
+                <button type="button" onClick={sendOtp} disabled={isSending} className="w-full py-4 bg-[#ffcc00] text-[#041c32] font-black rounded-xl mt-6 shadow-lg hover:bg-[#e6b800] active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed">
+                  {isSending ? 'SENDING...' : 'SEND CODE'}
+                </button>
+              </div>
+            ) : (
+              <div role="form" aria-label="verify-otp-form">
+                <div className="space-y-4">
+                  <p className="text-sm mb-1">We sent a code to <b>{email}</b>. Enter it below.</p>
+
+                  <div>
+                    <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Code</label>
+                    <div className="relative rounded-xl py-6 px-4 flex items-center justify-center">
+                      {/* Visual six-box display (keeps single input and handlers unchanged) */}
+                      <div className="grid grid-cols-6 gap-4 w-full max-w-sm justify-center">
+                        {[0,1,2,3,4,5].map((i) => (
+                          <input
+                            key={i}
+                            ref={(el) => (inputsRef.current[i] = el)}
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={1}
+                            value={otp?.[i] || ''}
+                            onChange={(e) => {
+                              const ch = (e.target.value || '').replace(/[^0-9]/g, '').slice(0,1)
+                              const arr = (otp || '').split('').slice(0,6)
+                              while (arr.length < 6) arr.push('')
+                              arr[i] = ch
+                              const newOtp = arr.join('').replace(/\s+/g, '').slice(0,6)
+                              setOtp(newOtp)
+                              if (ch && i < 5) {
+                                const next = inputsRef.current[i+1]
+                                next && next.focus()
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { verifyOtp(); return }
+                              if (e.key === 'Backspace') {
+                                if ((otp?.[i] || '') === '') {
+                                  const prev = inputsRef.current[i-1]
+                                  prev && prev.focus()
+                                } else {
+                                  const arr = (otp || '').split('').slice(0,6)
+                                  arr[i] = ''
+                                  setOtp(arr.join('').slice(0,6))
+                                }
+                              } else if (e.key === 'ArrowLeft') {
+                                const prev = inputsRef.current[i-1]
+                                prev && prev.focus()
+                              } else if (e.key === 'ArrowRight') {
+                                const next = inputsRef.current[i+1]
+                                next && next.focus()
+                              }
+                            }}
+                            onPaste={(e) => {
+                              const paste = (e.clipboardData.getData('text') || '').replace(/[^0-9]/g, '').slice(0,6-i)
+                              if (!paste) return
+                              e.preventDefault()
+                              const arr = (otp || '').split('').slice(0,6)
+                              while (arr.length < 6) arr.push('')
+                              for (let j = 0; j < paste.length; j++) {
+                                arr[i + j] = paste[j]
+                              }
+                              const newOtp = arr.join('').slice(0,6)
+                              setOtp(newOtp)
+                              const focusIdx = Math.min(5, i + paste.length)
+                              const next = inputsRef.current[focusIdx]
+                              next && next.focus()
+                            }}
+                            className="w-12 
+                            sm:w-14 
+                            h-14 
+                            bg-white
+                            rounded-xl 
+                            flex items-center 
+                            justify-center 
+                            border border-white/10 text-center text-slate-800 text-2xl font-black shadow-sm focus:outline-none focus:ring-2 focus:ring-[#ffcc00]"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-sm text-white/80">
+                    {/* <div>Token: {pendingToken ? `${pendingToken.slice(0, 8)}...` : '-'}</div> */}
+                    <div>Expires: {countdown || '—'}</div>
+                  </div>
+
+                  {error && <div className="mt-2 text-sm text-[#ffcc00] font-semibold">{error}</div>}
+                </div>
+
+                <div className="flex gap-2 mt-4">
+                  <button type="button" onClick={verifyOtp} disabled={isVerifying} className="flex-1 py-4 bg-[#ffcc00] text-[#041c32] font-black rounded-xl shadow-lg hover:bg-[#e6b800] active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed">
+                    {isVerifying ? 'VERIFYING...' : 'VERIFY'}
+                  </button>
+                  <button type="button" className="py-4 px-4 border rounded-xl bg-white/5 text-white" onClick={sendOtp} disabled={isSending}>
+                    {isSending ? 'RESENDING...' : 'RESEND'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-
-        {!pendingToken ? (
-          <div role="form" aria-label="send-otp-form">
-            <div className="space-y-4">
-              <div>
-                <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Email</label>
-                <div className="flex items-center bg-white rounded-xl py-3 px-4">
-                  <input
-                    type="email"
-                    placeholder="name@upang.edu.ph"
-                    className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { sendOtp(); } }}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Role</label>
-                  <div className="bg-white rounded-xl py-2 px-3">
-                    <select className="w-full bg-transparent outline-none" value={role} onChange={(e) => setRole(e.target.value)}>
-                      <option value="student">Student</option>
-                      <option value="faculty">Faculty</option>
-                      <option value="department_head">Dept Head</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="w-36">
-                  <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Purpose</label>
-                  <div className="bg-white rounded-xl py-2 px-3">
-                    <select className="w-full bg-transparent outline-none" value={purpose} onChange={(e) => setPurpose(e.target.value)}>
-                      <option value="login">Login</option>
-                      <option value="reset_password">Reset Password</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {error && <div className="mt-2 text-sm text-[#ffcc00] font-semibold">{error}</div>}
-              {info && <div className="mt-2 text-sm text-white/80">{info}</div>}
-            </div>
-
-            <button type="button" onClick={sendOtp} disabled={isSending} className="w-full py-4 bg-[#ffcc00] text-[#041c32] font-black rounded-xl mt-6">
-              {isSending ? 'SENDING...' : 'SEND CODE'}
-            </button>
-          </div>
-        ) : (
-          <div role="form" aria-label="verify-otp-form">
-            <div className="space-y-4">
-              <p className="text-sm mb-1">We sent a code to <b>{email}</b>. Enter it below.</p>
-
-              <div>
-                <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Code</label>
-                <div className="flex items-center bg-white rounded-xl py-3 px-4">
-                  <input
-                    type="text"
-                    className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { verifyOtp(); } }}
-                    inputMode="numeric"
-                    maxLength={8}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-sm text-white/80">
-                <div>Token: {pendingToken ? `${pendingToken.slice(0, 8)}...` : '-'}</div>
-                <div>Expires: {countdown || '—'}</div>
-              </div>
-
-              {error && <div className="mt-2 text-sm text-[#ffcc00] font-semibold">{error}</div>}
-            </div>
-
-            <div className="flex gap-2 mt-4">
-              <button type="button" onClick={verifyOtp} disabled={isVerifying} className="flex-1 py-3 bg-[#0f172a] text-white font-bold rounded-xl">
-                {isVerifying ? 'VERIFYING...' : 'VERIFY'}
-              </button>
-              <button type="button" className="py-3 px-4 border rounded-xl bg-white/5" onClick={sendOtp} disabled={isSending}>
-                {isSending ? 'RESENDING...' : 'RESEND'}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
