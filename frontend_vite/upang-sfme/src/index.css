@@ -16,3 +16,7 @@ body {
   background-color: #f8fafc;
   color: #0f172a;
 }
+
+.grecaptcha-badge {
+  z-index: 20000 !important; /* higher than your modal z-[9999] */
+}

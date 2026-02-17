@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import ReCAPTCHA from 'react-google-recaptcha';
 import { User, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../assets/navbar-logo.png';
 import studentGroupImg from '../assets/group-student2.png';
@@ -6,6 +7,7 @@ import SafeImg from './SafeImg';
 import OTPModal from './OTPModal';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
 
 const LoginModal = ({ isOpen, onClose }) => {
   const [showPassword, setShowPassword] = useState(false);
@@ -23,6 +25,8 @@ const LoginModal = ({ isOpen, onClose }) => {
   const [otpEmail, setOtpEmail] = useState('');
   const [otpExpiresAt, setOtpExpiresAt] = useState(null);
   const [animateIn, setAnimateIn] = useState(false);
+
+  const recaptchaRef = useRef(null);
 
   const handleIdChange = (e) => {
     const value = e.target.value;
@@ -145,10 +149,26 @@ const LoginModal = ({ isOpen, onClose }) => {
 
     try {
       setIsSubmitting(true);
+      if (!RECAPTCHA_SITE_KEY) {
+        setErrorMessage('reCAPTCHA site key is not configured.');
+        return;
+      }
+
+      const recaptchaToken = await recaptchaRef.current?.executeAsync();
+      recaptchaRef.current?.reset();
+
+      if (!recaptchaToken) {
+        setErrorMessage('reCAPTCHA failed. Please try again.');
+        return;
+      }
+
       const response = await fetch(`${API_BASE_URL}${getLoginEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          recaptcha_token: recaptchaToken,
+        }),
       });
 
       let data = {};
@@ -400,7 +420,13 @@ const LoginModal = ({ isOpen, onClose }) => {
         onClick={(e) => e.stopPropagation()}
         onContextMenu={handleContextMenu}
         onDragStart={(e) => e.preventDefault()}
-      >
+      > 
+        <ReCAPTCHA
+          ref={recaptchaRef}
+          sitekey={RECAPTCHA_SITE_KEY}
+          size="invisible"
+        />
+
         {/* Close Button */}
         <button 
           className="absolute top-4 right-5 z-50 text-white text-[32px] hover:text-[#ffcc00] transition-colors" 

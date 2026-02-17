@@ -12,6 +12,7 @@ from .models import Student
 from .sentiment_service import predict_sentiment
 import csv
 import io
+from .recaptcha import verify_recaptcha_v2
 
 from .models.AuditLog import AuditLog
 from .models.DepartmentHead import DepartmentHead
@@ -252,6 +253,11 @@ class StudentLoginView(APIView):
     permission_classes = []
 
     def post(self, request):
+        verify_recaptcha_v2(
+            token=request.data.get("recaptcha_token"),
+            remote_ip=request.META.get("REMOTE_ADDR"),
+        )
+
         serializer = StudentLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
@@ -289,6 +295,11 @@ class FacultyLoginView(APIView):
     permission_classes = []
 
     def post(self, request):
+        verify_recaptcha_v2(
+            token=request.data.get("recaptcha_token"),
+            remote_ip=request.META.get("REMOTE_ADDR"),
+        )
+
         serializer = FacultyLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
@@ -326,6 +337,11 @@ class DepartmentHeadLoginView(APIView):
     permission_classes = []
     
     def post(self, request):
+        verify_recaptcha_v2(
+            token=request.data.get("recaptcha_token"),
+            remote_ip=request.META.get("REMOTE_ADDR"),
+        )
+
         serializer = DepartmentHeadLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
