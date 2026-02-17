@@ -13,7 +13,8 @@ const AuditLogPage = () => {
     const candidates = ['authToken','token','access','accessToken','jwt'];
     let raw = null;
     for (const k of candidates) {
-      const v = localStorage.getItem(k);
+      // Prefer sessionStorage (App migrates persistent tokens into sessionStorage)
+      const v = sessionStorage.getItem(k) || localStorage.getItem(k);
       if (v) { raw = v; break; }
     }
     if (!raw) return null;
@@ -65,8 +66,8 @@ const AuditLogPage = () => {
       setIsLoading(true);
       setLoadError('');
       try {
-        // ensure a token exists (check common localStorage keys)
-        const token = localStorage.getItem('authToken') || localStorage.getItem('token') || localStorage.getItem('access') || localStorage.getItem('accessToken') || localStorage.getItem('jwt');
+        // ensure a token exists (check sessionStorage first, then localStorage)
+        const token = getTokenFromStorage();
         if (!token) {
           setLoadError('Unauthorized: no authentication token found. Please sign in.');
           return;

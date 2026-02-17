@@ -372,6 +372,9 @@ class DepartmentHeadLoginView(APIView):
         )
 
 class StudentChangePasswordView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
     def post(self, request):
         serializer = StudentChangePasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -385,6 +388,9 @@ class StudentChangePasswordView(APIView):
         return Response({"detail": "Password updated"}, status=status.HTTP_200_OK)
 
 class FacultyChangePasswordView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
     def post(self, request):
         serializer = FacultyChangePasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

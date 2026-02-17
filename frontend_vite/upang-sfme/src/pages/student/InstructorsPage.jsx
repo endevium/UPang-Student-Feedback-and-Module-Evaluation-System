@@ -12,7 +12,7 @@ const InstructorsPage = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('authToken');
+    const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
 
     const fetchInstructors = async () => {
       if (!token) {
