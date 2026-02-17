@@ -313,6 +313,49 @@ const LoginModal = ({ isOpen, onClose }) => {
     return { valid: true };
   };
 
+  // Return individual criteria results for live checklist
+  const passwordCriteria = (pwd, username) => {
+    const results = {
+      length: false,
+      upper: false,
+      lower: false,
+      number: false,
+      special: false,
+      notUsername: false,
+      notCommon: false,
+      confirmMatches: false,
+    };
+    if (!pwd || typeof pwd !== 'string') return results;
+    results.length = pwd.length >= 12;
+    results.upper = /[A-Z]/.test(pwd);
+    results.lower = /[a-z]/.test(pwd);
+    results.number = /[0-9]/.test(pwd);
+    results.special = /[^A-Za-z0-9]/.test(pwd);
+    try {
+      if (username) {
+        const uname = String(username).toLowerCase().replace(/\s+/g, '');
+        results.notUsername = uname ? !pwd.toLowerCase().includes(uname) : true;
+        if (String(username).includes('@')) {
+          const local = String(username).split('@')[0].toLowerCase();
+          if (local) results.notUsername = results.notUsername && !pwd.toLowerCase().includes(local);
+        }
+      } else {
+        results.notUsername = true;
+      }
+    } catch {
+      results.notUsername = true;
+    }
+
+    try {
+      results.notCommon = !commonPasswords.includes(pwd.toLowerCase());
+    } catch {
+      results.notCommon = true;
+    }
+
+    results.confirmMatches = (pwd && confirmPassword) ? pwd === confirmPassword : false;
+    return results;
+  };
+
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setChangeError('');
@@ -382,6 +425,9 @@ const LoginModal = ({ isOpen, onClose }) => {
   };
 
   if (!isOpen) return null;
+
+  // Live criteria for change-password checklist
+  const criteria = passwordCriteria(newPassword, studentId);
 
   return (
     <div 
@@ -579,29 +625,68 @@ const LoginModal = ({ isOpen, onClose }) => {
                         {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                       </button>
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Confirm Password</label>
-                    <div className="flex items-center bg-white rounded-xl py-3 px-4">
-                      <Lock className="text-slate-400 mr-3 shrink-0" size={20} />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        placeholder="••••••••"
-                        className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        autoComplete="new-password"
-                      />
                     </div>
-                  </div>
+
+                    <div>
+                      <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Confirm Password</label>
+                      <div className="flex items-center bg-white rounded-xl py-3 px-4">
+                        <Lock className="text-slate-400 mr-3 shrink-0" size={20} />
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          placeholder="••••••••"
+                          className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          autoComplete="new-password"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Live Checklist */}
+                    <div className="mt-2 p-3 bg-white/5 rounded-xl border border-white/10">
+                      <div className="text-sm font-semibold mb-2">Password requirements</div>
+                      <div className="grid gap-2 text-sm">
+                        <div className={`flex items-center gap-2 ${criteria.length ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.length ? '✓' : '✕'}</span>
+                          <span>At least 12 characters</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.upper ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.upper ? '✓' : '✕'}</span>
+                          <span>Contains an uppercase letter</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.lower ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.lower ? '✓' : '✕'}</span>
+                          <span>Contains a lowercase letter</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.number ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.number ? '✓' : '✕'}</span>
+                          <span>Contains a number</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.special ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.special ? '✓' : '✕'}</span>
+                          <span>Contains a special character</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.notUsername ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.notUsername ? '✓' : '✕'}</span>
+                          <span>Does not contain your username</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.notCommon ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.notCommon ? '✓' : '✕'}</span>
+                          <span>Not a commonly used password</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.confirmMatches ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.confirmMatches ? '✓' : '✕'}</span>
+                          <span>Confirm password matches</span>
+                        </div>
+                      </div>
+                    </div>
                 </div>
 
-                {changeError && (
+                {/* {changeError && (
                   <div className="mt-4 text-sm text-[#ffcc00] font-semibold" role="alert">
                     {changeError}
                   </div>
-                )}
+                )} */}
 
                 <button
                   type="submit"

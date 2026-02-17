@@ -200,58 +200,16 @@ const OTPModal = ({
               <p className="opacity-70 text-sm mt-1">Enter the code sent to your email to continue.</p>
             </div>
 
-            {!pendingToken ? (
-              <div role="form" aria-label="send-otp-form">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Email</label>
-                    <div className="flex items-center bg-white rounded-xl py-3 px-4">
-                      <input
-                        type="email"
-                        placeholder="name@upang.edu.ph"
-                        className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { sendOtp(); } }}
-                        required
-                      />
-                    </div>
+            <div role="form" aria-label="verify-otp-form">
+              {!pendingToken ? (
+                <div className="p-6">
+                  <p className="mb-4">No pending verification found. Please request a code from the login screen.</p>
+                  <div className="flex">
+                    <button type="button" onClick={sendOtp} disabled={isSending} className="flex-1 py-3 bg-[#ffcc00] text-[#041c32] rounded-xl font-black disabled:opacity-70 disabled:cursor-not-allowed">{isSending ? 'RESENDING...' : 'RESEND'}</button>
                   </div>
-
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                      <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Role</label>
-                      <div className="bg-white rounded-xl py-2 px-3">
-                        <select className="w-full bg-transparent outline-none" value={role} onChange={(e) => setRole(e.target.value)}>
-                          <option value="student">Student</option>
-                          <option value="faculty">Faculty</option>
-                          <option value="department_head">Dept Head</option>
-                          
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="w-36">
-                      <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Purpose</label>
-                      <div className="bg-white rounded-xl py-2 px-3">
-                        <select className="w-full bg-transparent outline-none" value={purpose} onChange={(e) => setPurpose(e.target.value)}>
-                          <option value="login">Login</option>
-                          <option value="reset_password">Reset Password</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {error && <div className="mt-2 text-sm text-[#ffcc00] font-semibold">{error}</div>}
-                  {info && <div className="mt-2 text-sm text-white/80">{info}</div>}
                 </div>
-
-                <button type="button" onClick={sendOtp} disabled={isSending} className="w-full py-4 bg-[#ffcc00] text-[#041c32] font-black rounded-xl mt-6 shadow-lg hover:bg-[#e6b800] active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed">
-                  {isSending ? 'SENDING...' : 'SEND CODE'}
-                </button>
-              </div>
-            ) : (
-              <div role="form" aria-label="verify-otp-form">
+              ) : (
+                <div>
                 <div className="space-y-4">
                   <p className="text-sm mb-1">We sent a code to <b>{email}</b>. Enter it below.</p>
 
@@ -344,8 +302,9 @@ const OTPModal = ({
                     {isSending ? 'RESENDING...' : 'RESEND'}
                   </button>
                 </div>
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
