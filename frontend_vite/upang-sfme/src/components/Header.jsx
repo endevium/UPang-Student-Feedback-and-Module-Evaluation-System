@@ -6,7 +6,9 @@ import SafeImg from './SafeImg';
 const Header = ({ userName, userRole }) => {
   let storedUser = null;
   try {
-    storedUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+    // Prefer sessionStorage (we store session tokens there). Fall back to localStorage for compatibility.
+    const raw = sessionStorage.getItem('authUser') || localStorage.getItem('authUser') || 'null';
+    storedUser = JSON.parse(raw);
   } catch {
     storedUser = null;
   }
@@ -37,7 +39,7 @@ const Header = ({ userName, userRole }) => {
         return;
       }
 
-      const token = localStorage.getItem('authToken');
+      const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
       const url = `${API_BASE_URL}/department-heads/${storedUser.id}/`;
 
       fetch(url, {

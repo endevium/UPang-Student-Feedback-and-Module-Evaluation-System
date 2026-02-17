@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import logo from '../assets/navbar-logo.png'
 import studentGroupImg from '../assets/group-student2.png'
 import SafeImg from './SafeImg'
+import { saveToken, saveUser } from '../utils/auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
@@ -85,7 +86,7 @@ const OTPModal = ({
       const data = await res.json()
       console.log('sendOtp response', res.status, data)
       if (!res.ok) {
-        setError(data.detail || data.error || 'Failed to send OTP')
+        setError('Unable to send verification code. Please try again.')
         return
       }
 
@@ -116,13 +117,8 @@ const OTPModal = ({
       const data = await res.json()
       console.log('verifyOtp response', res.status, data)
       if (!res.ok) {
-        // Map backend message to a user-friendly error
-        const detail = (data.detail || data.error || '').toString()
-        if (detail.toLowerCase().includes('invalid otp')) {
-          setError('OTP is incorrect')
-        } else {
-          setError(detail || 'Verification failed')
-        }
+        // Show a generic verification error to avoid exposing technical details
+        setError('Verification failed. Please check the code and try again.')
         return
       }
 
@@ -130,11 +126,11 @@ const OTPModal = ({
       if (onVerified) {
         onVerified(data)
       } else if (data?.token) {
-        // fallback: save token locally and redirect based on returned role
+        // fallback: save token to sessionStorage and redirect based on returned role
         try {
           const userType = data.user_type || data.userType || 'student'
-          localStorage.setItem('authToken', data.token)
-          localStorage.setItem('authUser', JSON.stringify(data))
+          saveToken(data.token)
+          saveUser(data)
           if (userType === 'student') {
             window.history.pushState({}, '', '/dashboard')
             window.dispatchEvent(new PopStateEvent('popstate'))

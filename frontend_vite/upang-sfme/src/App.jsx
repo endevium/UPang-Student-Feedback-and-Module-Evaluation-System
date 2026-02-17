@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Header from './components/Header.jsx';
+import IdleManager from './components/IdleManager.jsx';
 
 // Main Pages
 import LandingPage from './pages/LandingPage.jsx';
@@ -26,7 +27,31 @@ import EvaluationForm from './pages/student/EvaluationForm.jsx';
 
 function App() {
   const [route, setRoute] = useState(window.location.pathname || '/');
-  const isLoggedIn = Boolean(localStorage.getItem('authToken'));
+  // On startup: if a persistent token exists in localStorage (from older flows),
+  // migrate it into sessionStorage and remove the localStorage copy so the
+  // session becomes tab-lifetime only. This preserves the current session
+  // but prevents the token from surviving a closed tab.
+  useEffect(() => {
+    try {
+      const persistentToken = localStorage.getItem('authToken');
+      const persistentUser = localStorage.getItem('authUser');
+      const sessionToken = sessionStorage.getItem('authToken');
+      if (!sessionToken && persistentToken) {
+        // Move into sessionStorage and remove persistent copy
+        sessionStorage.setItem('authToken', persistentToken);
+        if (persistentUser) sessionStorage.setItem('authUser', persistentUser);
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('authUser');
+        console.info('Migrated auth from localStorage to sessionStorage');
+      }
+    } catch (e) {
+      // ignore failures, but don't block app
+      console.error('auth migration error', e);
+    }
+  }, []);
+
+  // Accept token from sessionStorage (preferred) or localStorage (fallback for older flows)
+  const isLoggedIn = Boolean(sessionStorage.getItem('authToken') || localStorage.getItem('authToken'));
 
   useEffect(() => {
     const onPop = () => setRoute(window.location.pathname || '/');
@@ -40,7 +65,8 @@ function App() {
     if (route === '/' || route === '' || route === '/home') {
       let storedUser = null;
       try {
-        storedUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+        const raw = sessionStorage.getItem('authUser') || localStorage.getItem('authUser') || 'null'
+        storedUser = JSON.parse(raw);
       } catch {
         storedUser = null;
       }
@@ -71,7 +97,8 @@ function App() {
     if (isLoggedIn && (route === '/' || route === '' || route === '/home')) {
       let storedUser = null;
       try {
-        storedUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+        const raw = sessionStorage.getItem('authUser') || localStorage.getItem('authUser') || 'null'
+        storedUser = JSON.parse(raw);
       } catch {
         storedUser = null;
       }
@@ -129,6 +156,7 @@ function App() {
   return (
     <div className="App">
       {isLoggedIn && <Header />}
+      {isLoggedIn && <IdleManager timeoutMs={10 * 60 * 1000} />}
       {/* If LandingPage fails, this div will show us the app is at least alive */}
       {renderContent() || <div className="p-10 text-black">Route not found or component failed to load.</div>}
     </div>

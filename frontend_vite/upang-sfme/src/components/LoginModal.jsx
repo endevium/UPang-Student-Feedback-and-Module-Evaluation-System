@@ -159,11 +159,8 @@ const LoginModal = ({ isOpen, onClose }) => {
       }
 
       if (!response.ok) {
-        const errorText =
-          data?.detail ||
-          data?.non_field_errors?.[0] ||
-          'Invalid credentials. Please try again.';
-        setErrorMessage(errorText);
+        // Replace technical/ambiguous backend messages with a generic auth error
+        setErrorMessage('Authentication failed. Please check your ID/email and password.')
         return;
       }
 
@@ -353,8 +350,7 @@ const LoginModal = ({ isOpen, onClose }) => {
       }
 
       if (!response.ok) {
-        const errorText = data?.detail || data?.non_field_errors?.[0] || 'Unable to update password.';
-        setChangeError(errorText);
+        setChangeError('Unable to update password. Please verify your information and try again.')
         return;
       }
 
