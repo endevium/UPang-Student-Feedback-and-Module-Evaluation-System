@@ -46,8 +46,19 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
   };
 
   const handleConfirmLogout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('authUser');
+    // Clear both sessionStorage (current flow) and localStorage (older/persistent flow)
+    try {
+      sessionStorage.removeItem('authToken');
+      sessionStorage.removeItem('authUser');
+    } catch (e) {
+      // ignore if sessionStorage unavailable
+    }
+    try {
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('authUser');
+    } catch (e) {
+      // ignore if localStorage unavailable
+    }
     if (typeof onLogout === 'function') {
       onLogout();
     }
