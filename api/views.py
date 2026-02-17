@@ -13,6 +13,7 @@ from .sentiment_service import predict_sentiment
 import csv
 import io
 from .recaptcha import verify_recaptcha_v2
+from types import SimpleNamespace
 
 from .models.AuditLog import AuditLog
 from .models.DepartmentHead import DepartmentHead
@@ -627,7 +628,12 @@ class ModuleEvaluationFormListCreateView(generics.ListCreateAPIView):
                             enrolled = student.enrolled_subjects or []
                             enrolled_codes = [item.get('code', '').strip().upper() for item in enrolled if isinstance(item, dict) and item.get('code')]
                             if enrolled_codes:
-                                queryset = queryset.filter(title__in=enrolled_codes)
+                                		# attach a lightweight user wrapper so serializers can access student via request.user.student
+                                		try:
+                                			self.request.user = SimpleNamespace(student=student)
+                                		except Exception:
+                                			pass
+                                		queryset = queryset.filter(title__in=enrolled_codes)
                         except Student.DoesNotExist:
                             pass
             except:
