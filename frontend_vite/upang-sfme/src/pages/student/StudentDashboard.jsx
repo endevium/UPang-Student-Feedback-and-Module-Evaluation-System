@@ -28,7 +28,8 @@ const StudentDashboard = () => {
 
   const fetchDashboard = useCallback(async () => {
     setLoadError('');
-    const token = localStorage.getItem('authToken');
+    // Prefer sessionStorage (App migrates persistent tokens into sessionStorage)
+    const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
 
     if (!token) {
       setLoadError('Please log in to view your dashboard.');

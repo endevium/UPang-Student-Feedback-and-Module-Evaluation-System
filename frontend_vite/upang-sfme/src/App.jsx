@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Header from './components/Header.jsx';
 import IdleManager from './components/IdleManager.jsx';
+import SplashScreen from './components/SplashScreen.jsx';
 
 // Main Pages
 import LandingPage from './pages/LandingPage.jsx';
@@ -27,6 +28,7 @@ import EvaluationForm from './pages/student/EvaluationForm.jsx';
 
 function App() {
   const [route, setRoute] = useState(window.location.pathname || '/');
+  const [showSplash, setShowSplash] = useState(false);
   // On startup: if a persistent token exists in localStorage (from older flows),
   // migrate it into sessionStorage and remove the localStorage copy so the
   // session becomes tab-lifetime only. This preserves the current session
@@ -47,6 +49,23 @@ function App() {
     } catch (e) {
       // ignore failures, but don't block app
       console.error('auth migration error', e);
+    }
+  }, []);
+
+  // Show a brief splash screen on full page reloads
+  useEffect(() => {
+    try {
+      const navEntries = performance.getEntriesByType && performance.getEntriesByType('navigation');
+      const navType = (navEntries && navEntries[0] && navEntries[0].type) || (performance.navigation && performance.navigation.type);
+      // navigation.type === 1 indicates reload in legacy API
+      const isReload = navType === 'reload' || navType === 1;
+      if (isReload) {
+        setShowSplash(true);
+        const t = setTimeout(() => setShowSplash(false), 900);
+        return () => clearTimeout(t);
+      }
+    } catch (e) {
+      // ignore
     }
   }, []);
 
@@ -155,6 +174,7 @@ function App() {
 
   return (
     <div className="App">
+      <SplashScreen visible={showSplash} />
       {isLoggedIn && <Header />}
       {isLoggedIn && <IdleManager timeoutMs={10 * 60 * 1000} />}
       {/* If LandingPage fails, this div will show us the app is at least alive */}

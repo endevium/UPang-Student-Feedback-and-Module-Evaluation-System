@@ -168,7 +168,7 @@ const OTPModal = ({
   return (
     <div
       className="fixed inset-0 w-full h-full bg-black/85 flex justify-center items-center z-[9999] backdrop-blur-[5px] p-4"
-      onClick={onClose}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}
     >
       <div
         className="font-upang bg-[#23344E] bg-gradient-to-b from-[#28625C] to-[#23344E] w-full max-w-[1100px] max-h-[95vh] rounded-[20px] relative overflow-y-auto lg:overflow-hidden text-white shadow-2xl"

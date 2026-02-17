@@ -18,7 +18,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
   const formType = instructorFormId ? 'Instructor' : 'Module';
 
   useEffect(() => {
-    const token = localStorage.getItem('authToken');
+   const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
     if (!token) {
       setError('Not authenticated');
       setLoading(false);
@@ -268,7 +268,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
 
     setSubmitting(true);
     setSubmitError('');
-    const token = localStorage.getItem('authToken');
+    const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
     const formIdentifier =
       formType === 'Instructor'
         ? instructorFormId
