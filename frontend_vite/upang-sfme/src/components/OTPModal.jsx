@@ -62,12 +62,12 @@ const OTPModal = ({
       setExpiresAt(null)
       setCountdown(null)
     } else {
-      // when opened, if initial pending token provided, prefill and show verify form
-      if (initialPendingToken) {
-        setPendingToken(initialPendingToken)
-        setEmail(initialEmail || '')
-        if (initialExpiresAt) setExpiresAt(initialExpiresAt)
-      }
+      // when opened, prefill email/role/purpose; if initial pending token provided, show verify form
+      setEmail(initialEmail || '')
+      setRole(initialRole || 'student')
+      setPurpose(initialPurpose || 'login')
+      setPendingToken(initialPendingToken || null)
+      if (initialPendingToken && initialExpiresAt) setExpiresAt(initialExpiresAt)
     }
   }, [isOpen])
 
@@ -203,9 +203,23 @@ const OTPModal = ({
             <div role="form" aria-label="verify-otp-form">
               {!pendingToken ? (
                 <div className="p-6">
-                  <p className="mb-4">No pending verification found. Please request a code from the login screen.</p>
-                  <div className="flex">
-                    <button type="button" onClick={sendOtp} disabled={isSending} className="flex-1 py-3 bg-[#ffcc00] text-[#041c32] rounded-xl font-black disabled:opacity-70 disabled:cursor-not-allowed">{isSending ? 'RESENDING...' : 'RESEND'}</button>
+                  <p className="mb-3">Request a verification code to the email below.</p>
+                  <div className="mb-4">
+                    <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Email</label>
+                    <div className="flex items-center bg-white rounded-xl py-3 px-4">
+                      <input
+                        type="email"
+                        placeholder="name@upang.edu.ph"
+                        className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value.replace(/[^A-Za-z0-9@._+\-]/g, ''))}
+                        autoComplete="email"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={sendOtp} disabled={isSending} className="flex-1 py-3 bg-[#ffcc00] text-[#041c32] rounded-xl font-black disabled:opacity-70 disabled:cursor-not-allowed">{isSending ? 'SENDING...' : 'SEND CODE'}</button>
+                    <button type="button" onClick={() => { setEmail(''); setError(''); }} className="py-3 px-4 border rounded-xl bg-white/5 text-white">Clear</button>
                   </div>
                 </div>
               ) : (

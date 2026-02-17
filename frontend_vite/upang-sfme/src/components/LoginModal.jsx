@@ -8,6 +8,7 @@ import OTPModal from './OTPModal';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+// reCAPTCHA reference enabled (site key loaded from env)
 
 const LoginModal = ({ isOpen, onClose }) => {
   const [showPassword, setShowPassword] = useState(false);
@@ -24,9 +25,20 @@ const LoginModal = ({ isOpen, onClose }) => {
   const [otpPendingToken, setOtpPendingToken] = useState(null);
   const [otpEmail, setOtpEmail] = useState('');
   const [otpExpiresAt, setOtpExpiresAt] = useState(null);
+  const [forgotFlow, setForgotFlow] = useState(false);
+  const [resetPendingToken, setResetPendingToken] = useState(null);
   const [animateIn, setAnimateIn] = useState(false);
-
   const recaptchaRef = useRef(null);
+
+  // reCAPTCHA ref (invisible widget)
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef(null);
+
+  const showToast = (msg, timeout = 3000) => {
+    setToastMessage(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMessage(''), timeout);
+  };
 
   const handleIdChange = (e) => {
     const value = e.target.value;
@@ -35,7 +47,10 @@ const LoginModal = ({ isOpen, onClose }) => {
       setStudentId(filteredValue);
       return;
     }
-    setStudentId(value);
+    // For email-like inputs (faculty / depthead), allow only common email characters:
+    // letters, numbers, @, dot, underscore, plus and hyphen.
+    const emailFiltered = value.replace(/[^A-Za-z0-9@._+-]/g, '');
+    setStudentId(emailFiltered);
   };
 
   const handlePasswordChange = (e) => setPassword(e.target.value);
@@ -97,14 +112,14 @@ const LoginModal = ({ isOpen, onClose }) => {
     }
 
     const returnedRole = storedUser?.user_type;
-    if (returnedRole === 'student') {
-      window.history.replaceState({}, '', '/dashboard');
-      window.dispatchEvent(new PopStateEvent('popstate'));
+      if (returnedRole === 'student') {
+        window.history.pushState({}, '', '/dashboard');
+        window.dispatchEvent(new PopStateEvent('popstate'));
     } else if (returnedRole === 'faculty') {
       window.history.replaceState({}, '', '/faculty-dashboard');
       window.dispatchEvent(new PopStateEvent('popstate'));
     } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
-      window.history.replaceState({}, '', '/depthead-dashboard');
+      window.history.pushState({}, '', '/depthead-dashboard');
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
 
@@ -118,6 +133,14 @@ const LoginModal = ({ isOpen, onClose }) => {
     setConfirmPassword('');
     setChangeError('');
   }, [loginRole]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  
 
   const getLoginEndpoint = () => {
     if (loginRole === 'faculty') return '/faculty/login/';
@@ -402,6 +425,34 @@ const LoginModal = ({ isOpen, onClose }) => {
 
     try {
       setIsSubmitting(true);
+
+      // If this password change is part of a password-reset flow, call the reset confirm endpoint
+      if (resetPendingToken) {
+        const resp = await fetch(`${API_BASE_URL}/password-reset/confirm/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pending_token: resetPendingToken, new_password: trimmedNewPassword }),
+        });
+        let respData = {};
+        try { respData = await resp.json(); } catch {
+          // Silently ignore JSON parsing errors
+        }
+        if (!resp.ok) {
+          const msg = respData?.detail || respData?.error || respData?.message || 'Unable to reset password.';
+          setChangeError(msg);
+          return;
+        }
+
+        // Success: clear the reset token, show toast, then close modal
+        setResetPendingToken(null);
+        setMustChangePassword(false);
+        showToast('Password updated successfully');
+        setTimeout(() => onClose(), 900);
+        return;
+      }
+
+      // Normal change-password flow: ensure changeEmail (if provided) is used to prefill payload for faculty/student
+
       const endpoint = loginRole === 'student' ? '/students/change-password/' : '/faculty/change-password/';
       const payload = loginRole === 'student'
         ? {
@@ -414,7 +465,6 @@ const LoginModal = ({ isOpen, onClose }) => {
             old_password: password,
             new_password: trimmedNewPassword,
           };
-
 
       const token = localStorage.getItem('authToken');
       const headers = { 'Content-Type': 'application/json' };
@@ -458,7 +508,8 @@ const LoginModal = ({ isOpen, onClose }) => {
           window.dispatchEvent(new PopStateEvent('popstate'));
         }
 
-        onClose();
+        showToast('Password updated successfully');
+        setTimeout(() => onClose(), 900);
         return;
       }
 
@@ -489,7 +540,8 @@ const LoginModal = ({ isOpen, onClose }) => {
           window.dispatchEvent(new PopStateEvent('popstate'));
         }
 
-        onClose();
+        showToast('Password updated successfully');
+        setTimeout(() => onClose(), 900);
         return;
       }
 
@@ -525,7 +577,8 @@ const LoginModal = ({ isOpen, onClose }) => {
             window.dispatchEvent(new PopStateEvent('popstate'));
           }
 
-          onClose();
+          showToast('Password updated successfully');
+          setTimeout(() => onClose(), 900);
           return;
         }
 
@@ -567,13 +620,12 @@ const LoginModal = ({ isOpen, onClose }) => {
         onContextMenu={handleContextMenu}
         onDragStart={(e) => e.preventDefault()}
       > 
-        <ReCAPTCHA
-          ref={recaptchaRef}
-          sitekey={RECAPTCHA_SITE_KEY}
-          size="invisible"
-        />
-
-        {/* Close Button */}
+          <ReCAPTCHA
+            ref={recaptchaRef}
+            sitekey={RECAPTCHA_SITE_KEY}
+            size="invisible"
+          />
+          {/* Close Button */}
         <button 
           className="absolute top-4 right-5 z-50 text-white text-[32px] hover:text-[#ffcc00] transition-colors" 
           onClick={handleCloseAnimated}
@@ -652,11 +704,26 @@ const LoginModal = ({ isOpen, onClose }) => {
                 <OTPModal
                   isOpen={otpOpen}
                   onClose={() => setOtpOpen(false)}
-                  onVerified={handleOTPVerified}
+                  onVerified={(data) => {
+                    // If this OTP was used for password reset flow, the backend will return pending_token (no JWT)
+                    if (forgotFlow && data && !data.token && data.pending_token) {
+                      setResetPendingToken(data.pending_token);
+                      setMustChangePassword(true);
+                      setChangeError('');
+                      setOtpOpen(false);
+                      setForgotFlow(false);
+                      return;
+                    }
+                    handleOTPVerified(data);
+                  }}
                   initialPendingToken={otpPendingToken}
                   initialEmail={otpEmail}
                   initialExpiresAt={otpExpiresAt}
                   initialRole={loginRole === 'depthead' ? 'department_head' : loginRole}
+                  // When in forgot flow, use password-reset endpoints
+                  sendEndpoint={forgotFlow ? '/password-reset/send/' : undefined}
+                  verifyEndpoint={forgotFlow ? '/password-reset/verify/' : undefined}
+                  initialPurpose={forgotFlow ? 'reset_password' : 'login'}
                 />
 
                 <div>
@@ -712,9 +779,21 @@ const LoginModal = ({ isOpen, onClose }) => {
                   <input type="checkbox" className="w-5 h-5 accent-[#ffcc00]" /> 
                   <span className="ml-2">Remember me</span>
                 </label>
-                <a href="#forgot" className="text-white/70 hover:text-[#ffcc00] no-underline">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Open OTP modal in password-reset flow. For faculty/depthead prefill email, students must enter email.
+                    setForgotFlow(true);
+                    setOtpPendingToken(null);
+                    setResetPendingToken(null);
+                    setOtpEmail(loginRole === 'student' ? '' : studentId);
+                    setOtpExpiresAt(null);
+                    setOtpOpen(true);
+                  }}
+                  className="text-white/70 hover:text-[#ffcc00] no-underline"
+                >
                   Forgot Password?
-                </a>
+                </button>
               </div>
               
                 {/* Responsive Demo Credentials */}
@@ -826,6 +905,11 @@ const LoginModal = ({ isOpen, onClose }) => {
           </div>
         </div>
       </div>
+    {toastMessage && (
+      <div className="fixed bottom-6 right-6 bg-[#041c32] text-white px-4 py-2 rounded shadow-lg z-[10000]">
+        {toastMessage}
+      </div>
+    )}
     </div>
   </div>
   );

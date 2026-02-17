@@ -34,4 +34,8 @@ urlpatterns = [
 
     path("otp/send/", views.SendOTPView.as_view(), name="otp-send"),
     path("otp/verify/", views.VerifyOTPView.as_view(), name="otp-verify"),
+    # Password reset (forgot password) endpoints
+    path("password-reset/send/", views.PasswordResetSendView.as_view(), name="password-reset-send"),
+    path("password-reset/verify/", views.VerifyOTPView.as_view(), name="password-reset-verify"),
+    path("password-reset/confirm/", views.PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
 ]

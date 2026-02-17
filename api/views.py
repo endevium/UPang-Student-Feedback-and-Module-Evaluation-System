@@ -40,6 +40,7 @@ from .serializers.StudentChangePassword import StudentChangePasswordSerializer
 from .serializers.StudentLogin import StudentLoginSerializer
 from .serializers.FeedbackResponse import FeedbackResponseSerializer
 from .serializers.OTP import SendOTPSerializer, VerifyOTPSerializer
+from .serializers.PasswordReset import PasswordResetConfirmSerializer
 
 from .utils import create_and_send_otp
 
@@ -1375,8 +1376,92 @@ class VerifyOTPView(APIView):
 
             return Response({"detail": "Unsupported role"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # For RESET_PASSWORD: (leave as-is if you implemented it already)
+        # For RESET_PASSWORD: return a simple verification result used by password-reset flow
         if record.purpose == EmailOTP.Purpose.RESET_PASSWORD:
-            return Response({"detail": "Unsupported purpose"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                "detail": "OTP verified for password reset",
+                "pending_token": record.pending_token,
+                "email": record.email,
+                "role": record.role,
+            }, status=status.HTTP_200_OK)
 
         return Response({"detail": "Unsupported purpose"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordResetSendView(APIView):
+    throttle_classes = [LoginRateThrottle]
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        serializer = SendOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"].strip().lower()
+
+        role = None
+        if Student.objects.filter(email__iexact=email).exists():
+            role = EmailOTP.Role.STUDENT
+        elif Faculty.objects.filter(email__iexact=email).exists():
+            role = EmailOTP.Role.FACULTY
+        elif DepartmentHead.objects.filter(email__iexact=email).exists():
+            role = EmailOTP.Role.DEPARTMENT_HEAD
+        else:
+            return Response({"detail": "Email not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        record = create_and_send_otp(
+            email=email,
+            ttl_minutes=15,
+            purpose=EmailOTP.Purpose.RESET_PASSWORD,
+            role=role,
+        )
+
+        return Response(
+            {
+                "detail": "OTP has been sent to your email",
+                "pending_token": record.pending_token,
+                "expires_at": record.expires_at,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetConfirmView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        pending_token = serializer.validated_data["pending_token"].strip()
+        new_password = serializer.validated_data["new_password"]
+
+        record = EmailOTP.objects.filter(pending_token=pending_token, purpose=EmailOTP.Purpose.RESET_PASSWORD).order_by("-created_at").first()
+        if not record:
+            return Response({"detail": "Invalid pending token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if record.is_expired():
+            return Response({"detail": "OTP expired"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Determine user by role
+        user = None
+        if record.role == EmailOTP.Role.STUDENT:
+            user = Student.objects.filter(email__iexact=record.email).first()
+        elif record.role == EmailOTP.Role.FACULTY:
+            user = Faculty.objects.filter(email__iexact=record.email).first()
+        elif record.role == EmailOTP.Role.DEPARTMENT_HEAD:
+            user = DepartmentHead.objects.filter(email__iexact=record.email).first()
+
+        if not user:
+            return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Set new password
+        user.set_password(new_password)
+        user.must_change_password = False
+        user.save()
+
+        record.is_used = True
+        record.save(update_fields=["is_used"])
+
+        return Response({"detail": "Password updated"}, status=status.HTTP_200_OK)
