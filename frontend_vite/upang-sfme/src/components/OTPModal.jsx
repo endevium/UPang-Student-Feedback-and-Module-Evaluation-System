@@ -86,7 +86,10 @@ const OTPModal = ({
       const data = await res.json()
       console.log('sendOtp response', res.status, data)
       if (!res.ok) {
-        setError('Unable to send verification code. Please try again.')
+        // Prefer backend-provided message when available to aid debugging
+        const msg = data?.detail || data?.error || data?.message || 'Unable to send verification code. Please try again.'
+        console.error('sendOtp failed', res.status, msg)
+        setError(msg)
         return
       }
 
@@ -117,8 +120,9 @@ const OTPModal = ({
       const data = await res.json()
       console.log('verifyOtp response', res.status, data)
       if (!res.ok) {
-        // Show a generic verification error to avoid exposing technical details
-        setError('Verification failed. Please check the code and try again.')
+        const msg = data?.detail || data?.error || data?.message || 'Verification failed. Please check the code and try again.'
+        console.error('verifyOtp failed', res.status, msg)
+        setError(msg)
         return
       }
 
