@@ -159,8 +159,24 @@ const LoginModal = ({ isOpen, onClose }) => {
       }
 
       if (!response.ok) {
+        // Show a specific message for throttling so it's visible in the UI
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('Retry-After');
+
+          // DRF often returns: { "detail": "Request was throttled. Expected available in 59 seconds." }
+          const serverDetail =
+            typeof data?.detail === 'string' ? data.detail : null;
+
+          const fallback = retryAfter
+            ? `Too many login attempts. Please wait ${retryAfter} seconds and try again.`
+            : 'Too many login attempts. Please wait a moment and try again.';
+
+          setErrorMessage(serverDetail || fallback);
+          return;
+        }
+
         // Replace technical/ambiguous backend messages with a generic auth error
-        setErrorMessage('Authentication failed. Please check your ID/email and password.')
+        setErrorMessage('Authentication failed. Please check your ID/email and password.');
         return;
       }
 

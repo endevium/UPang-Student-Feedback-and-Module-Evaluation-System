@@ -61,6 +61,7 @@ REST_FRAMEWORK = {
         "anon": "100/min",
         "user": "300/min",
         "login": "5/min",
+        "ai_requests": "30/min",
     },
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",

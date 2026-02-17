@@ -248,6 +248,8 @@ class DepartmentHeadDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class StudentLoginView(APIView):
     throttle_classes = [LoginRateThrottle]
+    authentication_classes = []
+    permission_classes = []
 
     def post(self, request):
         serializer = StudentLoginSerializer(data=request.data)
@@ -275,6 +277,7 @@ class StudentLoginView(APIView):
                 "pending_token": record.pending_token,
                 "expires_at": record.expires_at,
                 "user_type": "student",
+                "email": user.email,
                 "must_change_password": user.must_change_password,
             },
             status=status.HTTP_200_OK,
@@ -282,6 +285,8 @@ class StudentLoginView(APIView):
 
 class FacultyLoginView(APIView):
     throttle_classes = [LoginRateThrottle]
+    authentication_classes = []
+    permission_classes = []
 
     def post(self, request):
         serializer = FacultyLoginSerializer(data=request.data)
@@ -309,6 +314,7 @@ class FacultyLoginView(APIView):
                 "pending_token": record.pending_token,
                 "expires_at": record.expires_at,
                 "user_type": "faculty",
+                "email": user.email,
                 "must_change_password": user.must_change_password,
             },
             status=status.HTTP_200_OK,
@@ -316,6 +322,8 @@ class FacultyLoginView(APIView):
 
 class DepartmentHeadLoginView(APIView):
     throttle_classes = [LoginRateThrottle]
+    authentication_classes = []
+    permission_classes = []
     
     def post(self, request):
         serializer = DepartmentHeadLoginSerializer(data=request.data)
@@ -341,6 +349,8 @@ class DepartmentHeadLoginView(APIView):
                 "detail": "OTP has been sent to your email",
                 "pending_token": record.pending_token,
                 "expires_at": record.expires_at,
+                "user_type": "department_head",
+                "email": user.email,
             },
             status=status.HTTP_200_OK,
         )
