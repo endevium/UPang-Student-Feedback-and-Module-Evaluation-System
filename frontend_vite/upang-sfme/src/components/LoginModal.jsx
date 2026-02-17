@@ -22,6 +22,7 @@ const LoginModal = ({ isOpen, onClose }) => {
   const [otpPendingToken, setOtpPendingToken] = useState(null);
   const [otpEmail, setOtpEmail] = useState('');
   const [otpExpiresAt, setOtpExpiresAt] = useState(null);
+  const [animateIn, setAnimateIn] = useState(false);
 
   const handleIdChange = (e) => {
     const value = e.target.value;
@@ -49,9 +50,13 @@ const LoginModal = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
+      const t = setTimeout(() => setAnimateIn(true), 10);
+      return () => clearTimeout(t);
+    } 
+
+    document.body.style.overflow = 'unset';
+    setAnimateIn(false);
+    
     return () => {
       document.body.style.overflow = 'unset';
       setStudentId('');
@@ -62,8 +67,16 @@ const LoginModal = ({ isOpen, onClose }) => {
       setNewPassword('');
       setConfirmPassword('');
       setChangeError('');
+      setAnimateIn(false);
     };
   }, [isOpen]);
+
+  const handleCloseAnimated = () => {
+        setAnimateIn(false);
+        setTimeout(() => {
+          onClose();
+        }, 180);
+      };
 
   // If the modal is opened but the user is already authenticated,
   // immediately redirect them to their dashboard and close the modal.
@@ -130,7 +143,6 @@ const LoginModal = ({ isOpen, onClose }) => {
         ? { student_number: trimmedId, password: trimmedPassword, role: loginRole }
         : { email: trimmedId, password: trimmedPassword, role: loginRole };
 
-
     try {
       setIsSubmitting(true);
       const response = await fetch(`${API_BASE_URL}${getLoginEndpoint()}`, {
@@ -155,18 +167,19 @@ const LoginModal = ({ isOpen, onClose }) => {
         return;
       }
 
-      // If backend indicates OTP is required, open OTP modal and pass initial token/email
-      if (data?.otp_required && loginRole !== 'student') {
+      // OTP required (students INCLUDED)
+      if (data?.otp_required) {
         setOtpPendingToken(data.pending_token || null);
-        // prefer email from response, otherwise use the identifier we sent
+        // Student login uses student number, so email may not be known on frontend; backend should return it if possible.
+        // Fall back to previously entered identifier.
         setOtpEmail(data.email || (payload.email || ''));
         setOtpExpiresAt(data.expires_at || null);
         setOtpOpen(true);
-        return;
+        return; // IMPORTANT: don't close modal
       }
 
+      // Token-based login (if any role returns token directly)
       if (data?.token) {
-        // Ensure stored user has a normalized `user_type`
         if (!data.user_type) {
           data.user_type = loginRole === 'depthead' ? 'department_head' : loginRole;
         }
@@ -174,7 +187,6 @@ const LoginModal = ({ isOpen, onClose }) => {
         localStorage.setItem('authToken', data.token);
         localStorage.setItem('authUser', JSON.stringify(data));
 
-        // Redirect based on normalized role
         const returnedRole = data.user_type;
         if (returnedRole === 'student') {
           if (data?.must_change_password) {
@@ -193,13 +205,17 @@ const LoginModal = ({ isOpen, onClose }) => {
           window.history.pushState({}, '', '/faculty-dashboard');
           window.dispatchEvent(new PopStateEvent('popstate'));
         } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
-          // Force dept head pages to go to depthead dashboard
           window.history.pushState({}, '', '/depthead-dashboard');
           window.dispatchEvent(new PopStateEvent('popstate'));
         }
+
+        onClose(); // close only after successful redirect/login
+        return;
       }
 
-      onClose();
+      // If neither otp_required nor token was returned, show a generic error
+      setErrorMessage(data?.detail || 'Login response was incomplete. Please try again.');
+      return;
     } catch {
       setErrorMessage('Unable to reach the server. Please try again.');
     } finally {
@@ -252,11 +268,6 @@ const LoginModal = ({ isOpen, onClose }) => {
     'baseball','master','shadow','killer','trustno1'
   ];
 
-  // Validate password against policy:
-  // - at least 12 chars
-  // - at least one uppercase, one lowercase, one number, one special char
-  // - must not contain username/email/local-part
-  // - must not be a common password
   const validatePassword = (pwd, username) => {
     if (!pwd || typeof pwd !== 'string') return { valid: false, message: 'Invalid password.' };
     if (pwd.length < 12) return { valid: false, message: 'Password must be at least 12 characters long.' };
@@ -363,10 +374,15 @@ const LoginModal = ({ isOpen, onClose }) => {
   return (
     <div 
       className="fixed inset-0 w-full h-full bg-black/85 flex justify-center items-center z-[9999] backdrop-blur-[5px] p-4" 
-      onClick={onClose}
+      onClick={handleCloseAnimated}
       onContextMenu={handleContextMenu}
       onKeyDown={handleKeyDown}
-    >
+    > 
+      <div
+        className={`w-full flex justify-center items-center transition-all duration-200 ease-out ${
+          animateIn ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-6'
+        }`}
+      >
       <div 
         className="font-upang bg-[#23344E] bg-gradient-to-b from-[#28625C] to-[#23344E] w-full max-w-[1100px] max-h-[95vh] rounded-[20px] relative overflow-y-auto lg:overflow-hidden text-white shadow-2xl" 
         onClick={(e) => e.stopPropagation()}
@@ -376,7 +392,7 @@ const LoginModal = ({ isOpen, onClose }) => {
         {/* Close Button */}
         <button 
           className="absolute top-4 right-5 z-50 text-white text-[32px] hover:text-[#ffcc00] transition-colors" 
-          onClick={onClose}
+          onClick={handleCloseAnimated}
         >
           &times;
         </button>
@@ -588,6 +604,7 @@ const LoginModal = ({ isOpen, onClose }) => {
         </div>
       </div>
     </div>
+  </div>
   );
 };
 
