@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import logo from '../assets/navbar-logo.png'
 import studentGroupImg from '../assets/group-student2.png'
 import SafeImg from './SafeImg'
+import { saveToken, saveUser } from '../utils/auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
@@ -125,11 +126,11 @@ const OTPModal = ({
       if (onVerified) {
         onVerified(data)
       } else if (data?.token) {
-        // fallback: save token locally and redirect based on returned role
+        // fallback: save token to sessionStorage and redirect based on returned role
         try {
           const userType = data.user_type || data.userType || 'student'
-          localStorage.setItem('authToken', data.token)
-          localStorage.setItem('authUser', JSON.stringify(data))
+          saveToken(data.token)
+          saveUser(data)
           if (userType === 'student') {
             window.history.pushState({}, '', '/dashboard')
             window.dispatchEvent(new PopStateEvent('popstate'))
