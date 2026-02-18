@@ -127,7 +127,7 @@ const LoginModal = ({ isOpen, onClose }) => {
     }
 
     onClose();
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     setErrorMessage('');
@@ -538,7 +538,9 @@ const LoginModal = ({ isOpen, onClose }) => {
             stored.must_change_password = false;
             localStorage.setItem('authUser', JSON.stringify(stored));
           }
-        } catch {}
+        } catch {
+          // Silently ignore any errors updating stored user
+        }
 
         const storedUser = (() => {
           try { return JSON.parse(localStorage.getItem('authUser') || 'null'); } catch { return null; }
