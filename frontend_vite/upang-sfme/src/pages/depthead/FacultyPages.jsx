@@ -92,7 +92,13 @@ const FacultyPages = () => {
     setIsLoading(true);
     setLoadError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/faculty/`);
+      const token = getToken();
+      const res = await fetch(`${API_BASE_URL}/faculty/`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+
       const data = await res.json().catch(() => []);
       if (!res.ok) {
         setLoadError(data?.detail || 'Unable to load faculty.');

@@ -255,10 +255,16 @@ const StudentsManagement = () => {
     setLoadError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/students/`);
+      const token = getToken();
+      const response = await fetch(`${API_BASE_URL}/students/`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+
       const data = await response.json();
       if (!response.ok) {
-        setLoadError('Unable to load students.');
+        setLoadError(data?.detail || 'Unable to load students.');
         return;
       }
 
