@@ -77,6 +77,33 @@ function App() {
 
   // Accept token from sessionStorage (preferred) or localStorage (fallback for older flows)
   const isLoggedIn = Boolean(getToken());
+  // Resolve user role from stored user info (used to restrict routes)
+  const getResolvedRole = () => {
+    let storedUser = null;
+    try {
+      const raw = sessionStorage.getItem('authUser') || localStorage.getItem('authUser') || null;
+      storedUser = raw ? JSON.parse(raw) : getUser();
+    } catch {
+      storedUser = getUser();
+    }
+
+    const roleMap = {
+      student: 'Student',
+      faculty: 'Faculty',
+      department_head: 'Department Head',
+    };
+    return roleMap[storedUser?.user_type] || null;
+  };
+
+  const resolvedRole = getResolvedRole();
+
+  const isRouteAllowedForRole = (role, path) => {
+    if (!role) return false;
+    if (role === 'Student') return path === '/dashboard' || path.startsWith('/dashboard/');
+    if (role === 'Faculty') return path === '/faculty-dashboard' || path.startsWith('/faculty-dashboard/');
+    if (role === 'Department Head') return path === '/depthead-dashboard' || path.startsWith('/depthead-dashboard/');
+    return false;
+  };
 
   useEffect(() => {
     const onPop = () => setRoute(window.location.pathname || '/');
@@ -93,6 +120,22 @@ function App() {
     if (!isLoggedIn && isProtected) {
       window.history.replaceState({}, '', '/');
       setRoute('/');
+      return;
+    }
+
+    // If logged in but trying to access a route not allowed for the role,
+    // redirect to the role's home.
+    if (isLoggedIn && !isRouteAllowedForRole(resolvedRole, route)) {
+      const homePathMap = {
+        Student: '/dashboard',
+        Faculty: '/faculty-dashboard',
+        'Department Head': '/depthead-dashboard',
+      };
+      const target = homePathMap[resolvedRole] || '/dashboard';
+      if (route !== target) {
+        window.history.replaceState({}, '', target);
+        setRoute(target);
+      }
     }
   }, [isLoggedIn, route]);
 
@@ -150,8 +193,14 @@ function App() {
     if (route === '/about') return <About />;
     if (route === '/contact') return <ContactPage />;
 
-    // Dept Head Nested Routes
+    // Dept Head Nested Routes (enforce role in render as a fallback)
     if (route.startsWith('/depthead-dashboard')) {
+      if (resolvedRole !== 'Department Head') {
+        // If a non-dept-head somehow reached this render path, show their dashboard
+        if (resolvedRole === 'Faculty') return <FacultyDashboard />;
+        return <StudentDashboard />;
+      }
+
       if (route === '/depthead-dashboard/audit-log') return <AuditLogPage />;
       if (route === '/depthead-dashboard/faculty') return <FacultyPages />;
       if (route === '/depthead-dashboard/forms') return <Forms />;
@@ -160,8 +209,14 @@ function App() {
       return <DeptHeadDashboard />;
     }
 
-    // Faculty Routes
-    if (route === '/faculty-dashboard') return <FacultyDashboard />;
+    // Faculty Routes (enforce role)
+    if (route === '/faculty-dashboard') {
+      if (resolvedRole !== 'Faculty') {
+        if (resolvedRole === 'Department Head') return <DeptHeadDashboard />;
+        return <StudentDashboard />;
+      }
+      return <FacultyDashboard />;
+    }
 
     // Student Nested Routes
     if (route.startsWith('/dashboard')) {
