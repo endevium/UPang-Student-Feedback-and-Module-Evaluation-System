@@ -46,7 +46,7 @@ from .serializers.FeedbackResponse import FeedbackResponseSerializer
 from .serializers.OTP import SendOTPSerializer, VerifyOTPSerializer
 from .serializers.PasswordReset import PasswordResetConfirmSerializer
 
-from .utils import create_and_send_otp, is_password_expired, validate_uploaded_csv
+from .utils import create_and_send_otp, is_password_expired, validate_uploaded_csv, validate_plain_text
 
 def _issue_jwt(role: str, legacy_user_id: int) -> str:
     token = AccessToken()
@@ -1057,13 +1057,19 @@ class StudentBulkImportView(APIView):
                     except ValueError:
                         year_val_parsed = None
 
+                    firstname = validate_plain_text(row["firstname"].strip(), field_name="firstname")
+                    lastname = validate_plain_text(row["lastname"].strip(), field_name="lastname")
+                    department = validate_plain_text(str(row.get("department", "") or "").strip(), field_name="department")
+                    program = validate_plain_text(str(row.get("course", "") or "").strip(), field_name="course")
+                    block_val = validate_plain_text(str(row.get("block_section", "") or "").strip(), field_name="block_section")
+
                     student = Student.objects.create(
                         email=email,
-                        firstname=row["firstname"].strip(),
-                        lastname=row["lastname"].strip(),
+                        firstname=firstname,
+                        lastname=lastname,
                         student_number=student_id,
-                        department=str(row.get("department", "") or "").strip(),
-                        program=str(row.get("course", "") or "").strip(),
+                        department=department,
+                        program=program,
                         year_level=year_val_parsed,
                         enrolled_subjects=subjects_list,
                         block_section=block_val or None,
@@ -1164,13 +1170,18 @@ class FacultyBulkImportView(APIView):
                         errors.append(f"Row {row_num}: Faculty with ID '{employee_id}' already exists")
                         continue
 
+                    firstname = validate_plain_text(row["firstname"].strip(), field_name="firstname")
+                    lastname = validate_plain_text(row["lastname"].strip(), field_name="lastname")
+                    department = validate_plain_text(str(row.get("department", "") or "").strip(), field_name="department")
+                    position = validate_plain_text(str(row.get("position", "") or "").strip(), field_name="position")
+
                     Faculty.objects.create(
                         email=email,
-                        firstname=row["firstname"].strip(),
-                        lastname=row["lastname"].strip(),
+                        firstname=firstname,
+                        lastname=lastname,
                         employee_id=employee_id,
-                        department=str(row.get("department", "") or "").strip(),
-                        position=str(row.get("position", "") or "").strip(),
+                        department=department,
+                        position=position,
                         must_change_password=True,
                     )
                     created_count += 1

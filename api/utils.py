@@ -11,11 +11,17 @@ import csv
 import io
 import bleach
 
+import re
+from rest_framework.exceptions import ValidationError as DRFValidationError
+
 PASSWORD_MAX_AGE_DAYS = 60
 ALLOWED_CSV_MIME_TYPES = {
     "text/csv",
     "application/csv",
 }
+
+ANGLE_RE = re.compile(r"[<>]")
+EMOJI_FALLBACK_RE = re.compile(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]")
 
 def generate_otp() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
@@ -133,3 +139,17 @@ def sanitize_text(value: str) -> str:
         return value
     value = str(value)
     return bleach.clean(value, tags=[], attributes={}, strip=True)
+
+def validate_plain_text(value: str, *, field_name: str = "value") -> str:
+    if value is None:
+        return value
+
+    value = sanitize_text(value)
+
+    if ANGLE_RE.search(value):
+        raise DRFValidationError({field_name: 'Must not contain "<" or ">".'})
+
+    if EMOJI_FALLBACK_RE.search(value):
+        raise DRFValidationError({field_name: "Emojis are not allowed."})
+
+    return value

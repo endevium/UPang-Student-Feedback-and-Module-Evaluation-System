@@ -55,7 +55,8 @@ INSTALLED_APPS = [
     "rest_framework",
     'drf_yasg',
     "rest_framework.authtoken",
-    "rest_framework_simplejwt.token_blacklist"
+    "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular"
 ]
 
 REST_FRAMEWORK = {
@@ -78,6 +79,14 @@ REST_FRAMEWORK = {
     "DEFAULT_PARSER_CLASSES": (
         "rest_framework.parsers.JSONParser",
     ),
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "EXCEPTION_HANDLER": "api.exceptions.api_exception_handler",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "UpangSFME API",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 # If you're behind a proxy (nginx), set this so IP throttling is correct:
