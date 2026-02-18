@@ -5,11 +5,32 @@ from ..models.EvaluationQuestion import EvaluationQuestion
 from ..models.ModuleEvaluationForm import ModuleEvaluationForm
 from ..models.InstructorEvaluationForm import InstructorEvaluationForm
 from ..models.EvaluationForm import EvaluationForm
+from ..utils import sanitize_text
+import re
+
+ANGLE_RE = re.compile(r"[<>]")
+
+try:
+    EMOJI_RE = re.compile(r"[\p{Extended_Pictographic}]", re.UNICODE)
+except re.error:
+    # Fallback: broad emoji blocks
+    EMOJI_RE = re.compile(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]")
 
 class FeedbackResponseItemSerializer(serializers.Serializer):
     question = serializers.CharField()
     rating = serializers.IntegerField(min_value=1, max_value=5, required=False)
     comment = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_comment(self, value):
+        value = sanitize_text(value)
+
+        if value and ANGLE_RE.search(value):
+            raise serializers.ValidationError('Comment must not contain "<" or ">".')
+
+        if value and EMOJI_RE.search(value):
+            raise serializers.ValidationError('Emojis are not allowed.')
+
+        return value
 
 class FeedbackResponseSerializer(serializers.ModelSerializer):
     form_type = serializers.ChoiceField(choices=[('module','module'), ('instructor','instructor')], write_only=True)
@@ -31,6 +52,9 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'student', 'ip_address', 'sentiment', 'submitted_at', 'responses_out']
 
+    def validate_pseudonym(self, value):
+        return sanitize_text(value)
+    
     def _extract_allowed_question_codes_from_form(self, form_obj, form_type):
         ef_type = 'Module' if form_type == 'module' else 'Instructor'
         
@@ -101,6 +125,9 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(f"unknown question '{q_ident}'")
             rating = item.get('rating')
             comment = item.get('comment')
+
+            comment = sanitize_text(comment) if comment is not None else comment
+
             q_type = None
             if q:
                 q_type = getattr(q, 'type', None) or getattr(q, 'question_type', None)

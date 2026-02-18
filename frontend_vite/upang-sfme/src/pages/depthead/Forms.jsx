@@ -13,6 +13,7 @@ import {
   Trash2,
   HelpCircle
 } from 'lucide-react';
+import { getToken } from '../../utils/auth';
 
 const EvaluationForms = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -23,7 +24,7 @@ const EvaluationForms = () => {
 
   // Helper function to get auth headers
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('authToken');
+    const token = getToken()
     return token ? { 'Authorization': `Bearer ${token}` } : {};
   };
 

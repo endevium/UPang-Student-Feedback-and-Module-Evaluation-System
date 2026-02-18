@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
+import { getToken, clearSession } from '../../utils/auth';
 import { 
   Users, 
   GraduationCap, 
@@ -39,40 +40,49 @@ const DeptHeadDashboard = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
 
-  const getToken = () => sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
-
   useEffect(() => {
+    const token = getToken();
+
+    // NEW: block access when logged out
+    if (!token) {
+      window.history.replaceState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      return;
+    }
+
+    const authHeaders = { Authorization: `Bearer ${token}` };
+
     const fetchDashboard = async () => {
       setIsLoading(true);
       setLoadError('');
       try {
-        // Fetch students count
-        const studentsResp = await fetch(`${API_BASE_URL}/students/`);
+        // Fetch students count (NOW protected)
+        const studentsResp = await fetch(`${API_BASE_URL}/students/`, { headers: authHeaders });
+        if (studentsResp.status === 401) throw new Error('unauthorized');
         const studentsData = await studentsResp.json().catch(() => []);
         const totalStudents = Array.isArray(studentsData) ? studentsData.length : (studentsData?.count || 0);
 
-        // Fetch faculty count
-        const facultyResp = await fetch(`${API_BASE_URL}/faculty/`);
+        // Fetch faculty count (NOW protected)
+        const facultyResp = await fetch(`${API_BASE_URL}/faculty/`, { headers: authHeaders });
+        if (facultyResp.status === 401) throw new Error('unauthorized');
         const facultyData = await facultyResp.json().catch(() => []);
         const totalFaculty = Array.isArray(facultyData) ? facultyData.length : (facultyData?.count || 0);
 
-        // Fetch module evaluation forms
-        const formsResp = await fetch(`${API_BASE_URL}/module-evaluation-forms/`);
+        // Fetch module evaluation forms (NOW protected)
+        const formsResp = await fetch(`${API_BASE_URL}/module-evaluation-forms/`, { headers: authHeaders });
+        if (formsResp.status === 401) throw new Error('unauthorized');
         const formsData = await formsResp.json().catch(() => []);
         const totalModules = Array.isArray(formsData) ? formsData.length : (formsData?.count || 0);
 
-        // Fetch feedback submissions (requires dept head token)
-        const token = getToken();
+        // Fetch feedback submissions (already protected; keep it consistent)
         let submissions = [];
-        if (token) {
-          const subsResp = await fetch(`${API_BASE_URL}/feedback/submissions/`, { headers: { Authorization: `Bearer ${token}` } });
-          if (subsResp.ok) {
-            submissions = await subsResp.json().catch(() => []);
-            if (!Array.isArray(submissions) && submissions && submissions.results) submissions = submissions.results;
-          }
+        const subsResp = await fetch(`${API_BASE_URL}/feedback/submissions/`, { headers: authHeaders });
+        if (subsResp.status === 401) throw new Error('unauthorized');
+        if (subsResp.ok) {
+          submissions = await subsResp.json().catch(() => []);
+          if (!Array.isArray(submissions) && submissions && submissions.results) submissions = submissions.results;
         }
 
-        // Compute evaluation rate (simple heuristic)
         const completed = Array.isArray(submissions) ? submissions.length : 0;
         const evalRate = totalModules > 0 ? Math.round((completed / (totalModules || 1)) * 100) : 0;
 
@@ -118,6 +128,12 @@ const DeptHeadDashboard = () => {
         setTopRatedFaculty(instructors.slice(0,6));
 
       } catch (e) {
+        if ((e && e.message) === 'unauthorized') {
+          clearSession();
+          window.history.replaceState({}, '', '/');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+          return;
+        }
         console.error('depthead dashboard fetch error', e);
         setLoadError('Unable to load dashboard data.');
       } finally {
@@ -126,7 +142,7 @@ const DeptHeadDashboard = () => {
     };
 
     fetchDashboard();
-  }, []);
+  }, [API_BASE_URL]);
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">

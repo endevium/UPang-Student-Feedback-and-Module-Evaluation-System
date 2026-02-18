@@ -7,7 +7,15 @@ from django.utils import timezone
 
 from .models.OTP import EmailOTP
 
+import csv
+import io
+import bleach
+
 PASSWORD_MAX_AGE_DAYS = 60
+ALLOWED_CSV_MIME_TYPES = {
+    "text/csv",
+    "application/csv",
+}
 
 def generate_otp() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
@@ -80,3 +88,48 @@ def is_password_expired(user) -> bool:
     if not changed_at:
         return True
     return timezone.now() - changed_at > timedelta(days=PASSWORD_MAX_AGE_DAYS)
+
+def validate_uploaded_csv(file_obj, *, max_bytes: int, required_columns: set[str]) -> tuple[str, csv.DictReader]:
+    """
+    Returns (decoded_text, csv_reader) if valid, raises DRF ValidationError otherwise.
+    """
+    from rest_framework.exceptions import ValidationError as DRFValidationError
+
+    if not file_obj:
+        raise DRFValidationError("No file provided.")
+
+    # size
+    if getattr(file_obj, "size", None) is not None and file_obj.size > max_bytes:
+        raise DRFValidationError(f"File too large. Max is {max_bytes} bytes.")
+
+    # extension
+    name = getattr(file_obj, "name", "") or ""
+    if not name.lower().endswith(".csv"):
+        raise DRFValidationError("File must be a .csv")
+
+    # content-type (best effort)
+    ctype = getattr(file_obj, "content_type", "") or ""
+    if ctype and ctype not in ALLOWED_CSV_MIME_TYPES:
+        raise DRFValidationError(f"Invalid content type: {ctype}. Only CSV is allowed.")
+
+    # decode
+    try:
+        raw = file_obj.read()
+        text = raw.decode("utf-8-sig")  # handles BOM
+    except Exception:
+        raise DRFValidationError("CSV must be UTF-8 encoded.")
+
+    # parse header
+    reader = csv.DictReader(io.StringIO(text))
+    cols = set([c.strip() for c in (reader.fieldnames or []) if c])
+    missing = sorted(required_columns - cols)
+    if missing:
+        raise DRFValidationError({"detail": "Missing required columns", "missing": missing})
+
+    return text, reader
+
+def sanitize_text(value: str) -> str:
+    if value is None:
+        return value
+    value = str(value)
+    return bleach.clean(value, tags=[], attributes={}, strip=True)

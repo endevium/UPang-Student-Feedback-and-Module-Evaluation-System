@@ -13,6 +13,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [inputError, setInputError] = useState('');
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   const formType = instructorFormId ? 'Instructor' : 'Module';
@@ -251,6 +252,29 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
   const handleNext = () => currentSection < sections.length - 1 && setCurrentSection(prev => prev + 1);
   const handlePrevious = () => currentSection > 0 && setCurrentSection(prev => prev - 1);
   
+  const hasAngleBrackets = (s) => /[<>]/.test(s);
+
+  const hasEmoji = (s) => {
+    try {
+      return /[\p{Extended_Pictographic}]/u.test(s);
+    } catch {
+      return /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(s);
+    }
+  };
+
+  const validateFreeText = (s) => {
+    if (hasAngleBrackets(s)) return 'Text must not contain "<" or ">".';
+    if (hasEmoji(s)) return 'Emojis are not allowed.';
+    return '';
+  };
+
+  const handleTextResponse = (id, value) => {
+    const msg = validateFreeText(value);
+    setInputError(msg);
+    if (msg) return;
+    setResponses((prev) => ({ ...prev, [id]: value }));
+  };
+
   const handleSubmit = async () => {
     // ensure all questions are answered (text fields must be non-empty)
     const allQuestions = sections.flatMap(s => s.questions);
@@ -266,6 +290,11 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
       return;
     }
 
+    if (inputError) {
+      setSubmitError(inputError);
+      return;
+    }
+    
     setSubmitting(true);
     setSubmitError('');
     const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
@@ -505,7 +534,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 focus:outline-none focus:ring-2 focus:ring-teal-500/20 min-h-[120px]"
                                 placeholder="Type your feedback here..."
                                 value={responses[q.id] || ""}
-                                onChange={(e) => handleResponse(q.id, e.target.value)}
+                                onChange={(e) => handleTextResponse(q.id, e.target.value)}
                             />
                         )}
                     </div>
@@ -515,6 +544,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
             </div>
 
             {/* Bottom Navigation */}
+            {inputError && <div className="text-sm text-red-500 mb-2">{inputError}</div>}
             {submitError && <div className="text-sm text-red-500 mb-2">{submitError}</div>}
              <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 {currentSection === sections.length - 1 ? (

@@ -11,22 +11,22 @@ import {
   Edit,
   Folder,
 } from 'lucide-react';
+import { getToken } from '../../utils/auth';
 
 const FacultyPages = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  const MAX_CSV_SIZE = 2 * 1024 * 1024; // 2MB
 
   const [facultyData, setFacultyData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modal & Form State
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [formErrors, setFormErrors] = useState({});
 
-  // Bulk Import State
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [bulkImportResult, setBulkImportResult] = useState(null);
@@ -59,21 +59,27 @@ const FacultyPages = () => {
     status: typeof f?.status === 'boolean' ? (f.status ? 'Active' : 'Inactive') : (f?.status || 'Active'),
   });
 
+  const validateCsvFile = (file) => {
+    if (!file) return 'No file selected.';
+    if (!String(file.name || '').toLowerCase().endsWith('.csv')) return 'Only .csv files are allowed.';
+    if (file.size > MAX_CSV_SIZE) return 'File is too large (max 2MB).';
+    // best-effort mime check (browsers vary)
+    const allowedTypes = ['text/csv', 'application/csv', 'application/vnd.ms-excel'];
+    if (file.type && !allowedTypes.includes(file.type)) return `Invalid file type: ${file.type}. Please upload a CSV.`;
+    return null;
+  };
+
   // Helper function to create audit log entries
   const createAuditLog = async (action, message) => {
     try {
-      const auditData = {
-        action: action,
-        message: message,
-        category: 'USER MANAGEMENT',
-        status: 'Success',
-      };
+      const token = getToken();
+      const auditData = { action, message, category: 'USER MANAGEMENT', status: 'Success' };
 
       await fetch(`${API_BASE_URL}/audit-logs/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(auditData),
       });
@@ -107,8 +113,11 @@ const FacultyPages = () => {
 
   const showFacultyDetails = async (facultyId) => {
     try {
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
       });
       if (!res.ok) {
         setErrorMessage('Unable to load faculty details.');
@@ -124,8 +133,11 @@ const FacultyPages = () => {
 
   const startEditFaculty = async (facultyId) => {
     try {
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
       });
       if (!res.ok) {
         setErrorMessage('Unable to load faculty for editing.');
@@ -156,11 +168,12 @@ const FacultyPages = () => {
     if (!ok) return;
     try {
       // Soft-archive via PATCH
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ archived: true }),
       });
@@ -183,8 +196,11 @@ const FacultyPages = () => {
     setIsLoadingArchivedFaculty(true);
     setArchiveFacultyError('');
     try {
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/faculty/archived/`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
       });
       if (!res.ok) {
         setArchiveFacultyError('Unable to load archived faculty.');
@@ -206,11 +222,12 @@ const FacultyPages = () => {
     const ok = window.confirm('Restore this faculty member? This will make them active again.');
     if (!ok) return;
     try {
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ archived: false }),
       });
@@ -299,13 +316,14 @@ const FacultyPages = () => {
 
     try {
       setIsSubmitting(true);
+      const token = getToken()
       const method = isEditing ? 'PUT' : 'POST';
       const url = isEditing ? `${API_BASE_URL}/faculty/${editingId}/` : `${API_BASE_URL}/faculty/`;
       const response = await fetch(url, {
         method: method,
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(formValues),
       });
@@ -349,13 +367,14 @@ const FacultyPages = () => {
     setBulkImportResult(null);
 
     try {
+      const token = getToken();
       const formData = new FormData();
       formData.append('file', file);
 
       const response = await fetch(`${API_BASE_URL}/faculty/bulk-import/`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: formData,
       });
@@ -777,10 +796,14 @@ const FacultyPages = () => {
                   type="file"
                   accept=".csv"
                   onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                      handleBulkImport(file);
+                    const file = e.target.files?.[0];
+                    const err = validateCsvFile(file);
+                    if (err) {
+                      setBulkImportResult({ success: false, message: err, errors: [] });
+                      e.target.value = '';
+                      return;
                     }
+                    handleBulkImport(file);
                   }}
                   className="hidden"
                   id="faculty-csv-upload"

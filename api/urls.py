@@ -40,6 +40,7 @@ urlpatterns = [
     path("password-reset/verify/", views.VerifyOTPView.as_view(), name="password-reset-verify"),
     path("password-reset/confirm/", views.PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
 
+    path("auth/csrf/", views.CSRFCookieView.as_view(), name="csrf_cookie"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("auth/token/verify/", TokenVerifyView.as_view(), name="token_verify"),
 ]

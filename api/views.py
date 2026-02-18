@@ -6,6 +6,9 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.utils.decorators import method_decorator
+from django.conf import settings
 
 from .throttles import AIRequestRateThrottle, LoginRateThrottle
 from .models import Student
@@ -43,7 +46,7 @@ from .serializers.FeedbackResponse import FeedbackResponseSerializer
 from .serializers.OTP import SendOTPSerializer, VerifyOTPSerializer
 from .serializers.PasswordReset import PasswordResetConfirmSerializer
 
-from .utils import create_and_send_otp, is_password_expired
+from .utils import create_and_send_otp, is_password_expired, validate_uploaded_csv
 
 def _issue_jwt(role: str, legacy_user_id: int) -> str:
     token = AccessToken()
@@ -862,89 +865,99 @@ class StudentBulkImportView(APIView):
             return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
 
         # Check if file is provided
-        if 'file' not in request.FILES:
+        if "file" not in request.FILES:
             return Response({"detail": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-        csv_file = request.FILES['file']
-        if not csv_file.name.endswith('.csv'):
-            return Response({"detail": "File must be a CSV"}, status=status.HTTP_400_BAD_REQUEST)
+        csv_file = request.FILES["file"]
+
+        # NEW: strict CSV validation (type + size + required header columns)
+        try:
+            _text, csv_reader = validate_uploaded_csv(
+                csv_file,
+                max_bytes=getattr(settings, "MAX_BULK_CSV_SIZE_BYTES", 2 * 1024 * 1024),
+                required_columns={"email", "firstname", "lastname", "student_id"},
+            )
+        except DRFValidationError as exc:
+            return Response({"detail": "Invalid CSV upload", "errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
 
         # Parse CSV and create students
         try:
-            decoded_file = csv_file.read().decode('utf-8')
-            csv_reader = csv.DictReader(io.StringIO(decoded_file))
-
             created_count = 0
             errors = []
 
-            for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 to account for header
+            for row_num, row in enumerate(csv_reader, start=2):
                 try:
-                    # Validate required fields
-                    required_fields = ['email', 'firstname', 'lastname', 'student_id']
-                    for field in required_fields:
-                        if not row.get(field, '').strip():
-                            errors.append(f"Row {row_num}: Missing required field '{field}'")
-                            continue
-
-                    # Check if student already exists
-                    if Student.objects.filter(email=row['email']).exists():
-                        errors.append(f"Row {row_num}: Student with email '{row['email']}' already exists")
+                    # Validate required fields (stop this row if missing)
+                    required_fields = ["email", "firstname", "lastname", "student_id"]
+                    missing = [f for f in required_fields if not str(row.get(f, "") or "").strip()]
+                    if missing:
+                        errors.append(f"Row {row_num}: Missing required field(s): {', '.join(missing)}")
                         continue
 
-                    if Student.objects.filter(student_number=row['student_id']).exists():
-                        errors.append(f"Row {row_num}: Student with ID '{row['student_id']}' already exists")
+                    email = row["email"].strip()
+                    student_id = row["student_id"].strip()
+
+                    # Check duplicates
+                    if Student.objects.filter(email=email).exists():
+                        errors.append(f"Row {row_num}: Student with email '{email}' already exists")
+                        continue
+
+                    if Student.objects.filter(student_number=student_id).exists():
+                        errors.append(f"Row {row_num}: Student with ID '{student_id}' already exists")
                         continue
 
                     # Parse enrolled_subjects (semicolon-separated) and block
-                    raw_subjects = row.get('enrolled_subjects', '').strip()
-                    subjects_list = [s.strip() for s in raw_subjects.split(';') if s.strip()] if raw_subjects else []
-                    block_val = row.get('block_section', '').strip()
+                    raw_subjects = str(row.get("enrolled_subjects", "") or "").strip()
+                    subjects_list = [s.strip() for s in raw_subjects.split(";") if s.strip()] if raw_subjects else []
+                    block_val = str(row.get("block_section", "") or "").strip()
 
-                    # Create student
-                    year_val = row.get('year_level', '').strip()
+                    # Parse year level
+                    year_val = str(row.get("year_level", "") or "").strip()
                     try:
                         year_val_parsed = int(year_val) if year_val else None
                     except ValueError:
                         year_val_parsed = None
 
                     student = Student.objects.create(
-                        email=row['email'].strip(),
-                        firstname=row['firstname'].strip(),
-                        lastname=row['lastname'].strip(),
-                        student_number=row['student_id'].strip(),
-                        department=row.get('department', '').strip(),
-                        program=row.get('course', '').strip(),
+                        email=email,
+                        firstname=row["firstname"].strip(),
+                        lastname=row["lastname"].strip(),
+                        student_number=student_id,
+                        department=str(row.get("department", "") or "").strip(),
+                        program=str(row.get("course", "") or "").strip(),
                         year_level=year_val_parsed,
                         enrolled_subjects=subjects_list,
                         block_section=block_val or None,
-                        must_change_password=True
+                        must_change_password=True,
                     )
                     created_count += 1
 
                 except Exception as e:
                     errors.append(f"Row {row_num}: {str(e)}")
 
-            # Log the bulk import
-            user_name = f"{dept_head.firstname} {dept_head.lastname}".strip() or dept_head.email or 'Depthead User'
+            # ...existing audit log + response...
+            user_name = f"{dept_head.firstname} {dept_head.lastname}".strip() or dept_head.email or "Depthead User"
             AuditLog.objects.create(
                 user=user_name,
-                role='Depthead',
-                action='Bulk Import Students',
-                category='USER MANAGEMENT',
-                status='Success' if created_count > 0 else 'Failed',
-                message=f'Imported {created_count} new student records from CSV file. {len(errors)} errors encountered.',
-                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+                role="Depthead",
+                action="Bulk Import Students",
+                category="USER MANAGEMENT",
+                status="Success" if created_count > 0 else "Failed",
+                message=f"Imported {created_count} new student records from CSV file. {len(errors)} errors encountered.",
+                ip=request.META.get("REMOTE_ADDR", "Unknown"),
             )
 
-            return Response({
-                "message": f"Successfully imported {created_count} students",
-                "created_count": created_count,
-                "errors": errors[:10]  # Limit errors shown to first 10
-            }, status=status.HTTP_201_CREATED)
+            return Response(
+                {
+                    "message": f"Successfully imported {created_count} students",
+                    "created_count": created_count,
+                    "errors": errors[:10],
+                },
+                status=status.HTTP_201_CREATED,
+            )
 
         except Exception as e:
             return Response({"detail": f"Error processing CSV: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-
 
 class FacultyBulkImportView(APIView):
     """Bulk import faculty from CSV file"""
@@ -973,71 +986,78 @@ class FacultyBulkImportView(APIView):
             return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
 
         # Check if file is provided
-        if 'file' not in request.FILES:
+        if "file" not in request.FILES:
             return Response({"detail": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-        csv_file = request.FILES['file']
-        if not csv_file.name.endswith('.csv'):
-            return Response({"detail": "File must be a CSV"}, status=status.HTTP_400_BAD_REQUEST)
+        csv_file = request.FILES["file"]
+
+        # NEW: strict CSV validation (type + size + required header columns)
+        try:
+            _text, csv_reader = validate_uploaded_csv(
+                csv_file,
+                max_bytes=getattr(settings, "MAX_BULK_CSV_SIZE_BYTES", 2 * 1024 * 1024),
+                required_columns={"email", "firstname", "lastname", "employee_id"},
+            )
+        except DRFValidationError as exc:
+            return Response({"detail": "Invalid CSV upload", "errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
 
         # Parse CSV and create faculty
         try:
-            decoded_file = csv_file.read().decode('utf-8')
-            csv_reader = csv.DictReader(io.StringIO(decoded_file))
-
             created_count = 0
             errors = []
 
-            for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 to account for header
+            for row_num, row in enumerate(csv_reader, start=2):
                 try:
-                    # Validate required fields
-                    required_fields = ['email', 'firstname', 'lastname', 'employee_id']
-                    for field in required_fields:
-                        if not row.get(field, '').strip():
-                            errors.append(f"Row {row_num}: Missing required field '{field}'")
-                            continue
-
-                    # Check if faculty already exists
-                    if Faculty.objects.filter(email=row['email']).exists():
-                        errors.append(f"Row {row_num}: Faculty with email '{row['email']}' already exists")
+                    required_fields = ["email", "firstname", "lastname", "employee_id"]
+                    missing = [f for f in required_fields if not str(row.get(f, "") or "").strip()]
+                    if missing:
+                        errors.append(f"Row {row_num}: Missing required field(s): {', '.join(missing)}")
                         continue
 
-                    if Faculty.objects.filter(employee_id=row['employee_id']).exists():
-                        errors.append(f"Row {row_num}: Faculty with ID '{row['employee_id']}' already exists")
+                    email = row["email"].strip()
+                    employee_id = row["employee_id"].strip()
+
+                    if Faculty.objects.filter(email=email).exists():
+                        errors.append(f"Row {row_num}: Faculty with email '{email}' already exists")
                         continue
 
-                    # Create faculty
-                    faculty = Faculty.objects.create(
-                        email=row['email'].strip(),
-                        firstname=row['firstname'].strip(),
-                        lastname=row['lastname'].strip(),
-                        employee_id=row['employee_id'].strip(),
-                        department=row.get('department', '').strip(),
-                        position=row.get('position', '').strip(),
-                        must_change_password=True
+                    if Faculty.objects.filter(employee_id=employee_id).exists():
+                        errors.append(f"Row {row_num}: Faculty with ID '{employee_id}' already exists")
+                        continue
+
+                    Faculty.objects.create(
+                        email=email,
+                        firstname=row["firstname"].strip(),
+                        lastname=row["lastname"].strip(),
+                        employee_id=employee_id,
+                        department=str(row.get("department", "") or "").strip(),
+                        position=str(row.get("position", "") or "").strip(),
+                        must_change_password=True,
                     )
                     created_count += 1
 
                 except Exception as e:
                     errors.append(f"Row {row_num}: {str(e)}")
 
-            # Log the bulk import
-            user_name = f"{dept_head.firstname} {dept_head.lastname}".strip() or dept_head.email or 'Depthead User'
+            user_name = f"{dept_head.firstname} {dept_head.lastname}".strip() or dept_head.email or "Depthead User"
             AuditLog.objects.create(
                 user=user_name,
-                role='Depthead',
-                action='Bulk Import Faculty',
-                category='USER MANAGEMENT',
-                status='Success' if created_count > 0 else 'Failed',
-                message=f'Imported {created_count} new faculty records from CSV file. {len(errors)} errors encountered.',
-                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+                role="Depthead",
+                action="Bulk Import Faculty",
+                category="USER MANAGEMENT",
+                status="Success" if created_count > 0 else "Failed",
+                message=f"Imported {created_count} new faculty records from CSV file. {len(errors)} errors encountered.",
+                ip=request.META.get("REMOTE_ADDR", "Unknown"),
             )
 
-            return Response({
-                "message": f"Successfully imported {created_count} faculty members",
-                "created_count": created_count,
-                "errors": errors[:10]  # Limit errors shown to first 10
-            }, status=status.HTTP_201_CREATED)
+            return Response(
+                {
+                    "message": f"Successfully imported {created_count} faculty members",
+                    "created_count": created_count,
+                    "errors": errors[:10],
+                },
+                status=status.HTTP_201_CREATED,
+            )
 
         except Exception as e:
             return Response({"detail": f"Error processing CSV: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1536,3 +1556,13 @@ class PasswordResetConfirmView(APIView):
         record.save(update_fields=["is_used"])
 
         return Response({"detail": "Password updated"}, status=status.HTTP_200_OK)
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class CSRFCookieView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        return Response({"detail": "CSRF cookie set"})
+    
+

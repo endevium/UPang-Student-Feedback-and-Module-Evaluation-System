@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Sidebar from '../../components/Sidebar';
+import { getToken, clearSession } from '../../utils/auth';
 
 import { 
   BookOpen, 
@@ -28,11 +29,12 @@ const StudentDashboard = () => {
 
   const fetchDashboard = useCallback(async () => {
     setLoadError('');
-    // Prefer sessionStorage (App migrates persistent tokens into sessionStorage)
-    const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
+    const token = getToken();
 
     if (!token) {
       setLoadError('Please log in to view your dashboard.');
+      window.history.replaceState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
       return;
     }
 
@@ -40,6 +42,14 @@ const StudentDashboard = () => {
       const response = await fetch(`${API_BASE_URL}/students/me/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (response.status === 401) {
+        clearSession();
+        window.history.replaceState({}, '', '/');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        return;
+      }
+
       const data = await response.json();
 
       if (!response.ok) {

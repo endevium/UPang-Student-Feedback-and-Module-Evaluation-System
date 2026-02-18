@@ -31,8 +31,14 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+CORS_ALLOW_CREDENTIALS = True
 
+MAX_BULK_CSV_SIZE_BYTES = 2 * 1024 * 1024
 
 # Application definition
 
@@ -45,6 +51,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'corsheaders',
     "api",
+    "csp",
     "rest_framework",
     "rest_framework.authtoken",
     "rest_framework_simplejwt.token_blacklist"
@@ -119,6 +126,7 @@ RECAPTCHA_MIN_SCORE = float(os.getenv("RECAPTCHA_MIN_SCORE", "0.5"))
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'csp.middleware.CSPMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -154,6 +162,66 @@ X_FRAME_OPTIONS = 'DENY'
 SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
+
+# CSRF / Session cookie hardening
+CSRF_COOKIE_HTTPONLY = False  # must be readable by JS if you send it as X-CSRFToken
+CSRF_COOKIE_SAMESITE = "Lax"  # dev-friendly; for cross-site + HTTPS use "None"
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# --- CSP ---
+CONTENT_SECURITY_POLICY = {
+    "DIRECTIVES": {
+        "default-src": ("'self'",),
+        "base-uri": ("'self'",),
+        "object-src": ("'none'",),
+        "frame-ancestors": ("'none'",),
+
+        # Google reCAPTCHA v2 Invisible
+        "script-src": (
+            "'self'",
+            "https://www.google.com",
+            "https://www.gstatic.com",
+        ),
+        "style-src": (
+            "'self'",
+            "'unsafe-inline'",
+            "https://www.google.com",
+        ),
+        "img-src": (
+            "'self'",
+            "data:",
+            "blob:",
+            "https://www.google.com",
+            "https://www.gstatic.com",
+        ),
+        "font-src": ("'self'", "data:"),
+
+        "frame-src": (
+            "'self'",
+            "https://www.google.com",
+        ),
+
+        "connect-src": (
+            "'self'",
+            "http://localhost:5173",
+            "http://localhost:8000",
+            "https://www.google.com",
+            "https://www.gstatic.com",
+        ),
+
+        "form-action": ("'self'",),
+    }
+}
+
+# If you load anything from Google (reCAPTCHA), you MUST allow it explicitly.
+# Example (only if used in frontend):
+# CSP_SCRIPT_SRC += ("https://www.google.com", "https://www.gstatic.com")
+# CSP_FRAME_SRC = ("https://www.google.com",)
+# CSP_CONNECT_SRC += ("https://www.google.com",)
 
 # For production, uncomment these:
 # SECURE_SSL_REDIRECT = True

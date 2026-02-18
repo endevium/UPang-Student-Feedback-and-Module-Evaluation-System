@@ -1,8 +1,17 @@
 import React, { useState } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { BookOpen, Users, Star, TrendingUp, MessageSquare, ChevronRight } from 'lucide-react';
+import { getToken, logoutAndReload } from '../../utils/auth';
 
 const FacultyDashboard = () => {
+  useEffect(() => {
+    const token = getToken();
+    if (!token) {
+      window.history.replaceState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  }, []);
+
   const [facultyInfo] = useState({
     name: "Prof. Ana Reyes",
     department: "Computer Science",
@@ -53,7 +62,11 @@ const FacultyDashboard = () => {
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
       <div className="flex flex-1 flex-row relative">
-        <Sidebar role="faculty" activeItem="dashboard" onLogout={() => {}} />
+        <Sidebar
+          role="faculty"
+          activeItem="dashboard"
+          onLogout={() => logoutAndReload('/')}
+        />
 
         {/* MAIN CONTENT SCROLL AREA */}
         <main className="flex-1 overflow-y-auto">

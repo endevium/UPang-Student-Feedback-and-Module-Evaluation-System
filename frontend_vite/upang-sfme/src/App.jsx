@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Header from './components/Header.jsx';
 import IdleManager from './components/IdleManager.jsx';
 import SplashScreen from './components/SplashScreen.jsx';
+import { getToken, getUser } from './utils/auth';
 
 // Main Pages
 import LandingPage from './pages/LandingPage.jsx';
@@ -27,6 +28,7 @@ import ModulePage from './pages/student/ModulePage.jsx';
 import EvaluationForm from './pages/student/EvaluationForm.jsx';
 
 function App() {
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   const [route, setRoute] = useState(window.location.pathname || '/');
   const [showSplash, setShowSplash] = useState(false);
   // On startup: if a persistent token exists in localStorage (from older flows),
@@ -52,6 +54,10 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/auth/csrf/`, { credentials: 'include' }).catch(() => {});
+  }, []);
+
   // Show a brief splash screen on full page reloads
   useEffect(() => {
     try {
@@ -70,7 +76,7 @@ function App() {
   }, []);
 
   // Accept token from sessionStorage (preferred) or localStorage (fallback for older flows)
-  const isLoggedIn = Boolean(sessionStorage.getItem('authToken') || localStorage.getItem('authToken'));
+  const isLoggedIn = Boolean(getToken());
 
   useEffect(() => {
     const onPop = () => setRoute(window.location.pathname || '/');
@@ -78,17 +84,23 @@ function App() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
+  useEffect(() => {
+    const isProtected =
+      route.startsWith('/dashboard') ||
+      route.startsWith('/depthead-dashboard') ||
+      route.startsWith('/faculty-dashboard');
+
+    if (!isLoggedIn && isProtected) {
+      window.history.replaceState({}, '', '/');
+      setRoute('/');
+    }
+  }, [isLoggedIn, route]);
+
   // If user is logged in, prevent landing page access via URL editing
   useEffect(() => {
     if (!isLoggedIn) return;
     if (route === '/' || route === '' || route === '/home') {
-      let storedUser = null;
-      try {
-        const raw = sessionStorage.getItem('authUser') || localStorage.getItem('authUser') || 'null'
-        storedUser = JSON.parse(raw);
-      } catch {
-        storedUser = null;
-      }
+      const storedUser = getUser();
 
       const roleMap = {
         student: 'Student',
@@ -105,9 +117,10 @@ function App() {
       const target = homePathMap[resolvedRole] || '/dashboard';
       if (route !== target) {
         window.history.replaceState({}, '', target);
+        setRoute(target);
       }
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, route]);
 
   // Routing Logic
   const renderContent = () => {
