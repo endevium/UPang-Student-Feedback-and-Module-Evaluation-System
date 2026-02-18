@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import logo from '../assets/navbar-logo.png'
 import studentGroupImg from '../assets/group-student2.png'
 import SafeImg from './SafeImg'
-import { saveToken, saveUser } from '../utils/auth'
+import { saveToken, saveUser, saveTokens } from '../utils/auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 
@@ -119,6 +119,14 @@ const OTPModal = ({
       })
       const data = await res.json()
       console.log('verifyOtp response', res.status, data)
+
+      if (res.status === 403 && data?.password_expired) {
+        if (onVerified) onVerified(data)
+        setInfo(data?.detail || 'Password expired. Please change your password.')
+        onClose && onClose()
+        return
+      }
+
       if (!res.ok) {
         const msg = data?.detail || data?.error || data?.message || 'Verification failed. Please check the code and try again.'
         console.error('verifyOtp failed', res.status, msg)
@@ -126,15 +134,21 @@ const OTPModal = ({
         return
       }
 
-      // On success we call onVerified with returned data (token/user/etc.)
       if (onVerified) {
         onVerified(data)
-      } else if (data?.token) {
-        // fallback: save token to sessionStorage and redirect based on returned role
+      } else if (data?.access || data?.token) {
         try {
           const userType = data.user_type || data.userType || 'student'
-          saveToken(data.token)
+
+          if (data?.access) {
+            saveTokens({ access: data.access, refresh: data.refresh })
+          } else {
+            // legacy backend response
+            saveToken(data.token)
+          }
+
           saveUser(data)
+
           if (userType === 'student') {
             window.history.pushState({}, '', '/dashboard')
             window.dispatchEvent(new PopStateEvent('popstate'))

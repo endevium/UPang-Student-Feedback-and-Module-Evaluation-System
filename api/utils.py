@@ -7,6 +7,8 @@ from django.utils import timezone
 
 from .models.OTP import EmailOTP
 
+PASSWORD_MAX_AGE_DAYS = 60
+
 def generate_otp() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
@@ -68,3 +70,13 @@ def create_and_send_otp(email: str, ttl_minutes: int = 5, purpose: str = EmailOT
     msg.send(fail_silently=False)
 
     return record
+
+def is_password_expired(user) -> bool:
+    """
+    Returns True if user's password is older than PASSWORD_MAX_AGE_DAYS.
+    If password_changed_at is missing/null, treat as expired (forces change).
+    """
+    changed_at = getattr(user, "password_changed_at", None)
+    if not changed_at:
+        return True
+    return timezone.now() - changed_at > timedelta(days=PASSWORD_MAX_AGE_DAYS)

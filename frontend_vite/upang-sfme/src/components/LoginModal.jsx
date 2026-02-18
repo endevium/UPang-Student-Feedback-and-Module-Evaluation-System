@@ -5,6 +5,7 @@ import logo from '../assets/navbar-logo.png';
 import studentGroupImg from '../assets/group-student2.png';
 import SafeImg from './SafeImg';
 import OTPModal from './OTPModal';
+import { saveTokens, saveToken, saveUser, getToken } from '../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
@@ -101,12 +102,14 @@ const LoginModal = ({ isOpen, onClose }) => {
   // immediately redirect them to their dashboard and close the modal.
   useEffect(() => {
     if (!isOpen) return;
-    const token = localStorage.getItem('authToken');
+    const token = getToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     if (!token) return;
 
     let storedUser = null;
     try {
-      storedUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+      storedUser = JSON.parse(sessionStorage.getItem('authUser') || 'null');
     } catch {
       storedUser = null;
     }
@@ -141,7 +144,6 @@ const LoginModal = ({ isOpen, onClose }) => {
   }, []);
 
   
-
   const getLoginEndpoint = () => {
     if (loginRole === 'faculty') return '/faculty/login/';
     if (loginRole === 'depthead') return '/department-head/login/';
@@ -234,14 +236,17 @@ const LoginModal = ({ isOpen, onClose }) => {
         return; // IMPORTANT: don't close modal
       }
 
-      // Token-based login (if any role returns token directly)
-      if (data?.token) {
+      // Token-based login (supports new {access, refresh} and legacy {token})
+      const access = data?.access || data?.token;
+      if (access) {
         if (!data.user_type) {
           data.user_type = loginRole === 'depthead' ? 'department_head' : loginRole;
         }
 
-        localStorage.setItem('authToken', data.token);
-        localStorage.setItem('authUser', JSON.stringify(data));
+        if (data?.access) saveTokens({ access: data.access, refresh: data.refresh });
+        else saveToken(data.token);
+
+        saveUser(data);
 
         const returnedRole = data.user_type;
         if (returnedRole === 'student') {
@@ -265,7 +270,7 @@ const LoginModal = ({ isOpen, onClose }) => {
           window.dispatchEvent(new PopStateEvent('popstate'));
         }
 
-        onClose(); // close only after successful redirect/login
+        onClose();
         return;
       }
 
@@ -280,14 +285,25 @@ const LoginModal = ({ isOpen, onClose }) => {
   };
 
   const handleOTPVerified = (data) => {
-    if (!data?.token) return;
+    if (data?.password_expired || data?.must_change_password) {
+      setMustChangePassword(true);
+      setChangeError('');
+      setOtpOpen(false);
+
+      return;
+    }
+
+    const access = data?.access || data?.token;
+    if (!access) return;
 
     if (!data.user_type) {
       data.user_type = loginRole === 'depthead' ? 'department_head' : loginRole;
     }
 
-    localStorage.setItem('authToken', data.token);
-    localStorage.setItem('authUser', JSON.stringify(data));
+    if (data?.access) saveTokens({ access: data.access, refresh: data.refresh });
+    else saveToken(data.token);
+
+    saveUser(data);
 
     const returnedRole = data.user_type;
     if (returnedRole === 'student') {

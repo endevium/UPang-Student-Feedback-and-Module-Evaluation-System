@@ -9,16 +9,46 @@
 export const TOKEN_KEY = 'authToken';
 export const USER_KEY = 'authUser';
 
+export const ACCESS_TOKEN_KEY = 'authAccessToken';
+export const REFRESH_TOKEN_KEY = 'authRefreshToken';
+
 /**
- * Save the raw token to sessionStorage.
- * Use session storage so the token is cleared when the tab/window is closed.
+ * Save access/refresh tokens.
+ * Also sets TOKEN_KEY for backward compatibility (access == token).
  */
-export function saveToken(token) {
+export function saveTokens({ access, refresh }) {
   try {
-    sessionStorage.setItem(TOKEN_KEY, token);
+    if (access) {
+      sessionStorage.setItem(ACCESS_TOKEN_KEY, access);
+      sessionStorage.setItem(TOKEN_KEY, access); // backward compat
+    }
+    if (refresh) {
+      sessionStorage.setItem(REFRESH_TOKEN_KEY, refresh);
+    }
   } catch (e) {
-    console.error('saveToken error', e);
+    console.error('saveTokens error', e);
   }
+}
+
+/** 
+* Save the raw token to sessionStorage (legacy).
+* Keep for existing code paths that still pass `token`.
+*/
+export function saveToken(token) {
+ try {
+   sessionStorage.setItem(TOKEN_KEY, token);
+   sessionStorage.setItem(ACCESS_TOKEN_KEY, token); // treat legacy token as access
+ } catch (e) {
+   console.error('saveToken error', e);
+ }
+}
+
+export function getAccessToken() {
+ return sessionStorage.getItem(ACCESS_TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
+}
+
+export function getRefreshToken() {
+ return sessionStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
 /**
@@ -59,7 +89,10 @@ export function getUser() {
  */
 export function clearSession() {
   try {
-    sessionStorage.clear();
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+    sessionStorage.removeItem(USER_KEY);
   } catch (e) {
     console.error('clearSession error', e);
   }

@@ -1,7 +1,7 @@
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.contrib.contenttypes.models import ContentType
@@ -43,7 +43,7 @@ from .serializers.FeedbackResponse import FeedbackResponseSerializer
 from .serializers.OTP import SendOTPSerializer, VerifyOTPSerializer
 from .serializers.PasswordReset import PasswordResetConfirmSerializer
 
-from .utils import create_and_send_otp
+from .utils import create_and_send_otp, is_password_expired
 
 def _issue_jwt(role: str, legacy_user_id: int) -> str:
     token = AccessToken()
@@ -51,6 +51,23 @@ def _issue_jwt(role: str, legacy_user_id: int) -> str:
     token["legacy_user_id"] = legacy_user_id
     token["user_id"] = legacy_user_id
     return str(token)
+
+def _issue_jwt_pair(role: str, legacy_user_id: int) -> dict:
+    """
+    Returns a token pair for your non-auth-user setup.
+    refresh contains the same custom claims as access.
+    """
+    refresh = RefreshToken()
+    refresh["role"] = role
+    refresh["legacy_user_id"] = legacy_user_id
+    refresh["user_id"] = legacy_user_id
+
+    access = refresh.access_token
+    access["role"] = role
+    access["legacy_user_id"] = legacy_user_id
+    access["user_id"] = legacy_user_id
+
+    return {"access": str(access), "refresh": str(refresh)}
 
 def _get_bearer_token(request) -> str | None:
     auth_header = request.headers.get("Authorization", "")
@@ -628,12 +645,12 @@ class ModuleEvaluationFormListCreateView(generics.ListCreateAPIView):
                             enrolled = student.enrolled_subjects or []
                             enrolled_codes = [item.get('code', '').strip().upper() for item in enrolled if isinstance(item, dict) and item.get('code')]
                             if enrolled_codes:
-                                		# attach a lightweight user wrapper so serializers can access student via request.user.student
-                                		try:
-                                			self.request.user = SimpleNamespace(student=student)
-                                		except Exception:
-                                			pass
-                                		queryset = queryset.filter(title__in=enrolled_codes)
+                                	# attach a lightweight user wrapper so serializers can access student via request.user.student
+                                    try:
+                                        self.request.user = SimpleNamespace(student=student)
+                                    except Exception:
+                                        pass
+                                    queryset = queryset.filter(title__in=enrolled_codes)
                         except Student.DoesNotExist:
                             pass
             except:
@@ -1323,11 +1340,27 @@ class VerifyOTPView(APIView):
                 if not user:
                     return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
-                token = _issue_jwt("student", user.id)
+                # NEW: enforce password expiry before issuing tokens
+                if is_password_expired(user):
+                    user.must_change_password = True
+                    user.save(update_fields=["must_change_password"])
+                    return Response(
+                        {
+                            "detail": "Password expired. Please change your password.",
+                            "password_expired": True,
+                            "must_change_password": True,
+                            "user_type": "student",
+                            "email": user.email,
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+                
+                tokens = _issue_jwt_pair("student", user.id)
                 return Response(
                     {
                         "detail": "OTP verified",
-                        "token": token,
+                        "access": tokens["access"],
+                        "refresh": tokens["refresh"],
                         "user_type": "student",
                         "id": user.id,
                         "student_number": user.student_number,
@@ -1345,11 +1378,27 @@ class VerifyOTPView(APIView):
                 if not user:
                     return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
-                token = _issue_jwt("faculty", user.id)
+                # NEW: enforce password expiry before issuing tokens
+                if is_password_expired(user):
+                    user.must_change_password = True
+                    user.save(update_fields=["must_change_password"])
+                    return Response(
+                        {
+                            "detail": "Password expired. Please change your password.",
+                            "password_expired": True,
+                            "must_change_password": True,
+                            "user_type": "faculty",
+                            "email": user.email,
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+                
+                tokens = _issue_jwt_pair("faculty", user.id)
                 return Response(
                     {
                         "detail": "OTP verified",
-                        "token": token,
+                        "access": tokens["access"],
+                        "refresh": tokens["refresh"],
                         "user_type": "faculty",
                         "id": user.id,
                         "email": user.email,
@@ -1366,11 +1415,27 @@ class VerifyOTPView(APIView):
                 if not user:
                     return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
-                token = _issue_jwt("department_head", user.id)
+                # NEW: enforce password expiry before issuing tokens
+                if is_password_expired(user):
+                    user.must_change_password = True
+                    user.save(update_fields=["must_change_password"])
+                    return Response(
+                        {
+                            "detail": "Password expired. Please change your password.",
+                            "password_expired": True,
+                            "must_change_password": True,
+                            "user_type": "department_head",
+                            "email": user.email,
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+                
+                tokens = _issue_jwt_pair("department_head", user.id)
                 return Response(
                     {
                         "detail": "OTP verified",
-                        "token": token,
+                        "access": tokens["access"],
+                        "refresh": tokens["refresh"],
                         "user_type": "department_head",
                         "id": user.id,
                         "email": user.email,

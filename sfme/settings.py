@@ -46,7 +46,8 @@ INSTALLED_APPS = [
     'corsheaders',
     "api",
     "rest_framework",
-    "rest_framework.authtoken"
+    "rest_framework.authtoken",
+    "rest_framework_simplejwt.token_blacklist"
 ]
 
 REST_FRAMEWORK = {
@@ -76,11 +77,20 @@ REST_FRAMEWORK = {
 # SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=60),
-    "ROTATE_REFRESH_TOKENS": False,
-    "BLACKLIST_AFTER_ROTATION": False,
+    # short-lived access token
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+
+    # refresh token lifetime
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+
+    # recommended hardening
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+
+    # optional but nice
+    "UPDATE_LAST_LOGIN": False,
 }
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -137,7 +147,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'sfme.wsgi.application'
 
-
 # Security settings
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
@@ -186,6 +195,13 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+PASSWORD_PEPPER = os.getenv("PASSWORD_PEPPER", "")
+
+# Use bcrypt for password hashing (salt is built-in)
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+]
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
