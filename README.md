@@ -104,7 +104,9 @@ npm test
 - Private blockchain records feedback hashes for tamper-evidence
 - NLP pipeline (built-in or external) performs sentiment analysis on submissions
 
-(Add architecture diagram in /docs/architecture.png)
+<p align="center">
+  <img src="frontend_vite/upang-sfme/src/assets/architecture_diagram.png" alt="System Architecture Diagram" width="800">
+</p>
 
 ## Security & Privacy
 - RBAC for all endpoints
