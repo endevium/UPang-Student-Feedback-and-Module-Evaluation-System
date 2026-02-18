@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "api",
     "csp",
     "rest_framework",
+    'drf_yasg',
     "rest_framework.authtoken",
     "rest_framework_simplejwt.token_blacklist"
 ]
