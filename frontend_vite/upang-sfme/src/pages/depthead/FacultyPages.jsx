@@ -253,7 +253,12 @@ const FacultyPages = () => {
   // Form Handlers
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormValues((prev) => ({ ...prev, [name]: value }));
+    // Restrict contact_number to digits only
+    let newValue = value;
+    if (name === 'contact_number') {
+      newValue = String(value || '').replace(/\D+/g, '');
+    }
+    setFormValues((prev) => ({ ...prev, [name]: newValue }));
     setFormErrors((prev) => ({ ...prev, [name]: undefined }));
   };
 
@@ -366,6 +371,15 @@ const FacultyPages = () => {
     }
   };
 
+  const downloadCSVTemplate = () => {
+    const csvContent = 'email,firstname,middlename,lastname,department,contact_number,birthdate\njohn.doe@upang.edu.ph,John,M,Doe,CITE,639123456789,1985-05-15\njane.smith@upang.edu.ph,Jane,L,Smith,CITE,639987654321,1990-08-22';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'faculty_import_template.csv';
+    link.click();
+  };
+
   const handleBulkImport = async (file) => {
     if (!file) return;
 
@@ -388,10 +402,22 @@ const FacultyPages = () => {
       const data = await response.json();
 
       if (!response.ok) {
+        // Better error messaging with additional details
+        let errorMsg = data?.detail || 'Bulk import failed';
+        const errorDetails = [];
+        
+        // Add missing/found columns info if available
+        if (data?.missing && data.missing.length > 0) {
+          errorDetails.push(`Missing: ${data.missing.join(', ')}`);
+        }
+        if (data?.found && data.found.length > 0) {
+          errorDetails.push(`Found: ${data.found.join(', ')}`);
+        }
+        
         setBulkImportResult({
           success: false,
-          message: data?.detail || 'Bulk import failed',
-          errors: data?.errors || []
+          message: errorMsg,
+          errors: data?.errors || errorDetails
         });
         return;
       }
@@ -722,7 +748,10 @@ const FacultyPages = () => {
                     name="contact_number"
                     value={formValues.contact_number}
                     onChange={handleInputChange}
-                    placeholder="+63 9XX XXX XXXX"
+                    placeholder="63XXXXXXXXXX"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength="11"
                     className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
                   />
                 </div>
@@ -796,41 +825,56 @@ const FacultyPages = () => {
                 <div className="text-4xl mb-4">📁</div>
                 <h4 className="text-lg font-semibold text-slate-700 mb-2">Upload CSV File</h4>
                 <p className="text-sm text-slate-500 mb-4">
-                  Select a CSV file containing faculty data. Required columns: email, firstname, lastname, employee_id
+                  Select a CSV file containing faculty data. Required columns: email, firstname, lastname
                 </p>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    const err = validateCsvFile(file);
-                    if (err) {
-                      setBulkImportResult({ success: false, message: err, errors: [] });
-                      e.target.value = '';
-                      return;
-                    }
-                    handleBulkImport(file);
-                  }}
-                  className="hidden"
-                  id="faculty-csv-upload"
-                  disabled={isBulkImporting}
-                />
-                <label
-                  htmlFor="faculty-csv-upload"
-                  className="inline-flex items-center px-4 py-2 bg-[#ffcc00] text-[#041c32] rounded-lg text-sm font-bold hover:bg-[#e6b800] cursor-pointer disabled:opacity-70"
-                >
-                  {isBulkImporting ? 'Importing...' : 'Choose CSV File'}
-                </label>
+                <div className="flex items-center justify-center gap-3">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      const err = validateCsvFile(file);
+                      if (err) {
+                        setBulkImportResult({ success: false, message: err, errors: [] });
+                        e.target.value = '';
+                        return;
+                      }
+                      handleBulkImport(file);
+                    }}
+                    className="hidden"
+                    id="faculty-csv-upload"
+                    disabled={isBulkImporting}
+                  />
+                  <label
+                    htmlFor="faculty-csv-upload"
+                    className="inline-flex items-center px-4 py-2 bg-[#ffcc00] text-[#041c32] rounded-lg text-sm font-bold hover:bg-[#e6b800] cursor-pointer disabled:opacity-70"
+                  >
+                    {isBulkImporting ? 'Importing...' : 'Choose CSV File'}
+                  </label>
+                  <button
+                    onClick={downloadCSVTemplate}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700"
+                  >
+                    <Download size={16} /> Download Template
+                  </button>
+                </div>
               </div>
 
               {/* CSV Format Guide */}
               <div className="bg-slate-50 rounded-lg p-4">
                 <h5 className="font-semibold text-slate-700 mb-2">CSV Format Requirements:</h5>
                 <div className="text-sm text-slate-600 space-y-1">
-                  <div><strong>Required columns:</strong> email, firstname, lastname, employee_id</div>
-                  <div><strong>Optional columns:</strong> department, position</div>
-                  <div><strong>Example:</strong> email,firstname,lastname,employee_id,department,position</div>
-                  <div><strong>Sample row:</strong> jane.smith@upang.edu.ph,Jane,,Smith,FAC001,Computer Science,Assistant Professor</div>
+                  <div><strong>Required columns:</strong> email, firstname, lastname</div>
+                  <div><strong>Optional columns:</strong> department, middlename, contact_number, birthdate</div>
+                  <div className="mt-3 p-3 bg-white rounded border border-slate-200">
+                    <div className="font-mono text-xs">
+                      <div className="font-semibold mb-1">Sample CSV:</div>
+                      <div>email,firstname,middlename,lastname,department,contact_number,birthdate</div>
+                      <div>john.doe@upang.edu.ph,John,M,Doe,CITE,639123456789,1985-05-15</div>
+                      <div>jane.smith@upang.edu.ph,Jane,L,Smith,CITE,639987654321,1990-08-22</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500"><strong>Note:</strong> Birthdate format must be YYYY-MM-DD. Email must be unique for each faculty member.</div>
                 </div>
               </div>
 

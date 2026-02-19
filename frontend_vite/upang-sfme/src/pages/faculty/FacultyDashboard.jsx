@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { BookOpen, Users, Star, TrendingUp, MessageSquare, ChevronRight } from 'lucide-react';
 import { getToken, logoutAndReload } from '../../utils/auth';

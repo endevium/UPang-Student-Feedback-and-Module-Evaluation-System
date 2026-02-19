@@ -44,14 +44,23 @@ class SQLInjectionProtectionMiddleware:
                         logger.warning(f"SQL injection attempt detected in POST parameter {key}: {value} from IP {self._get_client_ip(request)}")
                         return HttpResponseForbidden("Invalid request")
 
-        # Check JSON data for API requests
-        if hasattr(request, 'body') and request.body:
+        # Check JSON data for API requests. Avoid accessing request.body for
+        # multipart/form-data (file uploads) because accessing `request.body`
+        # after `request.POST` / `request.FILES` has been evaluated raises
+        # RawPostDataException. Only inspect the body when the content type
+        # indicates JSON-like payloads.
+        content_type = (request.META.get('CONTENT_TYPE') or request.content_type or '').lower()
+        if content_type.startswith('application/json'):
             try:
                 import json
-                body_data = json.loads(request.body.decode('utf-8'))
-                if self._check_json_for_sql_injection(body_data):
-                    logger.warning(f"SQL injection attempt detected in JSON body from IP {self._get_client_ip(request)}")
-                    return HttpResponseForbidden("Invalid request")
+                # Accessing request.body is safe here because the parser hasn't
+                # consumed the stream for JSON requests.
+                body = request.body
+                if body:
+                    body_data = json.loads(body.decode('utf-8'))
+                    if self._check_json_for_sql_injection(body_data):
+                        logger.warning(f"SQL injection attempt detected in JSON body from IP {self._get_client_ip(request)}")
+                        return HttpResponseForbidden("Invalid request")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass  # Not JSON, continue
 

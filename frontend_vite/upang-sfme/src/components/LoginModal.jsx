@@ -68,16 +68,17 @@ const LoginModal = ({ isOpen, onClose }) => {
   };
 
   useEffect(() => {
+    let t = null;
     if (isOpen) {
       document.body.style.overflow = 'hidden';
-      const t = setTimeout(() => setAnimateIn(true), 10);
-      return () => clearTimeout(t);
-    } 
+      t = setTimeout(() => setAnimateIn(true), 10);
+    } else {
+      document.body.style.overflow = 'unset';
+      setAnimateIn(false);
+    }
 
-    document.body.style.overflow = 'unset';
-    setAnimateIn(false);
-    
     return () => {
+      if (t) clearTimeout(t);
       document.body.style.overflow = 'unset';
       setStudentId('');
       setPassword('');
@@ -563,51 +564,14 @@ const LoginModal = ({ isOpen, onClose }) => {
         return;
       }
 
-      // If no token returned, attempt automatic login with new password
-      try {
-        const loginPayload = loginRole === 'student'
-          ? { student_number: studentId.trim(), password: trimmedNewPassword, role: loginRole }
-          : { email: studentId.trim(), password: trimmedNewPassword, role: loginRole };
-
-        const loginResp = await fetch(`${API_BASE_URL}${getLoginEndpoint()}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(loginPayload),
-        });
-
-        let loginData = {};
-        try { loginData = await loginResp.json(); } catch { loginData = {}; }
-
-        if (loginResp.ok && loginData?.token) {
-          if (!loginData.user_type) loginData.user_type = loginRole === 'depthead' ? 'department_head' : loginRole;
-          localStorage.setItem('authToken', loginData.token);
-          localStorage.setItem('authUser', JSON.stringify(loginData));
-
-          const returnedRole = loginData.user_type;
-          if (returnedRole === 'student') {
-            window.history.pushState({}, '', '/dashboard');
-            window.dispatchEvent(new PopStateEvent('popstate'));
-          } else if (returnedRole === 'faculty') {
-            window.history.pushState({}, '', '/faculty-dashboard');
-            window.dispatchEvent(new PopStateEvent('popstate'));
-          } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
-            window.history.pushState({}, '', '/depthead-dashboard');
-            window.dispatchEvent(new PopStateEvent('popstate'));
-          }
-
-          showToast('Password updated successfully');
-          setTimeout(() => onClose(), 900);
-          return;
-        }
-
-        const loginMsg = loginData?.detail || loginData?.error || loginData?.message || 'Password updated but automatic login failed. Please login manually.';
-        setChangeError(loginMsg);
-        return;
-      } catch (e) {
-        console.error('Auto-login after password change failed', e);
-        setChangeError('Password updated but automatic login failed due to network error. Please login manually.');
-        return;
-      }
+      // No further automatic login attempts: show success and return to landing page
+      showToast('Password updated successfully');
+      setTimeout(() => {
+        try { onClose(); } catch (e) {}
+        window.history.pushState({}, '', '/');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, 900);
+      return;
     } catch {
       setChangeError('Unable to reach the server. Please try again.');
     } finally {
