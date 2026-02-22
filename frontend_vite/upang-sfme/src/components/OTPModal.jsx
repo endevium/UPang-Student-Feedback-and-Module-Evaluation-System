@@ -32,6 +32,9 @@ const OTPModal = ({
   const [countdown, setCountdown] = useState(null)
   const inputsRef = useRef([])
 
+  // Allow resend only after countdown reaches 00:00
+  const canResend = countdown === '00:00'
+
   useEffect(() => {
     if (!expiresAt) return
     const tick = () => {
@@ -322,12 +325,17 @@ const OTPModal = ({
                   {error && <div className="mt-2 text-sm text-[#ffcc00] font-semibold">{error}</div>}
                 </div>
 
-                <div className="flex gap-2 mt-4">
+                  <div className="flex gap-2 mt-4">
                   <button type="button" onClick={verifyOtp} disabled={isVerifying} className="flex-1 py-4 bg-[#ffcc00] text-[#041c32] font-black rounded-xl shadow-lg hover:bg-[#e6b800] active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed">
                     {isVerifying ? 'VERIFYING...' : 'VERIFY'}
                   </button>
-                  <button type="button" className="py-4 px-4 border rounded-xl bg-white/5 text-white" onClick={sendOtp} disabled={isSending}>
-                    {isSending ? 'RESENDING...' : 'RESEND'}
+                  <button
+                    type="button"
+                    className="py-4 px-4 border rounded-xl bg-white/5 text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                    onClick={sendOtp}
+                    disabled={isSending || !canResend}
+                    title={canResend ? 'Resend code' : `Resend available in ${countdown || '—:—'}`}>
+                    {isSending ? 'RESENDING...' : (canResend ? 'RESEND' : `RESEND (${countdown || '—:—'})`)}
                   </button>
                 </div>
                 </div>

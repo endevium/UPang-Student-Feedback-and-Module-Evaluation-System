@@ -110,7 +110,7 @@ export function logoutAndReload() {
   // the current protected route (which may still be in the URL).
   try {
     window.location.href = '/';
-  } catch (e) {
+  } catch  {
     // fallback to reload if assigning href fails for some reason
     window.location.reload();
   }

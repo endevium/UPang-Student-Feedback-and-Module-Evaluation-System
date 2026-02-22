@@ -425,6 +425,15 @@ const StudentsManagement = () => {
       const token = getToken();
       const formData = new FormData();
       formData.append('file', file);
+      // Debug: log file and FormData entries to ensure browser includes the file
+      try {
+        console.info('Bulk import - file:', { name: file.name, size: file.size, type: file.type });
+        for (const pair of formData.entries()) {
+          console.info('FormData entry:', pair[0], pair[1]);
+        }
+      } catch (e) {
+        console.warn('Bulk import debug log failed', e);
+      }
 
       const response = await fetch(`${API_BASE_URL}/students/bulk-import/`, {
         method: 'POST',
@@ -437,10 +446,22 @@ const StudentsManagement = () => {
       const data = await response.json();
 
       if (!response.ok) {
+        // Better error messaging with additional details
+        let errorMsg = data?.detail || 'Bulk import failed';
+        const errorDetails = [];
+        
+        // Add missing/found columns info if available
+        if (data?.missing && data.missing.length > 0) {
+          errorDetails.push(`Missing: ${data.missing.join(', ')}`);
+        }
+        if (data?.found && data.found.length > 0) {
+          errorDetails.push(`Found: ${data.found.join(', ')}`);
+        }
+        
         setBulkImportResult({
           success: false,
-          message: data?.detail || 'Bulk import failed',
-          errors: data?.errors || []
+          message: errorMsg,
+          errors: data?.errors || errorDetails
         });
         return;
       }
@@ -464,6 +485,15 @@ const StudentsManagement = () => {
     } finally {
       setIsBulkImporting(false);
     }
+  };
+
+  const downloadCSVTemplate = () => {
+    const csvContent = 'email,firstname,middlename,lastname,student_id,department,year_level,course,block_section,birthdate,enrolled_subjects\njohn.doe@upang.edu.ph,John,M,Doe,2021-0001,CITE,1,BSIT,A1,2000-05-15,"ITE293|Systems Administration|Josephine Cruz;CS101|Programming Fundamentals|John Smith"\njane.smith@upang.edu.ph,Jane,L,Smith,2021-0002,CITE,2,BSCS,B2,1999-08-22,"MATH201|Calculus|Maria Garcia;PHYS202|Physics|Robert Lee"';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'student_import_template.csv';
+    link.click();
   };
 
   const showStudentDetails = async (studentId) => {
@@ -1027,31 +1057,41 @@ const StudentsManagement = () => {
                 <div className="text-4xl mb-4">📁</div>
                 <h4 className="text-lg font-semibold text-slate-700 mb-2">Upload CSV File</h4>
                 <p className="text-sm text-slate-500 mb-4">
-                  Select a CSV file containing student data. Required columns: email, firstname, lastname, student_id
+                  Select a CSV file containing student data.<br/>
+                  <strong>Required:</strong> email, firstname, lastname, student_id<br/>
+                  <strong>Recommended:</strong> birthdate (for password generation), department, year_level
                 </p>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    const err = validateCsvFile(file);
-                    if (err) {
-                      setBulkImportResult({ success: false, message: err, errors: [] });
-                      e.target.value = '';
-                      return;
-                    }
-                    handleBulkImport(file);
-                  }}
-                  className="hidden"
-                  id="csv-upload"
-                  disabled={isBulkImporting}
-                />
-                <label
-                  htmlFor="csv-upload"
-                  className="inline-flex items-center px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-bold hover:bg-[#18393e] cursor-pointer disabled:opacity-70"
-                >
-                  {isBulkImporting ? 'Importing...' : 'Choose CSV File'}
-                </label>
+                <div className="flex items-center justify-center gap-3">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      const err = validateCsvFile(file);
+                      if (err) {
+                        setBulkImportResult({ success: false, message: err, errors: [] });
+                        e.target.value = '';
+                        return;
+                      }
+                      handleBulkImport(file);
+                    }}
+                    className="hidden"
+                    id="csv-upload"
+                    disabled={isBulkImporting}
+                  />
+                  <label
+                    htmlFor="csv-upload"
+                    className="inline-flex items-center px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-bold hover:bg-[#18393e] cursor-pointer disabled:opacity-70"
+                  >
+                    {isBulkImporting ? 'Importing...' : 'Choose CSV File'}
+                  </label>
+                  <button
+                    onClick={downloadCSVTemplate}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700"
+                  >
+                    <Download size={16} /> Download Template
+                  </button>
+                </div>
               </div>
 
               {/* CSV Format Guide */}
@@ -1059,10 +1099,30 @@ const StudentsManagement = () => {
                 <h5 className="font-semibold text-slate-700 mb-2">CSV Format Requirements:</h5>
                 <div className="text-sm text-slate-600 space-y-1">
                   <div><strong>Required columns:</strong> email, firstname, lastname, student_id</div>
-                  <div><strong>Optional columns:</strong> department, year_level, course, enrolled_subjects, block_section</div>
-                  <div><strong>Notes:</strong> For enrolled_subjects, use JSON format like <code>{`[{'code': 'COMP101', 'description': 'Programming Fundamentals'}, ...]`}</code></div>
-                  <div><strong>Example:</strong> email,firstname,lastname,student_id,department,year_level,enrolled_subjects,block_section</div>
-                  <div><strong>Sample row:</strong> john.doe@upang.edu.ph,John,,Doe,2021-0001,Computer Science,3,{`[{'code': 'COMP101', 'description': 'Programming Fundamentals'}]`},A1</div>
+                  <div><strong>Optional columns:</strong> department, year_level, course, enrolled_subjects, block_section, middlename, birthdate</div>
+                  <div className="mt-3 p-3 bg-white rounded border border-slate-200">
+                    <div className="font-mono text-xs">
+                      <div className="font-semibold mb-1">Sample CSV:</div>
+                      <div className="overflow-x-auto">
+                        <div>email,firstname,middlename,lastname,student_id,department,year_level,course,block_section,birthdate,enrolled_subjects</div>
+                        <div>john.doe@upang.edu.ph,John,M,Doe,2021-0001,CITE,1,BSIT,A1,2000-05-15,"ITE293|Systems Admin|J. Cruz;CS101|Programming|J. Smith"</div>
+                        <div>jane.smith@upang.edu.ph,Jane,L,Smith,2021-0002,CITE,2,BSCS,B2,1999-08-22,"MATH201|Calculus|M. Garcia;PHYS202|Physics|R. Lee"</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500 space-y-1">
+                    <div><strong>Notes:</strong></div>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li><strong>Birthdate format:</strong> YYYY-MM-DD (e.g., 2000-05-15). Used to auto-generate password.</li>
+                      <li><strong>Enrolled subjects format:</strong> Use <strong>CODE|Description|Instructor</strong> for each subject</li>
+                      <li>Separate multiple subjects with semicolons <strong>;</strong></li>
+                      <li><strong>Example:</strong> "ITE293|Systems Admin|J. Cruz;CS101|Programming|J. Smith"</li>
+                      <li><strong>Simple format also works:</strong> Just codes like "CS101;IT102" (description & instructor will be empty)</li>
+                      <li><strong>Password generation:</strong> Auto-generated from name + birthdate (first 2 letters of each name + month + year)</li>
+                      <li>Put enrolled_subjects in quotes if it contains commas or semicolons</li>
+                      <li>Column names are case-sensitive</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
 

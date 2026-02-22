@@ -130,7 +130,11 @@ def validate_uploaded_csv(file_obj, *, max_bytes: int, required_columns: set[str
     cols = set([c.strip() for c in (reader.fieldnames or []) if c])
     missing = sorted(required_columns - cols)
     if missing:
-        raise DRFValidationError({"detail": "Missing required columns", "missing": missing})
+        raise DRFValidationError({
+            "detail": f"Missing required columns: {', '.join(missing)}. Found columns: {', '.join(sorted(cols))}",
+            "missing": missing,
+            "found": sorted(cols)
+        })
 
     return text, reader
 

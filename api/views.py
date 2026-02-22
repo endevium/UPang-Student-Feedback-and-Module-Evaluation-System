@@ -979,6 +979,8 @@ class InstructorEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class StudentBulkImportView(APIView):
     """Bulk import students from CSV file"""
+    authentication_classes = []
+    permission_classes = []
 
     def post(self, request):
         # Manual authentication for department head
@@ -1003,11 +1005,44 @@ class StudentBulkImportView(APIView):
         except DepartmentHead.DoesNotExist:
             return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        # Check if file is provided
-        if "file" not in request.FILES:
-            return Response({"detail": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
+        # Check if file is provided. Be permissive about where the uploaded
+        # file may appear: depending on middleware/parsers it can be in
+        # `request.FILES`, `request._request.FILES` (the underlying Django
+        # HttpRequest), or in DRF's `request.data`.
+        content_type = request.META.get('CONTENT_TYPE') or request.content_type if hasattr(request, 'content_type') else request.META.get('CONTENT_TYPE')
+        # Helpful debug info (will appear in logs)
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Bulk import upload content-type: {content_type}")
+            logger.info(f"request.FILES keys: {list(getattr(request, 'FILES', {}).keys())}")
+            # underlying Django request
+            underlying = getattr(request, '_request', None)
+            if underlying is not None:
+                logger.info(f"underlying request.FILES keys: {list(getattr(underlying, 'FILES', {}).keys())}")
+        except Exception:
+            pass
 
-        csv_file = request.FILES["file"]
+        csv_file = None
+        # Prefer request.FILES (DRF wraps Django request but exposes FILES)
+        if getattr(request, 'FILES', None) and 'file' in request.FILES:
+            csv_file = request.FILES['file']
+        else:
+            # Try the underlying Django HttpRequest
+            underlying = getattr(request, '_request', None)
+            if underlying and getattr(underlying, 'FILES', None) and 'file' in underlying.FILES:
+                csv_file = underlying.FILES['file']
+            else:
+                # As a last resort, DRF may have put the file in `request.data`
+                try:
+                    df = getattr(request, 'data', {})
+                    if df and 'file' in df:
+                        csv_file = df.get('file')
+                except Exception:
+                    csv_file = None
+
+        if not csv_file:
+            return Response({"detail": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
 
         # NEW: strict CSV validation (type + size + required header columns)
         try:
@@ -1045,9 +1080,34 @@ class StudentBulkImportView(APIView):
                         errors.append(f"Row {row_num}: Student with ID '{student_id}' already exists")
                         continue
 
-                    # Parse enrolled_subjects (semicolon-separated) and block
+                    # Parse enrolled_subjects (detailed format with code|description|instructor)
+                    # Format: CODE|Description|Instructor;CODE2|Description2|Instructor2
+                    # Also accepts simple format: CODE;CODE2;CODE3
                     raw_subjects = str(row.get("enrolled_subjects", "") or "").strip()
-                    subjects_list = [s.strip() for s in raw_subjects.split(";") if s.strip()] if raw_subjects else []
+                    subjects_list = []
+                    if raw_subjects:
+                        for subject_entry in raw_subjects.split(";"):
+                            subject_entry = subject_entry.strip()
+                            if not subject_entry:
+                                continue
+                            
+                            # Check if it contains pipes (detailed format)
+                            if "|" in subject_entry:
+                                parts = [p.strip() for p in subject_entry.split("|")]
+                                if len(parts) >= 1:
+                                    subjects_list.append({
+                                        "code": parts[0],
+                                        "description": parts[1] if len(parts) > 1 else "",
+                                        "instructor_name": parts[2] if len(parts) > 2 else "",
+                                    })
+                            else:
+                                # Simple format - just code
+                                subjects_list.append({
+                                    "code": subject_entry,
+                                    "description": "",
+                                    "instructor_name": "",
+                                })
+                    
                     block_val = str(row.get("block_section", "") or "").strip()
 
                     # Parse year level
@@ -1057,15 +1117,40 @@ class StudentBulkImportView(APIView):
                     except ValueError:
                         year_val_parsed = None
 
+                    # Parse birthdate
+                    birthdate_str = str(row.get("birthdate", "") or "").strip()
+                    birthdate = None
+                    if birthdate_str:
+                        from datetime import datetime
+                        try:
+                            birthdate = datetime.strptime(birthdate_str, "%Y-%m-%d").date()
+                        except ValueError:
+                            errors.append(f"Row {row_num}: Invalid birthdate format. Use YYYY-MM-DD")
+                            continue
+
                     firstname = validate_plain_text(row["firstname"].strip(), field_name="firstname")
+                    middlename = validate_plain_text(str(row.get("middlename", "") or "").strip(), field_name="middlename")
                     lastname = validate_plain_text(row["lastname"].strip(), field_name="lastname")
                     department = validate_plain_text(str(row.get("department", "") or "").strip(), field_name="department")
                     program = validate_plain_text(str(row.get("course", "") or "").strip(), field_name="course")
                     block_val = validate_plain_text(str(row.get("block_section", "") or "").strip(), field_name="block_section")
 
-                    student = Student.objects.create(
+                    # Generate password from birthdate using same logic as StudentSerializer
+                    if birthdate:
+                        first_two = firstname[:2].upper() if firstname else ""
+                        middle_two = middlename[:2].upper() if middlename else ""
+                        last_two = lastname[:2].upper() if lastname else ""
+                        name_key = f"{first_two}{middle_two}{last_two}"
+                        month_year = f"{birthdate.month}{birthdate.year}"
+                        password = f"{name_key}{month_year}"
+                    else:
+                        # Default password if no birthdate
+                        password = "ChangeMe123!"
+
+                    student = Student(
                         email=email,
                         firstname=firstname,
+                        middlename=middlename if middlename else None,
                         lastname=lastname,
                         student_number=student_id,
                         department=department,
@@ -1073,8 +1158,11 @@ class StudentBulkImportView(APIView):
                         year_level=year_val_parsed,
                         enrolled_subjects=subjects_list,
                         block_section=block_val or None,
+                        birthdate=birthdate,
                         must_change_password=True,
                     )
+                    student.set_password(password)
+                    student.save()
                     created_count += 1
 
                 except Exception as e:
@@ -1106,6 +1194,8 @@ class StudentBulkImportView(APIView):
 
 class FacultyBulkImportView(APIView):
     """Bulk import faculty from CSV file"""
+    authentication_classes = []
+    permission_classes = []
 
     def post(self, request):
         # Manual authentication for department head
@@ -1141,7 +1231,7 @@ class FacultyBulkImportView(APIView):
             _text, csv_reader = validate_uploaded_csv(
                 csv_file,
                 max_bytes=getattr(settings, "MAX_BULK_CSV_SIZE_BYTES", 2 * 1024 * 1024),
-                required_columns={"email", "firstname", "lastname", "employee_id"},
+                required_columns={"email", "firstname", "lastname"},
             )
         except DRFValidationError as exc:
             return Response({"detail": "Invalid CSV upload", "errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
@@ -1153,35 +1243,43 @@ class FacultyBulkImportView(APIView):
 
             for row_num, row in enumerate(csv_reader, start=2):
                 try:
-                    required_fields = ["email", "firstname", "lastname", "employee_id"]
+                    required_fields = ["email", "firstname", "lastname"]
                     missing = [f for f in required_fields if not str(row.get(f, "") or "").strip()]
                     if missing:
                         errors.append(f"Row {row_num}: Missing required field(s): {', '.join(missing)}")
                         continue
 
                     email = row["email"].strip()
-                    employee_id = row["employee_id"].strip()
 
                     if Faculty.objects.filter(email=email).exists():
                         errors.append(f"Row {row_num}: Faculty with email '{email}' already exists")
                         continue
 
-                    if Faculty.objects.filter(employee_id=employee_id).exists():
-                        errors.append(f"Row {row_num}: Faculty with ID '{employee_id}' already exists")
-                        continue
-
                     firstname = validate_plain_text(row["firstname"].strip(), field_name="firstname")
                     lastname = validate_plain_text(row["lastname"].strip(), field_name="lastname")
+                    middlename = validate_plain_text(str(row.get("middlename", "") or "").strip(), field_name="middlename")
                     department = validate_plain_text(str(row.get("department", "") or "").strip(), field_name="department")
-                    position = validate_plain_text(str(row.get("position", "") or "").strip(), field_name="position")
+                    contact_number = str(row.get("contact_number", "") or "").strip()
+                    birthdate_str = str(row.get("birthdate", "") or "").strip()
+                    
+                    # Parse birthdate if provided
+                    birthdate = None
+                    if birthdate_str:
+                        from datetime import datetime
+                        try:
+                            birthdate = datetime.strptime(birthdate_str, "%Y-%m-%d").date()
+                        except ValueError:
+                            errors.append(f"Row {row_num}: Invalid birthdate format. Use YYYY-MM-DD")
+                            continue
 
                     Faculty.objects.create(
                         email=email,
                         firstname=firstname,
+                        middlename=middlename if middlename else None,
                         lastname=lastname,
-                        employee_id=employee_id,
-                        department=department,
-                        position=position,
+                        department=department if department else None,
+                        contact_number=contact_number if contact_number else None,
+                        birthdate=birthdate,
                         must_change_password=True,
                     )
                     created_count += 1
