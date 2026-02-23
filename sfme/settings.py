@@ -110,7 +110,6 @@ SIMPLE_JWT = {
     "UPDATE_LAST_LOGIN": False,
 }
 
-
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 10}},
@@ -118,14 +117,18 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+# Blockchain Settings
+WEB3_PROVIDER_URL = os.getenv("WEB3_PROVIDER_URL")
+WEB3_OWNER_ADDRESS = os.getenv("WEB3_OWNER_ADDRESS")
+WEB3_OWNER_PRIVATE_KEY = os.getenv("WEB3_OWNER_PRIVATE_KEY")
+FEEDBACK_CONTRACT_ADDRESS = os.getenv("FEEDBACK_CONTRACT_ADDRESS")
+
 # Email OTP integration
 # Force SMTP backend unless explicitly overridden in environment
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
-
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-# The .env uses EMAIL_PASSWORD; map it to EMAIL_HOST_PASSWORD
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() == "true"
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").lower() == "true"

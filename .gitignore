@@ -59,3 +59,5 @@ results/
 *.safetensors
 
 security.log
+Feedback.abi.json
+Feedback.bytecode.txt

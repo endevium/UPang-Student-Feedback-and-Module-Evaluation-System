@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.conf import settings
+import logging
 
 from .throttles import AIRequestRateThrottle, LoginRateThrottle
 from .models import Student
@@ -17,6 +18,7 @@ import csv
 import io
 from .recaptcha import verify_recaptcha_v2
 from types import SimpleNamespace
+from .blockchain import feedback_payload, compute_feedback_hash_hex, store_hash_onchain
 
 from .models.AuditLog import AuditLog
 from .models.DepartmentHead import DepartmentHead
@@ -28,6 +30,7 @@ from .models.ModuleAssignment import ModuleAssignment
 from .models.ModuleEvaluationForm import ModuleEvaluationForm
 from .models.Student import Student
 from .models.FeedbackResponse import FeedbackResponse
+from .models.FeedbackHash import FeedbackHash
 from .models.OTP import EmailOTP
 
 from .serializers.AuditLog import AuditLogSerializer
@@ -47,6 +50,7 @@ from .serializers.OTP import SendOTPSerializer, VerifyOTPSerializer
 from .serializers.PasswordReset import PasswordResetConfirmSerializer
 
 from .utils import create_and_send_otp, is_password_expired, validate_uploaded_csv, validate_plain_text
+logger = logging.getLogger(__name__)
 
 def _issue_jwt(role: str, legacy_user_id: int) -> str:
     token = AccessToken()
@@ -1451,7 +1455,6 @@ class FeedbackResponseCreateView(generics.CreateAPIView):
             errors = exc.detail
 
             def _flatten(e, prefix=""):
-                # turns nested DRF error structures into a readable string
                 if isinstance(e, dict):
                     parts = []
                     for k, v in e.items():
@@ -1472,11 +1475,39 @@ class FeedbackResponseCreateView(generics.CreateAPIView):
             student=student,
             ip_address=request.META.get('REMOTE_ADDR', 'Unknown'),
         )
-        
-        out = self.get_serializer(obj).data
-        headers = self.get_success_headers(out)
-        return Response(out, status=status.HTTP_201_CREATED, headers=headers)
 
+        onchain = None
+        logger = logging.getLogger(__name__)
+
+        try:
+            payload = feedback_payload(
+                form_type=data.get("form_type"),
+                form_object_id=obj.form_object_id,
+                student_id=getattr(student, "id", None) if student else None,
+                pseudonym=obj.pseudonym,
+                responses=obj.responses,
+            )
+            hash_hex = compute_feedback_hash_hex(payload)
+            tx_hash = store_hash_onchain(hash_hex)
+            
+            FeedbackHash.objects.create(
+                feedback_response=obj,
+                hash=hash_hex,
+                tx_hash=tx_hash
+            )
+
+            onchain = {"hash": hash_hex, "tx_hash": tx_hash}
+            logger.info("Feedback onchain stored tx=%s hash=%s", tx_hash, hash_hex)
+        except Exception as e:
+            onchain = {"warning": "Failed to store hash on-chain", "error": str(e)}
+            logger.warning("Feedback onchain store failed: %s", str(e), exc_info=True)
+
+        data = self.get_serializer(obj).data
+        data["onchain"] = onchain
+
+        headers = self.get_success_headers(data)
+        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+    
 class FeedbackResponseListView(generics.ListAPIView):
     authentication_classes = []
     permission_classes = []

@@ -8,7 +8,6 @@ if str(ROOT) not in sys.path:
 
 from api.sentiment_service import predict_sentiment
 
-
 SAMPLES = [
     ("I absolutely not recommend this course.", "negative"),
     ("meow", "Sorry, I cannot understand this"),
@@ -17,7 +16,6 @@ SAMPLES = [
     ("ahhhh daddy", "Sorry, sexual words are not permitted"),
     ("lmao", "neutral"),
 ]
-
 
 def main():
     # Debug info to diagnose duplicate outputs
