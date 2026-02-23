@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Optional
+import re
 
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -33,6 +34,45 @@ def predict_sentiment(text: str) -> str:
     """
     if not isinstance(text, str):
         raise TypeError("text must be a string")
+
+    # Basic input filtering to catch non-textual or disallowed inputs early.
+    # 1) Emojis or punctuation-only input -> not understandable
+    # 2) Sexual content -> reject
+    # 3) Harsh / profane words -> reject
+
+    # Unicode emoji ranges (covers most emoji codepoints)
+    EMOJI_RE = re.compile("[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\u2600-\u26FF\u2700-\u27BF]+", flags=re.UNICODE)
+
+    # Normalize whitespace
+    txt = text.strip()
+
+    # If input is empty after trimming
+    if not txt:
+        return "Sorry, I cannot understand this"
+
+    # If text contains sexual terms, reject with a specific message
+    sexual_words = [
+        'daddy', 'mommy', 'porn', 'sex', 'sexy', 'nude', 'nsfw', 'fuck', 'cum', 'orgasm', 'xxx'
+    ]
+    SEXUAL_RE = re.compile(r"\\b(" + r"|".join(re.escape(w) for w in sexual_words) + r")\\b", flags=re.IGNORECASE)
+    if SEXUAL_RE.search(txt):
+        return "Sorry, sexual words are not permitted"
+
+    # Harsh / profane words
+    profane_words = [
+        'fuck', 'shit', 'bitch', 'asshole', 'idiot', 'stupid', 'moron', 'bastard', 'dumb', 'crap'
+    ]
+    PROFANE_RE = re.compile(r"\\b(" + r"|".join(re.escape(w) for w in profane_words) + r")\\b", flags=re.IGNORECASE)
+    if PROFANE_RE.search(txt):
+        return "Sorry, harsh words are not permitted"
+
+    # Remove emojis and punctuation to see if there's any readable text left
+    without_emojis = EMOJI_RE.sub('', txt)
+    # Remove punctuation (keep word characters and whitespace)
+    cleaned = re.sub(r"[^\w\s]", '', without_emojis).strip()
+    if not cleaned:
+        # Input was only emojis/punctuation/symbols
+        return "Sorry, I cannot understand this"
 
     _load_model_once()
 

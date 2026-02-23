@@ -57,3 +57,5 @@ results/
 
 *.bin
 *.safetensors
+
+security.log

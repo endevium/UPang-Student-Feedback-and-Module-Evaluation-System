@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-
+import os
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -11,9 +11,11 @@ from api.sentiment_service import predict_sentiment
 
 SAMPLES = [
     ("I absolutely not recommend this course.", "negative"),
-    ("loved the course but the instructor was excellent and engaging.", "positive"),
-    ("The materials were confusing and the workload was unbearable.", "negative"),
-    ("The session covered the topics; overall it was okay.", "neutral"),
+    ("meow", "Sorry, I cannot understand this"),
+    ("!!!???", "Sorry, I cannot understand this"),
+    ("You are an idiot", "Sorry, harsh words are not permitted"),
+    ("ahhhh daddy", "Sorry, sexual words are not permitted"),
+    ("lmao", "neutral"),
 ]
 
 

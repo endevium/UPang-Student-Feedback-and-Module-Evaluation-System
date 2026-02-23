@@ -9,11 +9,13 @@ import {
   Download, 
   Eye,
   Edit,
-  Trash2,
+  Folder,
 } from 'lucide-react';
+import { getToken } from '../../utils/auth';
 
 const StudentsManagement = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  const MAX_CSV_SIZE = 2 * 1024 * 1024;
 
   const [studentData, setStudentData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -22,6 +24,11 @@ const StudentsManagement = () => {
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [bulkImportResult, setBulkImportResult] = useState(null);
+
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [archivedStudents, setArchivedStudents] = useState([]);
+  const [isLoadingArchived, setIsLoadingArchived] = useState(false);
+  const [archiveError, setArchiveError] = useState('');
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -44,8 +51,10 @@ const StudentsManagement = () => {
     enrolled_subjects: [],
     subject_code_input: '',
     subject_description_input: '',
+    subject_instructor_input: '',
     block_section: '',
   });
+
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -73,6 +82,7 @@ const StudentsManagement = () => {
       enrolled_subjects: [],
       subject_code_input: '',
       subject_description_input: '',
+      subject_instructor_input: '',
       block_section: '',
     });
     setErrorMessage('');
@@ -152,12 +162,14 @@ const StudentsManagement = () => {
   const addSubject = () => {
     const code = String(formValues.subject_code_input || '').trim();
     const desc = String(formValues.subject_description_input || '').trim();
-    if (!code || !desc) return;
+    const inst = String(formValues.subject_instructor_input || '').trim();
+    if (!code || !desc || !inst) return;
     setFormValues((prev) => ({
       ...prev,
-      enrolled_subjects: [...(prev.enrolled_subjects || []), { code, description: desc }],
+      enrolled_subjects: [...(prev.enrolled_subjects || []), { code, description: desc, instructor_name: inst }],
       subject_code_input: '',
       subject_description_input: '',
+      subject_instructor_input: '',
     }));
     // clear enrolled_subjects error when a subject is added
     setFormErrors((prev) => ({ ...prev, enrolled_subjects: undefined }));
@@ -196,7 +208,7 @@ const StudentsManagement = () => {
   const mapStudent = (student) => ({
     // `id` is the display student number; `pk` is the DB primary key used for API actions
     id: student.student_number,
-    pk: student.id || student.pk || student.student_number,
+    pk: student.id,
     name: `${student.firstname || ''} ${student.lastname || ''}`.trim(),
     program: student.program || 'N/A',
     subject: Array.isArray(student.enrolled_subjects)
@@ -210,21 +222,26 @@ const StudentsManagement = () => {
     status: 'Active',
   });
 
+  const validateCsvFile = (file) => {
+    if (!file) return 'No file selected.';
+    if (!String(file.name || '').toLowerCase().endsWith('.csv')) return 'Only .csv files are allowed.';
+    if (file.size > MAX_CSV_SIZE) return 'File is too large (max 2MB).';
+    const allowedTypes = ['text/csv', 'application/csv', 'application/vnd.ms-excel'];
+    if (file.type && !allowedTypes.includes(file.type)) return `Invalid file type: ${file.type}. Please upload a CSV.`;
+    return null;
+  };
+
   // Helper function to create audit log entries
   const createAuditLog = async (action, message) => {
     try {
-      const auditData = {
-        action: action,
-        message: message,
-        category: 'USER MANAGEMENT',
-        status: 'Success',
-      };
+      const token = getToken();
+      const auditData = { action, message, category: 'USER MANAGEMENT', status: 'Success' };
 
       await fetch(`${API_BASE_URL}/audit-logs/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(auditData),
       });
@@ -238,10 +255,16 @@ const StudentsManagement = () => {
     setLoadError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/students/`);
+      const token = getToken();
+      const response = await fetch(`${API_BASE_URL}/students/`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+
       const data = await response.json();
       if (!response.ok) {
-        setLoadError('Unable to load students.');
+        setLoadError(data?.detail || 'Unable to load students.');
         return;
       }
 
@@ -254,6 +277,62 @@ const StudentsManagement = () => {
     }
   };
 
+  const fetchArchivedStudents = async () => {
+    setIsLoadingArchived(true);
+    setArchiveError('');
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_BASE_URL}/students/archived/`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        setArchiveError('Unable to load archived students.');
+        setArchivedStudents([]);
+        return;
+      }
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : [];
+      setArchivedStudents(list.map(mapStudent));
+    } catch (e) {
+      setArchiveError('Unable to reach the server.');
+      setArchivedStudents([]);
+    } finally {
+      setIsLoadingArchived(false);
+    }
+  };
+
+  const restoreStudent = async (studentId) => {
+    const ok = window.confirm('Restore this student? This will make them active again.');
+    if (!ok) return;
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ archived: false }),
+      });
+      if (!res.ok) {
+        setArchiveError('Unable to restore student.');
+        return;
+      }
+      const data = await res.json();
+      await createAuditLog(
+        'Restored Student',
+        `Restored student: ${data.firstname || ''} ${data.lastname || ''} (${data.student_number || data.id || studentId})`
+      );
+      // refresh lists
+      fetchStudents();
+      fetchArchivedStudents();
+    } catch (e) {
+      setArchiveError('Unable to reach the server.');
+    }
+  };
+
   useEffect(() => {
     fetchStudents();
   }, []);
@@ -261,7 +340,6 @@ const StudentsManagement = () => {
   const handleAddStudent = async (e) => {
     e.preventDefault();
     setErrorMessage('');
-    // validate and either create or update
     if (!validateForm()) {
       setErrorMessage('Please fix the errors in the form.');
       return;
@@ -278,11 +356,12 @@ const StudentsManagement = () => {
       const url = isEditing && editingId ? `${API_BASE_URL}/students/${editingId}/` : `${API_BASE_URL}/students/`;
       const method = isEditing && editingId ? 'PATCH' : 'POST';
 
+      const token = getToken();
       const response = await fetch(url, {
         method,
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(payload),
       });
@@ -317,7 +396,7 @@ const StudentsManagement = () => {
           `Updated student: ${saved.name} (${saved.id})`
         );
       } else {
-        setStudentData((prev) => [{ ...saved, pk: data.id || data.pk || saved.id }, ...prev]);
+        setStudentData((prev) => [{ ...saved, pk: data.id || data.pk }, ...prev]);
         // Log the student creation
         await createAuditLog(
           'Created Student',
@@ -343,13 +422,23 @@ const StudentsManagement = () => {
     setBulkImportResult(null);
 
     try {
+      const token = getToken();
       const formData = new FormData();
       formData.append('file', file);
+      // Debug: log file and FormData entries to ensure browser includes the file
+      try {
+        console.info('Bulk import - file:', { name: file.name, size: file.size, type: file.type });
+        for (const pair of formData.entries()) {
+          console.info('FormData entry:', pair[0], pair[1]);
+        }
+      } catch (e) {
+        console.warn('Bulk import debug log failed', e);
+      }
 
       const response = await fetch(`${API_BASE_URL}/students/bulk-import/`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: formData,
       });
@@ -357,10 +446,22 @@ const StudentsManagement = () => {
       const data = await response.json();
 
       if (!response.ok) {
+        // Better error messaging with additional details
+        let errorMsg = data?.detail || 'Bulk import failed';
+        const errorDetails = [];
+        
+        // Add missing/found columns info if available
+        if (data?.missing && data.missing.length > 0) {
+          errorDetails.push(`Missing: ${data.missing.join(', ')}`);
+        }
+        if (data?.found && data.found.length > 0) {
+          errorDetails.push(`Found: ${data.found.join(', ')}`);
+        }
+        
         setBulkImportResult({
           success: false,
-          message: data?.detail || 'Bulk import failed',
-          errors: data?.errors || []
+          message: errorMsg,
+          errors: data?.errors || errorDetails
         });
         return;
       }
@@ -386,10 +487,22 @@ const StudentsManagement = () => {
     }
   };
 
+  const downloadCSVTemplate = () => {
+    const csvContent = 'email,firstname,middlename,lastname,student_id,department,year_level,course,block_section,birthdate,enrolled_subjects\njohn.doe@upang.edu.ph,John,M,Doe,2021-0001,CITE,1,BSIT,A1,2000-05-15,"ITE293|Systems Administration|Josephine Cruz;CS101|Programming Fundamentals|John Smith"\njane.smith@upang.edu.ph,Jane,L,Smith,2021-0002,CITE,2,BSCS,B2,1999-08-22,"MATH201|Calculus|Maria Garcia;PHYS202|Physics|Robert Lee"';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'student_import_template.csv';
+    link.click();
+  };
+
   const showStudentDetails = async (studentId) => {
     try {
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
       });
       if (!res.ok) {
         setErrorMessage('Unable to load student details.');
@@ -397,7 +510,7 @@ const StudentsManagement = () => {
       }
       const data = await res.json();
       // include pk for consistency
-      setSelectedStudent({ ...data, pk: data.id || data.pk || studentId });
+      setSelectedStudent({ ...data, pk: data.student_number || data.id || studentId });
     } catch {
       setErrorMessage('Unable to reach the server.');
     }
@@ -405,8 +518,11 @@ const StudentsManagement = () => {
 
   const startEditStudent = async (studentId) => {
     try {
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
       });
       if (!res.ok) {
         setErrorMessage('Unable to load student for editing.');
@@ -440,34 +556,28 @@ const StudentsManagement = () => {
     const ok = window.confirm('Archive this student? This will remove them from the active list.');
     if (!ok) return;
     try {
-      // First get student details for logging
-      const studentRes = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
-      });
-      if (!studentRes.ok) {
-        setErrorMessage('Unable to load student details.');
-        return;
-      }
-      const studentData = await studentRes.json();
-
-      // Delete the student
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ archived: true }),
       });
       if (!res.ok) {
         setErrorMessage('Unable to archive student.');
         return;
       }
-
-      // Log the deletion
+      const studentData = await res.json();
+      // Log the archive action
       await createAuditLog(
         'Archived Student',
-        `Archived student: ${studentData.firstname} ${studentData.lastname} (${studentData.student_number})`
+        `Archived student: ${studentData.firstname || ''} ${studentData.lastname || ''} (${studentData.student_number || studentId})`
       );
 
-      setStudentData((prev) => prev.filter((s) => s.id !== studentId));
-    } catch {
+      setStudentData((prev) => prev.filter((s) => s.pk !== studentId));
+    } catch (e) {
       setErrorMessage('Unable to reach the server.');
     }
   };
@@ -541,6 +651,12 @@ const StudentsManagement = () => {
                   + Add Student
                 </button>
                 <button
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-200 transition-all"
+                  onClick={() => { setIsArchiveOpen(true); fetchArchivedStudents(); }}
+                >
+                  <Folder size={16} /> Archived Students
+                </button>
+                <button
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 transition-all"
                   onClick={() => setIsBulkImportOpen(true)}
                 >
@@ -575,9 +691,9 @@ const StudentsManagement = () => {
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Subjects</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Block</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Year</th>
-                    <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Modules</th>
-                    <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Completed</th>
-                    <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Pending</th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Modules</th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Completed</th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Pending</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Actions</th>
                   </tr>
@@ -591,9 +707,9 @@ const StudentsManagement = () => {
                       <td className="px-6 py-4 text-sm text-slate-600 font-medium">{student.subject}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 text-center font-medium">{student.block}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 text-center font-bold">{student.year}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600 text-center font-bold">{student.modules}</td>
-                      <td className="px-6 py-4 text-sm text-emerald-600 text-center font-black">{student.completed}</td>
-                      <td className="px-6 py-4 text-sm text-amber-500 text-center font-black">{student.pending}</td>
+                      <td className="px-3 py-3 text-sm text-slate-600 text-center font-bold">{student.modules}</td>
+                      <td className="px-3 py-3 text-sm text-emerald-600 text-center font-black">{student.completed}</td>
+                      <td className="px-3 py-3 text-sm text-amber-500 text-center font-black">{student.pending}</td>
                       <td className="px-6 py-4">
                         <span className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black uppercase rounded-lg tracking-wider">
                           {student.status}
@@ -608,7 +724,7 @@ const StudentsManagement = () => {
                             <Edit size={18} />
                           </button>
                           <button onClick={() => archiveStudent(student.pk)} className="p-2 text-rose-600 hover:text-rose-800 hover:bg-slate-100 rounded-lg transition-all" title="Archive">
-                            <Trash2 size={18} />
+                            <Folder size={18} />
                           </button>
                         </div>
                       </td>
@@ -755,6 +871,13 @@ const StudentsManagement = () => {
                       placeholder="Subject Description"
                       className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
                     />
+                    <input
+                     name="subject_instructor_input"
+                     value={formValues.subject_instructor_input}
+                     onChange={handleInputChange}
+                     placeholder="Instructor Name"
+                     className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                   />
                     <button
                       type="button"
                       onClick={addSubject}
@@ -827,6 +950,63 @@ const StudentsManagement = () => {
         </div>
       )}
 
+      {/* Archived Students Modal */}
+      {isArchiveOpen && (
+        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsArchiveOpen(false)}>
+          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-800">Archived Students</h3>
+                <p className="text-sm text-slate-400">Students that were archived</p>
+              </div>
+              <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={() => setIsArchiveOpen(false)}>&times;</button>
+            </div>
+
+            <div className="p-6">
+              {isLoadingArchived && <div className="text-sm text-slate-500">Loading archived students...</div>}
+              {archiveError && <div className="text-sm text-rose-600">{archiveError}</div>}
+              {!isLoadingArchived && !archiveError && archivedStudents.length === 0 && (
+                <div className="text-sm text-slate-500">No archived students found.</div>
+              )}
+
+              {!isLoadingArchived && archivedStudents.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-100">
+                      <tr>
+                        <th className="px-4 py-3 text-sm text-slate-500">Student ID</th>
+                        <th className="px-4 py-3 text-sm text-slate-500">Name</th>
+                        <th className="px-4 py-3 text-sm text-slate-500">Program</th>
+                        <th className="px-4 py-3 text-sm text-slate-500 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {archivedStudents.map((s, i) => (
+                        <tr key={s.pk || i} className="hover:bg-slate-50/80">
+                          <td className="px-4 py-3 text-xs font-mono text-slate-500">{s.id}</td>
+                          <td className="px-4 py-3 text-sm font-black text-slate-800">{s.name}</td>
+                          <td className="px-4 py-3 text-sm text-slate-600">{s.program}</td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <button onClick={() => { setIsArchiveOpen(false); showStudentDetails(s.pk); }} className="px-3 py-1 bg-slate-100 rounded-lg text-sm font-semibold">View</button>
+                              <button onClick={() => restoreStudent(s.pk)} className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-lg text-sm font-semibold">Restore</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex justify-end mt-4">
+                <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm" onClick={() => setIsArchiveOpen(false)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
         {selectedStudent && (
           <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelectedStudent(null)}>
             <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
@@ -877,27 +1057,41 @@ const StudentsManagement = () => {
                 <div className="text-4xl mb-4">📁</div>
                 <h4 className="text-lg font-semibold text-slate-700 mb-2">Upload CSV File</h4>
                 <p className="text-sm text-slate-500 mb-4">
-                  Select a CSV file containing student data. Required columns: email, firstname, lastname, student_id
+                  Select a CSV file containing student data.<br/>
+                  <strong>Required:</strong> email, firstname, lastname, student_id<br/>
+                  <strong>Recommended:</strong> birthdate (for password generation), department, year_level
                 </p>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) {
+                <div className="flex items-center justify-center gap-3">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      const err = validateCsvFile(file);
+                      if (err) {
+                        setBulkImportResult({ success: false, message: err, errors: [] });
+                        e.target.value = '';
+                        return;
+                      }
                       handleBulkImport(file);
-                    }
-                  }}
-                  className="hidden"
-                  id="csv-upload"
-                  disabled={isBulkImporting}
-                />
-                <label
-                  htmlFor="csv-upload"
-                  className="inline-flex items-center px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-bold hover:bg-[#18393e] cursor-pointer disabled:opacity-70"
-                >
-                  {isBulkImporting ? 'Importing...' : 'Choose CSV File'}
-                </label>
+                    }}
+                    className="hidden"
+                    id="csv-upload"
+                    disabled={isBulkImporting}
+                  />
+                  <label
+                    htmlFor="csv-upload"
+                    className="inline-flex items-center px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-bold hover:bg-[#18393e] cursor-pointer disabled:opacity-70"
+                  >
+                    {isBulkImporting ? 'Importing...' : 'Choose CSV File'}
+                  </label>
+                  <button
+                    onClick={downloadCSVTemplate}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700"
+                  >
+                    <Download size={16} /> Download Template
+                  </button>
+                </div>
               </div>
 
               {/* CSV Format Guide */}
@@ -905,10 +1099,30 @@ const StudentsManagement = () => {
                 <h5 className="font-semibold text-slate-700 mb-2">CSV Format Requirements:</h5>
                 <div className="text-sm text-slate-600 space-y-1">
                   <div><strong>Required columns:</strong> email, firstname, lastname, student_id</div>
-                  <div><strong>Optional columns:</strong> department, year_level, course, enrolled_subjects, block_section</div>
-                  <div><strong>Notes:</strong> For enrolled_subjects, use JSON format like <code>{`[{'code': 'COMP101', 'description': 'Programming Fundamentals'}, ...]`}</code></div>
-                  <div><strong>Example:</strong> email,firstname,lastname,student_id,department,year_level,enrolled_subjects,block_section</div>
-                  <div><strong>Sample row:</strong> john.doe@upang.edu.ph,John,,Doe,2021-0001,Computer Science,3,{`[{'code': 'COMP101', 'description': 'Programming Fundamentals'}]`},A1</div>
+                  <div><strong>Optional columns:</strong> department, year_level, course, enrolled_subjects, block_section, middlename, birthdate</div>
+                  <div className="mt-3 p-3 bg-white rounded border border-slate-200">
+                    <div className="font-mono text-xs">
+                      <div className="font-semibold mb-1">Sample CSV:</div>
+                      <div className="overflow-x-auto">
+                        <div>email,firstname,middlename,lastname,student_id,department,year_level,course,block_section,birthdate,enrolled_subjects</div>
+                        <div>john.doe@upang.edu.ph,John,M,Doe,2021-0001,CITE,1,BSIT,A1,2000-05-15,"ITE293|Systems Admin|J. Cruz;CS101|Programming|J. Smith"</div>
+                        <div>jane.smith@upang.edu.ph,Jane,L,Smith,2021-0002,CITE,2,BSCS,B2,1999-08-22,"MATH201|Calculus|M. Garcia;PHYS202|Physics|R. Lee"</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500 space-y-1">
+                    <div><strong>Notes:</strong></div>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li><strong>Birthdate format:</strong> YYYY-MM-DD (e.g., 2000-05-15). Used to auto-generate password.</li>
+                      <li><strong>Enrolled subjects format:</strong> Use <strong>CODE|Description|Instructor</strong> for each subject</li>
+                      <li>Separate multiple subjects with semicolons <strong>;</strong></li>
+                      <li><strong>Example:</strong> "ITE293|Systems Admin|J. Cruz;CS101|Programming|J. Smith"</li>
+                      <li><strong>Simple format also works:</strong> Just codes like "CS101;IT102" (description & instructor will be empty)</li>
+                      <li><strong>Password generation:</strong> Auto-generated from name + birthdate (first 2 letters of each name + month + year)</li>
+                      <li>Put enrolled_subjects in quotes if it contains commas or semicolons</li>
+                      <li>Column names are case-sensitive</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
 

@@ -31,8 +31,14 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+CORS_ALLOW_CREDENTIALS = True
 
+MAX_BULK_CSV_SIZE_BYTES = 2 * 1024 * 1024
 
 # Application definition
 
@@ -45,12 +51,17 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'corsheaders',
     "api",
+    "csp",
     "rest_framework",
-    "rest_framework.authtoken"
+    'drf_yasg',
+    "rest_framework.authtoken",
+    "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular"
 ]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
     "DEFAULT_THROTTLE_CLASSES": (
         "rest_framework.throttling.AnonRateThrottle",
@@ -60,13 +71,24 @@ REST_FRAMEWORK = {
         "anon": "100/min",
         "user": "300/min",
         "login": "5/min",
+        "ai_requests": "30/min",
     },
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",
     ),
     "DEFAULT_PARSER_CLASSES": (
         "rest_framework.parsers.JSONParser",
+        "rest_framework.parsers.MultiPartParser",
+        "rest_framework.parsers.FormParser",
     ),
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "EXCEPTION_HANDLER": "api.exceptions.api_exception_handler",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "UpangSFME API",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 # If you're behind a proxy (nginx), set this so IP throttling is correct:
@@ -74,15 +96,49 @@ REST_FRAMEWORK = {
 # SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=60),
-    "ROTATE_REFRESH_TOKENS": False,
-    "BLACKLIST_AFTER_ROTATION": False,
+    # short-lived access token
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+
+    # refresh token lifetime
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+
+    # recommended hardening
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+
+    # optional but nice
+    "UPDATE_LAST_LOGIN": False,
 }
+
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 10}},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+# Email OTP integration
+# Force SMTP backend unless explicitly overridden in environment
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+# The .env uses EMAIL_PASSWORD; map it to EMAIL_HOST_PASSWORD
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() == "true"
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").lower() == "true"
+
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
+
+RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY", "")
+RECAPTCHA_MIN_SCORE = float(os.getenv("RECAPTCHA_MIN_SCORE", "0.5"))
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'csp.middleware.CSPMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -111,7 +167,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'sfme.wsgi.application'
 
-
 # Security settings
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
@@ -119,6 +174,66 @@ X_FRAME_OPTIONS = 'DENY'
 SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
+
+# CSRF / Session cookie hardening
+CSRF_COOKIE_HTTPONLY = False  # must be readable by JS if you send it as X-CSRFToken
+CSRF_COOKIE_SAMESITE = "Lax"  # dev-friendly; for cross-site + HTTPS use "None"
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# --- CSP ---
+CONTENT_SECURITY_POLICY = {
+    "DIRECTIVES": {
+        "default-src": ("'self'",),
+        "base-uri": ("'self'",),
+        "object-src": ("'none'",),
+        "frame-ancestors": ("'none'",),
+
+        # Google reCAPTCHA v2 Invisible
+        "script-src": (
+            "'self'",
+            "https://www.google.com",
+            "https://www.gstatic.com",
+        ),
+        "style-src": (
+            "'self'",
+            "'unsafe-inline'",
+            "https://www.google.com",
+        ),
+        "img-src": (
+            "'self'",
+            "data:",
+            "blob:",
+            "https://www.google.com",
+            "https://www.gstatic.com",
+        ),
+        "font-src": ("'self'", "data:"),
+
+        "frame-src": (
+            "'self'",
+            "https://www.google.com",
+        ),
+
+        "connect-src": (
+            "'self'",
+            "http://localhost:5173",
+            "http://localhost:8000",
+            "https://www.google.com",
+            "https://www.gstatic.com",
+        ),
+
+        "form-action": ("'self'",),
+    }
+}
+
+# If you load anything from Google (reCAPTCHA), you MUST allow it explicitly.
+# Example (only if used in frontend):
+# CSP_SCRIPT_SRC += ("https://www.google.com", "https://www.gstatic.com")
+# CSP_FRAME_SRC = ("https://www.google.com",)
+# CSP_CONNECT_SRC += ("https://www.google.com",)
 
 # For production, uncomment these:
 # SECURE_SSL_REDIRECT = True
@@ -160,6 +275,13 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+PASSWORD_PEPPER = os.getenv("PASSWORD_PEPPER", "")
+
+# Use bcrypt for password hashing (salt is built-in)
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+]
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -188,12 +310,6 @@ LOGGING = {
         },
     },
     'handlers': {
-        'file': {
-            'level': 'WARNING',
-            'class': 'logging.FileHandler',
-            'filename': 'logs/security.log',
-            'formatter': 'verbose',
-        },
         'console': {
             'level': 'INFO',
             'class': 'logging.StreamHandler',
@@ -201,12 +317,12 @@ LOGGING = {
         },
     },
     'root': {
-        'handlers': ['console', 'file'],
+        'handlers': ['console'],
         'level': 'INFO',
     },
     'loggers': {
         'api.middleware': {
-            'handlers': ['file'],
+            'handlers': ['console'],
             'level': 'WARNING',
             'propagate': False,
         },

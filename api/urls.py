@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 
 urlpatterns = [
     path("students/", views.StudentListCreateView.as_view(), name="student-list-create"),
@@ -27,5 +28,19 @@ urlpatterns = [
     path("students/bulk-import/", views.StudentBulkImportView.as_view(), name="student-bulk-import"),
     path("faculty/bulk-import/", views.FacultyBulkImportView.as_view(), name="faculty-bulk-import"),
 
+    path("feedback/submit/", views.FeedbackResponseCreateView.as_view(), name="student-submit-feedback"),
+    path("feedback/submissions/", views.FeedbackResponseListView.as_view(), name="student-feedback-detail"),
+
     path("audit-logs/", views.AuditLogListView.as_view(), name="audit-log-list"),
+
+    path("otp/send/", views.SendOTPView.as_view(), name="otp-send"),
+    path("otp/verify/", views.VerifyOTPView.as_view(), name="otp-verify"),
+    
+    path("password-reset/send/", views.PasswordResetSendView.as_view(), name="password-reset-send"),
+    path("password-reset/verify/", views.VerifyOTPView.as_view(), name="password-reset-verify"),
+    path("password-reset/confirm/", views.PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
+
+    path("auth/csrf/", views.CSRFCookieView.as_view(), name="csrf_cookie"),
+    path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("auth/token/verify/", TokenVerifyView.as_view(), name="token_verify"),
 ]

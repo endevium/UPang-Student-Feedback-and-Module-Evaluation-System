@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Sidebar from '../../components/Sidebar';
+import { getToken, clearSession } from '../../utils/auth';
 
 import { 
   BookOpen, 
@@ -28,10 +29,12 @@ const StudentDashboard = () => {
 
   const fetchDashboard = useCallback(async () => {
     setLoadError('');
-    const token = localStorage.getItem('authToken');
+    const token = getToken();
 
     if (!token) {
       setLoadError('Please log in to view your dashboard.');
+      window.history.replaceState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
       return;
     }
 
@@ -39,6 +42,14 @@ const StudentDashboard = () => {
       const response = await fetch(`${API_BASE_URL}/students/me/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (response.status === 401) {
+        clearSession();
+        window.history.replaceState({}, '', '/');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        return;
+      }
+
       const data = await response.json();
 
       if (!response.ok) {
@@ -57,7 +68,36 @@ const StudentDashboard = () => {
         { title: "Pending", value: String(apiStats.pending ?? 0), description: "Awaiting feedback", icon: AlertCircle, color: "bg-amber-100 text-amber-600" },
       ]);
 
-      setRecentModules(Array.isArray(data?.recent_modules) ? data.recent_modules : []);
+      const enrolled = data?.student?.enrolled_subjects || data?.enrolled_subjects || [];
+      const instructorByCode = new Map();
+      if (Array.isArray(enrolled)) {
+        enrolled.forEach(s => {
+          const code = (s?.code || '').toString().trim().toUpperCase();
+          const inst = (s?.instructor_name || '').toString().trim();
+          if (code && inst) instructorByCode.set(code, inst);
+        });
+      }
+
+      const recent = Array.isArray(data?.recent_modules) ? data.recent_modules : [];
+      const enriched = recent.map(m => {
+        const codeKey = (
+                  m?.code ||
+                  m?.module_code ||
+                  m?.subject_code ||
+                  m?.subject?.code ||
+                  m?.module?.code ||
+                  '' // do NOT use id as primary code key
+                ).toString().trim().toUpperCase();
+        const instFromEnrollment = instructorByCode.get(codeKey);
+        
+        const apiInstructor = (m?.instructor || m?.instructor_name || '').toString().trim();
+        const apiInstructorIsTba = !apiInstructor || apiInstructor.toUpperCase() === 'TBA';
+        return {
+          ...m,
+          instructor: (apiInstructorIsTba ? '' : apiInstructor) || instFromEnrollment || 'TBA',
+        };
+      });
+      setRecentModules(enriched);
     } catch {
       setLoadError('Unable to reach the server. Please try again.');
     }

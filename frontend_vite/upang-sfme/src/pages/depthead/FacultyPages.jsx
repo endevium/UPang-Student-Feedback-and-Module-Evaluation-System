@@ -9,30 +9,34 @@ import {
   Download,
   Eye,
   Edit,
-  Trash2,
+  Folder,
 } from 'lucide-react';
+import { getToken } from '../../utils/auth';
 
 const FacultyPages = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  const MAX_CSV_SIZE = 2 * 1024 * 1024; // 2MB
 
   const [facultyData, setFacultyData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modal & Form State
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [formErrors, setFormErrors] = useState({});
 
-  // Bulk Import State
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [bulkImportResult, setBulkImportResult] = useState(null);
   const [selectedFaculty, setSelectedFaculty] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [isArchiveOpenFaculty, setIsArchiveOpenFaculty] = useState(false);
+  const [archivedFaculty, setArchivedFaculty] = useState([]);
+  const [isLoadingArchivedFaculty, setIsLoadingArchivedFaculty] = useState(false);
+  const [archiveFacultyError, setArchiveFacultyError] = useState('');
   const [formValues, setFormValues] = useState({
     email: '',
     firstname: '',
@@ -55,21 +59,27 @@ const FacultyPages = () => {
     status: typeof f?.status === 'boolean' ? (f.status ? 'Active' : 'Inactive') : (f?.status || 'Active'),
   });
 
+  const validateCsvFile = (file) => {
+    if (!file) return 'No file selected.';
+    if (!String(file.name || '').toLowerCase().endsWith('.csv')) return 'Only .csv files are allowed.';
+    if (file.size > MAX_CSV_SIZE) return 'File is too large (max 2MB).';
+    // best-effort mime check (browsers vary)
+    const allowedTypes = ['text/csv', 'application/csv', 'application/vnd.ms-excel'];
+    if (file.type && !allowedTypes.includes(file.type)) return `Invalid file type: ${file.type}. Please upload a CSV.`;
+    return null;
+  };
+
   // Helper function to create audit log entries
   const createAuditLog = async (action, message) => {
     try {
-      const auditData = {
-        action: action,
-        message: message,
-        category: 'USER MANAGEMENT',
-        status: 'Success',
-      };
+      const token = getToken();
+      const auditData = { action, message, category: 'USER MANAGEMENT', status: 'Success' };
 
       await fetch(`${API_BASE_URL}/audit-logs/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(auditData),
       });
@@ -82,7 +92,13 @@ const FacultyPages = () => {
     setIsLoading(true);
     setLoadError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/faculty/`);
+      const token = getToken();
+      const res = await fetch(`${API_BASE_URL}/faculty/`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+
       const data = await res.json().catch(() => []);
       if (!res.ok) {
         setLoadError(data?.detail || 'Unable to load faculty.');
@@ -103,8 +119,11 @@ const FacultyPages = () => {
 
   const showFacultyDetails = async (facultyId) => {
     try {
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
       });
       if (!res.ok) {
         setErrorMessage('Unable to load faculty details.');
@@ -120,8 +139,11 @@ const FacultyPages = () => {
 
   const startEditFaculty = async (facultyId) => {
     try {
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
       });
       if (!res.ok) {
         setErrorMessage('Unable to load faculty for editing.');
@@ -151,42 +173,92 @@ const FacultyPages = () => {
     const ok = window.confirm('Archive this faculty member? This will remove them from the active list.');
     if (!ok) return;
     try {
-      // First get faculty details for logging
-      const facultyRes = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
-      });
-      if (!facultyRes.ok) {
-        setErrorMessage('Unable to load faculty details.');
-        return;
-      }
-      const facultyData = await facultyRes.json();
-
-      // Delete the faculty
+      // Soft-archive via PATCH
+      const token = getToken();
       const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ archived: true }),
       });
       if (!res.ok) {
         setErrorMessage('Unable to archive faculty.');
         return;
       }
-
-      // Log the deletion
+      const facultyData = await res.json();
       await createAuditLog(
         'Archived Faculty',
-        `Archived faculty member: ${facultyData.firstname} ${facultyData.lastname} (${facultyData.email})`
+        `Archived faculty member: ${facultyData.firstname || ''} ${facultyData.lastname || ''} (${facultyData.email || facultyId})`
       );
-
       setFacultyData((prev) => prev.filter((f) => f.id !== facultyId));
-    } catch {
+    } catch (e) {
       setErrorMessage('Unable to reach the server.');
+    }
+  };
+
+  const fetchArchivedFaculty = async () => {
+    setIsLoadingArchivedFaculty(true);
+    setArchiveFacultyError('');
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_BASE_URL}/faculty/archived/`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        setArchiveFacultyError('Unable to load archived faculty.');
+        setArchivedFaculty([]);
+        return;
+      }
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : [];
+      setArchivedFaculty(list.map(mapFaculty));
+    } catch (e) {
+      setArchiveFacultyError('Unable to reach the server.');
+      setArchivedFaculty([]);
+    } finally {
+      setIsLoadingArchivedFaculty(false);
+    }
+  };
+
+  const restoreFaculty = async (facultyId) => {
+    const ok = window.confirm('Restore this faculty member? This will make them active again.');
+    if (!ok) return;
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ archived: false }),
+      });
+      if (!res.ok) {
+        setArchiveFacultyError('Unable to restore faculty.');
+        return;
+      }
+      const data = await res.json();
+      await createAuditLog('Restored Faculty', `Restored faculty: ${data.firstname || ''} ${data.lastname || ''} (${data.email || facultyId})`);
+      fetchFaculty();
+      fetchArchivedFaculty();
+    } catch (e) {
+      setArchiveFacultyError('Unable to reach the server.');
     }
   };
 
   // Form Handlers
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormValues((prev) => ({ ...prev, [name]: value }));
+    // Restrict contact_number to digits only
+    let newValue = value;
+    if (name === 'contact_number') {
+      newValue = String(value || '').replace(/\D+/g, '');
+    }
+    setFormValues((prev) => ({ ...prev, [name]: newValue }));
     setFormErrors((prev) => ({ ...prev, [name]: undefined }));
   };
 
@@ -255,13 +327,14 @@ const FacultyPages = () => {
 
     try {
       setIsSubmitting(true);
+      const token = getToken()
       const method = isEditing ? 'PUT' : 'POST';
       const url = isEditing ? `${API_BASE_URL}/faculty/${editingId}/` : `${API_BASE_URL}/faculty/`;
       const response = await fetch(url, {
         method: method,
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(formValues),
       });
@@ -298,6 +371,15 @@ const FacultyPages = () => {
     }
   };
 
+  const downloadCSVTemplate = () => {
+    const csvContent = 'email,firstname,middlename,lastname,department,contact_number,birthdate\njohn.doe@upang.edu.ph,John,M,Doe,CITE,639123456789,1985-05-15\njane.smith@upang.edu.ph,Jane,L,Smith,CITE,639987654321,1990-08-22';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'faculty_import_template.csv';
+    link.click();
+  };
+
   const handleBulkImport = async (file) => {
     if (!file) return;
 
@@ -305,13 +387,14 @@ const FacultyPages = () => {
     setBulkImportResult(null);
 
     try {
+      const token = getToken();
       const formData = new FormData();
       formData.append('file', file);
 
       const response = await fetch(`${API_BASE_URL}/faculty/bulk-import/`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: formData,
       });
@@ -319,10 +402,22 @@ const FacultyPages = () => {
       const data = await response.json();
 
       if (!response.ok) {
+        // Better error messaging with additional details
+        let errorMsg = data?.detail || 'Bulk import failed';
+        const errorDetails = [];
+        
+        // Add missing/found columns info if available
+        if (data?.missing && data.missing.length > 0) {
+          errorDetails.push(`Missing: ${data.missing.join(', ')}`);
+        }
+        if (data?.found && data.found.length > 0) {
+          errorDetails.push(`Found: ${data.found.join(', ')}`);
+        }
+        
         setBulkImportResult({
           success: false,
-          message: data?.detail || 'Bulk import failed',
-          errors: data?.errors || []
+          message: errorMsg,
+          errors: data?.errors || errorDetails
         });
         return;
       }
@@ -432,6 +527,12 @@ const FacultyPages = () => {
                   + Add Faculty
                 </button>
                 <button
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-200 transition-all"
+                  onClick={() => { setIsArchiveOpenFaculty(true); fetchArchivedFaculty(); }}
+                >
+                  <Folder size={16} /> Archived Faculty
+                </button>
+                <button
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 transition-all"
                   onClick={() => setIsBulkImportOpen(true)}
                 >
@@ -500,7 +601,7 @@ const FacultyPages = () => {
                             <Edit size={18} />
                           </button>
                           <button onClick={() => archiveFaculty(faculty.id)} className="p-2 text-rose-600 hover:text-rose-800 hover:bg-slate-100 rounded-lg transition-all" title="Archive">
-                            <Trash2 size={18} />
+                            <Folder size={18} />
                           </button>
                         </div>
                       </td>
@@ -509,6 +610,62 @@ const FacultyPages = () => {
                 </tbody>
               </table>
             </div>
+            {/* Archived Faculty Modal */}
+            {isArchiveOpenFaculty && (
+              <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsArchiveOpenFaculty(false)}>
+                <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                  <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800">Archived Faculty</h3>
+                      <p className="text-sm text-slate-400">Faculty members that were archived</p>
+                    </div>
+                    <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={() => setIsArchiveOpenFaculty(false)}>&times;</button>
+                  </div>
+
+                  <div className="p-6">
+                    {isLoadingArchivedFaculty && <div className="text-sm text-slate-500">Loading archived faculty...</div>}
+                    {archiveFacultyError && <div className="text-sm text-rose-600">{archiveFacultyError}</div>}
+                    {!isLoadingArchivedFaculty && !archiveFacultyError && archivedFaculty.length === 0 && (
+                      <div className="text-sm text-slate-500">No archived faculty found.</div>
+                    )}
+
+                    {!isLoadingArchivedFaculty && archivedFaculty.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead className="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                              <th className="px-4 py-3 text-sm text-slate-500">Faculty ID</th>
+                              <th className="px-4 py-3 text-sm text-slate-500">Name</th>
+                              <th className="px-4 py-3 text-sm text-slate-500">Department</th>
+                              <th className="px-4 py-3 text-sm text-slate-500 text-center">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {archivedFaculty.map((f, i) => (
+                              <tr key={f.id || i} className="hover:bg-slate-50/80">
+                                <td className="px-4 py-3 text-xs font-mono text-slate-500">{f.id}</td>
+                                <td className="px-4 py-3 text-sm font-black text-slate-800">{f.name}</td>
+                                <td className="px-4 py-3 text-sm text-slate-600">{f.dept}</td>
+                                <td className="px-4 py-3 text-center">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button onClick={() => { setIsArchiveOpenFaculty(false); showFacultyDetails(f.id); }} className="px-3 py-1 bg-slate-100 rounded-lg text-sm font-semibold">View</button>
+                                    <button onClick={() => restoreFaculty(f.id)} className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-lg text-sm font-semibold">Restore</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end mt-4">
+                      <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm" onClick={() => setIsArchiveOpenFaculty(false)}>Close</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             {(isLoading || loadError || filteredFaculty.length === 0) && (
               <div className="p-6 text-sm text-slate-500">
                 {isLoading && 'Loading faculty...'}
@@ -591,7 +748,10 @@ const FacultyPages = () => {
                     name="contact_number"
                     value={formValues.contact_number}
                     onChange={handleInputChange}
-                    placeholder="+63 9XX XXX XXXX"
+                    placeholder="63XXXXXXXXXX"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength="11"
                     className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
                   />
                 </div>
@@ -665,37 +825,56 @@ const FacultyPages = () => {
                 <div className="text-4xl mb-4">📁</div>
                 <h4 className="text-lg font-semibold text-slate-700 mb-2">Upload CSV File</h4>
                 <p className="text-sm text-slate-500 mb-4">
-                  Select a CSV file containing faculty data. Required columns: email, firstname, lastname, employee_id
+                  Select a CSV file containing faculty data. Required columns: email, firstname, lastname
                 </p>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) {
+                <div className="flex items-center justify-center gap-3">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      const err = validateCsvFile(file);
+                      if (err) {
+                        setBulkImportResult({ success: false, message: err, errors: [] });
+                        e.target.value = '';
+                        return;
+                      }
                       handleBulkImport(file);
-                    }
-                  }}
-                  className="hidden"
-                  id="faculty-csv-upload"
-                  disabled={isBulkImporting}
-                />
-                <label
-                  htmlFor="faculty-csv-upload"
-                  className="inline-flex items-center px-4 py-2 bg-[#ffcc00] text-[#041c32] rounded-lg text-sm font-bold hover:bg-[#e6b800] cursor-pointer disabled:opacity-70"
-                >
-                  {isBulkImporting ? 'Importing...' : 'Choose CSV File'}
-                </label>
+                    }}
+                    className="hidden"
+                    id="faculty-csv-upload"
+                    disabled={isBulkImporting}
+                  />
+                  <label
+                    htmlFor="faculty-csv-upload"
+                    className="inline-flex items-center px-4 py-2 bg-[#ffcc00] text-[#041c32] rounded-lg text-sm font-bold hover:bg-[#e6b800] cursor-pointer disabled:opacity-70"
+                  >
+                    {isBulkImporting ? 'Importing...' : 'Choose CSV File'}
+                  </label>
+                  <button
+                    onClick={downloadCSVTemplate}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700"
+                  >
+                    <Download size={16} /> Download Template
+                  </button>
+                </div>
               </div>
 
               {/* CSV Format Guide */}
               <div className="bg-slate-50 rounded-lg p-4">
                 <h5 className="font-semibold text-slate-700 mb-2">CSV Format Requirements:</h5>
                 <div className="text-sm text-slate-600 space-y-1">
-                  <div><strong>Required columns:</strong> email, firstname, lastname, employee_id</div>
-                  <div><strong>Optional columns:</strong> department, position</div>
-                  <div><strong>Example:</strong> email,firstname,lastname,employee_id,department,position</div>
-                  <div><strong>Sample row:</strong> jane.smith@upang.edu.ph,Jane,,Smith,FAC001,Computer Science,Assistant Professor</div>
+                  <div><strong>Required columns:</strong> email, firstname, lastname</div>
+                  <div><strong>Optional columns:</strong> department, middlename, contact_number, birthdate</div>
+                  <div className="mt-3 p-3 bg-white rounded border border-slate-200">
+                    <div className="font-mono text-xs">
+                      <div className="font-semibold mb-1">Sample CSV:</div>
+                      <div>email,firstname,middlename,lastname,department,contact_number,birthdate</div>
+                      <div>john.doe@upang.edu.ph,John,M,Doe,CITE,639123456789,1985-05-15</div>
+                      <div>jane.smith@upang.edu.ph,Jane,L,Smith,CITE,639987654321,1990-08-22</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500"><strong>Note:</strong> Birthdate format must be YYYY-MM-DD. Email must be unique for each faculty member.</div>
                 </div>
               </div>
 

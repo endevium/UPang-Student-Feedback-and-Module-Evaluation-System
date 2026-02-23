@@ -1,10 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import ReCAPTCHA from 'react-google-recaptcha';
 import { User, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../assets/navbar-logo.png';
 import studentGroupImg from '../assets/group-student2.png';
 import SafeImg from './SafeImg';
+import OTPModal from './OTPModal';
+import { saveTokens, saveToken, saveUser, getToken } from '../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+// reCAPTCHA reference enabled (site key loaded from env)
 
 const LoginModal = ({ isOpen, onClose }) => {
   const [showPassword, setShowPassword] = useState(false);
@@ -17,6 +22,24 @@ const LoginModal = ({ isOpen, onClose }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changeError, setChangeError] = useState('');
+  const [otpOpen, setOtpOpen] = useState(false);
+  const [otpPendingToken, setOtpPendingToken] = useState(null);
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpExpiresAt, setOtpExpiresAt] = useState(null);
+  const [forgotFlow, setForgotFlow] = useState(false);
+  const [resetPendingToken, setResetPendingToken] = useState(null);
+  const [animateIn, setAnimateIn] = useState(false);
+  const recaptchaRef = useRef(null);
+
+  // reCAPTCHA ref (invisible widget)
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef(null);
+
+  const showToast = (msg, timeout = 3000) => {
+    setToastMessage(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMessage(''), timeout);
+  };
 
   const handleIdChange = (e) => {
     const value = e.target.value;
@@ -25,7 +48,10 @@ const LoginModal = ({ isOpen, onClose }) => {
       setStudentId(filteredValue);
       return;
     }
-    setStudentId(value);
+    // For email-like inputs (faculty / depthead), allow only common email characters:
+    // letters, numbers, @, dot, underscore, plus and hyphen.
+    const emailFiltered = value.replace(/[^A-Za-z0-9@._+-]/g, '');
+    setStudentId(emailFiltered);
   };
 
   const handlePasswordChange = (e) => setPassword(e.target.value);
@@ -42,12 +68,17 @@ const LoginModal = ({ isOpen, onClose }) => {
   };
 
   useEffect(() => {
+    let t = null;
     if (isOpen) {
       document.body.style.overflow = 'hidden';
+      t = setTimeout(() => setAnimateIn(true), 10);
     } else {
       document.body.style.overflow = 'unset';
+      setAnimateIn(false);
     }
+
     return () => {
+      if (t) clearTimeout(t);
       document.body.style.overflow = 'unset';
       setStudentId('');
       setPassword('');
@@ -57,37 +88,47 @@ const LoginModal = ({ isOpen, onClose }) => {
       setNewPassword('');
       setConfirmPassword('');
       setChangeError('');
+      setAnimateIn(false);
     };
   }, [isOpen]);
+
+  const handleCloseAnimated = () => {
+        setAnimateIn(false);
+        setTimeout(() => {
+          onClose();
+        }, 180);
+      };
 
   // If the modal is opened but the user is already authenticated,
   // immediately redirect them to their dashboard and close the modal.
   useEffect(() => {
     if (!isOpen) return;
-    const token = localStorage.getItem('authToken');
+    const token = getToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     if (!token) return;
 
     let storedUser = null;
     try {
-      storedUser = JSON.parse(localStorage.getItem('authUser') || 'null');
+      storedUser = JSON.parse(sessionStorage.getItem('authUser') || 'null');
     } catch {
       storedUser = null;
     }
 
     const returnedRole = storedUser?.user_type;
-    if (returnedRole === 'student') {
-      window.history.replaceState({}, '', '/dashboard');
-      window.dispatchEvent(new PopStateEvent('popstate'));
+      if (returnedRole === 'student') {
+        window.history.pushState({}, '', '/dashboard');
+        window.dispatchEvent(new PopStateEvent('popstate'));
     } else if (returnedRole === 'faculty') {
       window.history.replaceState({}, '', '/faculty-dashboard');
       window.dispatchEvent(new PopStateEvent('popstate'));
     } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
-      window.history.replaceState({}, '', '/depthead-dashboard');
+      window.history.pushState({}, '', '/depthead-dashboard');
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
 
     onClose();
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     setErrorMessage('');
@@ -97,6 +138,13 @@ const LoginModal = ({ isOpen, onClose }) => {
     setChangeError('');
   }, [loginRole]);
 
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  
   const getLoginEndpoint = () => {
     if (loginRole === 'faculty') return '/faculty/login/';
     if (loginRole === 'depthead') return '/department-head/login/';
@@ -125,13 +173,28 @@ const LoginModal = ({ isOpen, onClose }) => {
         ? { student_number: trimmedId, password: trimmedPassword, role: loginRole }
         : { email: trimmedId, password: trimmedPassword, role: loginRole };
 
-
     try {
       setIsSubmitting(true);
+      if (!RECAPTCHA_SITE_KEY) {
+        setErrorMessage('reCAPTCHA site key is not configured.');
+        return;
+      }
+
+      const recaptchaToken = await recaptchaRef.current?.executeAsync();
+      recaptchaRef.current?.reset();
+
+      if (!recaptchaToken) {
+        setErrorMessage('reCAPTCHA failed. Please try again.');
+        return;
+      }
+
       const response = await fetch(`${API_BASE_URL}${getLoginEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          recaptcha_token: recaptchaToken,
+        }),
       });
 
       let data = {};
@@ -142,24 +205,50 @@ const LoginModal = ({ isOpen, onClose }) => {
       }
 
       if (!response.ok) {
-        const errorText =
-          data?.detail ||
-          data?.non_field_errors?.[0] ||
-          'Invalid credentials. Please try again.';
-        setErrorMessage(errorText);
+        // Show a specific message for throttling so it's visible in the UI
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('Retry-After');
+
+          // DRF often returns: { "detail": "Request was throttled. Expected available in 59 seconds." }
+          const serverDetail =
+            typeof data?.detail === 'string' ? data.detail : null;
+
+          const fallback = retryAfter
+            ? `Too many login attempts. Please wait ${retryAfter} seconds and try again.`
+            : 'Too many login attempts. Please wait a moment and try again.';
+
+          setErrorMessage(serverDetail || fallback);
+          return;
+        }
+
+        // Replace technical/ambiguous backend messages with a generic auth error
+        setErrorMessage('Authentication failed. Please check your ID/email and password.');
         return;
       }
 
-      if (data?.token) {
-        // Ensure stored user has a normalized `user_type`
+      // OTP required (students INCLUDED)
+      if (data?.otp_required) {
+        setOtpPendingToken(data.pending_token || null);
+        // Student login uses student number, so email may not be known on frontend; backend should return it if possible.
+        // Fall back to previously entered identifier.
+        setOtpEmail(data.email || (payload.email || ''));
+        setOtpExpiresAt(data.expires_at || null);
+        setOtpOpen(true);
+        return; // IMPORTANT: don't close modal
+      }
+
+      // Token-based login (supports new {access, refresh} and legacy {token})
+      const access = data?.access || data?.token;
+      if (access) {
         if (!data.user_type) {
           data.user_type = loginRole === 'depthead' ? 'department_head' : loginRole;
         }
 
-        localStorage.setItem('authToken', data.token);
-        localStorage.setItem('authUser', JSON.stringify(data));
+        if (data?.access) saveTokens({ access: data.access, refresh: data.refresh });
+        else saveToken(data.token);
 
-        // Redirect based on normalized role
+        saveUser(data);
+
         const returnedRole = data.user_type;
         if (returnedRole === 'student') {
           if (data?.must_change_password) {
@@ -178,18 +267,153 @@ const LoginModal = ({ isOpen, onClose }) => {
           window.history.pushState({}, '', '/faculty-dashboard');
           window.dispatchEvent(new PopStateEvent('popstate'));
         } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
-          // Force dept head pages to go to depthead dashboard
           window.history.pushState({}, '', '/depthead-dashboard');
           window.dispatchEvent(new PopStateEvent('popstate'));
         }
+
+        onClose();
+        return;
       }
 
-      onClose();
+      // If neither otp_required nor token was returned, show a generic error
+      setErrorMessage(data?.detail || 'Login response was incomplete. Please try again.');
+      return;
     } catch {
       setErrorMessage('Unable to reach the server. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleOTPVerified = (data) => {
+    if (data?.password_expired || data?.must_change_password) {
+      setMustChangePassword(true);
+      setChangeError('');
+      setOtpOpen(false);
+
+      return;
+    }
+
+    const access = data?.access || data?.token;
+    if (!access) return;
+
+    if (!data.user_type) {
+      data.user_type = loginRole === 'depthead' ? 'department_head' : loginRole;
+    }
+
+    if (data?.access) saveTokens({ access: data.access, refresh: data.refresh });
+    else saveToken(data.token);
+
+    saveUser(data);
+
+    const returnedRole = data.user_type;
+    if (returnedRole === 'student') {
+      if (data?.must_change_password) {
+        setMustChangePassword(true);
+        setChangeError('');
+        setOtpOpen(false);
+        return;
+      }
+      window.history.pushState({}, '', '/dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } else if (returnedRole === 'faculty') {
+      if (data?.must_change_password) {
+        setMustChangePassword(true);
+        setChangeError('');
+        setOtpOpen(false);
+        return;
+      }
+      window.history.pushState({}, '', '/faculty-dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
+      window.history.pushState({}, '', '/depthead-dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+
+    setOtpOpen(false);
+    onClose();
+  };
+
+  // A small list of very common passwords to check against (lowercase)
+  const commonPasswords = [
+    '123456','password','123456789','12345678','12345','111111','1234567','sunshine','qwerty','iloveyou',
+    'princess','admin','welcome','666666','abc123','football','123123','monkey','letmein','dragon',
+    'baseball','master','shadow','killer','trustno1'
+  ];
+
+  const validatePassword = (pwd, username) => {
+    if (!pwd || typeof pwd !== 'string') return { valid: false, message: 'Invalid password.' };
+    if (pwd.length < 12) return { valid: false, message: 'Password must be at least 12 characters long.' };
+    if (!/[A-Z]/.test(pwd)) return { valid: false, message: 'Password must contain at least one uppercase letter.' };
+    if (!/[a-z]/.test(pwd)) return { valid: false, message: 'Password must contain at least one lowercase letter.' };
+    if (!/[0-9]/.test(pwd)) return { valid: false, message: 'Password must contain at least one number.' };
+    if (!/[^A-Za-z0-9]/.test(pwd)) return { valid: false, message: 'Password must contain at least one special character.' };
+
+    if (username) {
+      try {
+        const uname = String(username).toLowerCase().replace(/\s+/g, '');
+        if (uname && pwd.toLowerCase().includes(uname)) {
+          return { valid: false, message: 'Password must not contain your username.' };
+        }
+        // If email, also check local-part (before @)
+        if (String(username).includes('@')) {
+          const local = String(username).split('@')[0].toLowerCase();
+          if (local && pwd.toLowerCase().includes(local)) {
+            return { valid: false, message: 'Password must not contain your username.' };
+          }
+        }
+      } catch {
+        // ignore username parsing errors and continue
+      }
+    }
+
+    const lowered = pwd.toLowerCase();
+    if (commonPasswords.includes(lowered)) return { valid: false, message: 'This password is too common. Choose a less common password.' };
+
+    return { valid: true };
+  };
+
+  // Return individual criteria results for live checklist
+  const passwordCriteria = (pwd, username) => {
+    const results = {
+      length: false,
+      upper: false,
+      lower: false,
+      number: false,
+      special: false,
+      notUsername: false,
+      notCommon: false,
+      confirmMatches: false,
+    };
+    if (!pwd || typeof pwd !== 'string') return results;
+    results.length = pwd.length >= 12;
+    results.upper = /[A-Z]/.test(pwd);
+    results.lower = /[a-z]/.test(pwd);
+    results.number = /[0-9]/.test(pwd);
+    results.special = /[^A-Za-z0-9]/.test(pwd);
+    try {
+      if (username) {
+        const uname = String(username).toLowerCase().replace(/\s+/g, '');
+        results.notUsername = uname ? !pwd.toLowerCase().includes(uname) : true;
+        if (String(username).includes('@')) {
+          const local = String(username).split('@')[0].toLowerCase();
+          if (local) results.notUsername = results.notUsername && !pwd.toLowerCase().includes(local);
+        }
+      } else {
+        results.notUsername = true;
+      }
+    } catch {
+      results.notUsername = true;
+    }
+
+    try {
+      results.notCommon = !commonPasswords.includes(pwd.toLowerCase());
+    } catch {
+      results.notCommon = true;
+    }
+
+    results.confirmMatches = (pwd && confirmPassword) ? pwd === confirmPassword : false;
+    return results;
   };
 
   const handleChangePassword = async (e) => {
@@ -204,8 +428,10 @@ const LoginModal = ({ isOpen, onClose }) => {
       return;
     }
 
-    if (trimmedNewPassword.length < 6) {
-      setChangeError('New password must be at least 6 characters.');
+    // Run full password policy validation
+    const validation = validatePassword(trimmedNewPassword, studentId);
+    if (!validation.valid) {
+      setChangeError(validation.message);
       return;
     }
 
@@ -216,6 +442,34 @@ const LoginModal = ({ isOpen, onClose }) => {
 
     try {
       setIsSubmitting(true);
+
+      // If this password change is part of a password-reset flow, call the reset confirm endpoint
+      if (resetPendingToken) {
+        const resp = await fetch(`${API_BASE_URL}/password-reset/confirm/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pending_token: resetPendingToken, new_password: trimmedNewPassword }),
+        });
+        let respData = {};
+        try { respData = await resp.json(); } catch {
+          // Silently ignore JSON parsing errors
+        }
+        if (!resp.ok) {
+          const msg = respData?.detail || respData?.error || respData?.message || 'Unable to reset password.';
+          setChangeError(msg);
+          return;
+        }
+
+        // Success: clear the reset token, show toast, then close modal
+        setResetPendingToken(null);
+        setMustChangePassword(false);
+        showToast('Password updated successfully');
+        setTimeout(() => onClose(), 900);
+        return;
+      }
+
+      // Normal change-password flow: ensure changeEmail (if provided) is used to prefill payload for faculty/student
+
       const endpoint = loginRole === 'student' ? '/students/change-password/' : '/faculty/change-password/';
       const payload = loginRole === 'student'
         ? {
@@ -229,9 +483,13 @@ const LoginModal = ({ isOpen, onClose }) => {
             new_password: trimmedNewPassword,
           };
 
+      const token = localStorage.getItem('authToken');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
 
@@ -243,15 +501,77 @@ const LoginModal = ({ isOpen, onClose }) => {
       }
 
       if (!response.ok) {
-        const errorText = data?.detail || data?.non_field_errors?.[0] || 'Unable to update password.';
-        setChangeError(errorText);
+        const serverMsg = data?.detail || data?.error || data?.message || (Object.keys(data || {}).length ? JSON.stringify(data) : null);
+        console.error('change-password failed', response.status, data, serverMsg);
+        setChangeError(serverMsg || 'Unable to update password. Please verify your information and try again.');
         return;
       }
 
-      const redirectPath = loginRole === 'student' ? '/dashboard' : '/faculty-dashboard';
-      window.history.pushState({}, '', redirectPath);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-      onClose();
+      // If backend returned a token, save it and redirect
+      if (data?.token) {
+        if (!data.user_type) data.user_type = loginRole === 'depthead' ? 'department_head' : loginRole;
+        localStorage.setItem('authToken', data.token);
+        localStorage.setItem('authUser', JSON.stringify(data));
+
+        const returnedRole = data.user_type;
+        if (returnedRole === 'student') {
+          window.history.pushState({}, '', '/dashboard');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } else if (returnedRole === 'faculty') {
+          window.history.pushState({}, '', '/faculty-dashboard');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
+          window.history.pushState({}, '', '/depthead-dashboard');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }
+
+        showToast('Password updated successfully');
+        setTimeout(() => onClose(), 900);
+        return;
+      }
+
+      // If there is already an auth token (from OTP verification), update stored user and redirect
+      const existingToken = localStorage.getItem('authToken');
+      if (existingToken) {
+        try {
+          const stored = JSON.parse(localStorage.getItem('authUser') || '{}');
+          if (stored) {
+            stored.must_change_password = false;
+            localStorage.setItem('authUser', JSON.stringify(stored));
+          }
+        } catch {
+          // Silently ignore any errors updating stored user
+        }
+
+        const storedUser = (() => {
+          try { return JSON.parse(localStorage.getItem('authUser') || 'null'); } catch { return null; }
+        })();
+
+        const returnedRole = storedUser?.user_type || (loginRole === 'depthead' ? 'department_head' : loginRole);
+        if (returnedRole === 'student') {
+          window.history.pushState({}, '', '/dashboard');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } else if (returnedRole === 'faculty') {
+          window.history.pushState({}, '', '/faculty-dashboard');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        } else if (returnedRole === 'department_head' || returnedRole === 'depthead') {
+          window.history.pushState({}, '', '/depthead-dashboard');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }
+
+        showToast('Password updated successfully');
+        setTimeout(() => onClose(), 900);
+        return;
+      }
+
+      // No further automatic login attempts: show success and return to landing page
+      showToast('Password updated successfully');
+      setTimeout(() => {
+        try { onClose(); } catch (e) {}
+        window.history.pushState({}, '', '/');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, 900);
+      return;
     } catch {
       setChangeError('Unable to reach the server. Please try again.');
     } finally {
@@ -261,23 +581,36 @@ const LoginModal = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
+  // Live criteria for change-password checklist
+  const criteria = passwordCriteria(newPassword, studentId);
+
   return (
     <div 
       className="fixed inset-0 w-full h-full bg-black/85 flex justify-center items-center z-[9999] backdrop-blur-[5px] p-4" 
-      onClick={onClose}
+      onClick={(e) => { if (e.target === e.currentTarget) handleCloseAnimated(); }}
       onContextMenu={handleContextMenu}
       onKeyDown={handleKeyDown}
-    >
+    > 
+      <div
+        className={`w-full flex justify-center items-center transition-all duration-200 ease-out ${
+          animateIn ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-6'
+        }`}
+      >
       <div 
         className="font-upang bg-[#23344E] bg-gradient-to-b from-[#28625C] to-[#23344E] w-full max-w-[1100px] max-h-[95vh] rounded-[20px] relative overflow-y-auto lg:overflow-hidden text-white shadow-2xl" 
         onClick={(e) => e.stopPropagation()}
         onContextMenu={handleContextMenu}
         onDragStart={(e) => e.preventDefault()}
-      >
-        {/* Close Button */}
+      > 
+          <ReCAPTCHA
+            ref={recaptchaRef}
+            sitekey={RECAPTCHA_SITE_KEY}
+            size="invisible"
+          />
+          {/* Close Button */}
         <button 
           className="absolute top-4 right-5 z-50 text-white text-[32px] hover:text-[#ffcc00] transition-colors" 
-          onClick={onClose}
+          onClick={handleCloseAnimated}
         >
           &times;
         </button>
@@ -350,6 +683,30 @@ const LoginModal = ({ isOpen, onClose }) => {
                     />
                   </div>
                 </div>
+                <OTPModal
+                  isOpen={otpOpen}
+                  onClose={() => setOtpOpen(false)}
+                  onVerified={(data) => {
+                    // If this OTP was used for password reset flow, the backend will return pending_token (no JWT)
+                    if (forgotFlow && data && !data.token && data.pending_token) {
+                      setResetPendingToken(data.pending_token);
+                      setMustChangePassword(true);
+                      setChangeError('');
+                      setOtpOpen(false);
+                      setForgotFlow(false);
+                      return;
+                    }
+                    handleOTPVerified(data);
+                  }}
+                  initialPendingToken={otpPendingToken}
+                  initialEmail={otpEmail}
+                  initialExpiresAt={otpExpiresAt}
+                  initialRole={loginRole === 'depthead' ? 'department_head' : loginRole}
+                  // When in forgot flow, use password-reset endpoints
+                  sendEndpoint={forgotFlow ? '/password-reset/send/' : undefined}
+                  verifyEndpoint={forgotFlow ? '/password-reset/verify/' : undefined}
+                  initialPurpose={forgotFlow ? 'reset_password' : 'login'}
+                />
 
                 <div>
                   <label className="
@@ -404,9 +761,21 @@ const LoginModal = ({ isOpen, onClose }) => {
                   <input type="checkbox" className="w-5 h-5 accent-[#ffcc00]" /> 
                   <span className="ml-2">Remember me</span>
                 </label>
-                <a href="#forgot" className="text-white/70 hover:text-[#ffcc00] no-underline">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Open OTP modal in password-reset flow. For faculty/depthead prefill email, students must enter email.
+                    setForgotFlow(true);
+                    setOtpPendingToken(null);
+                    setResetPendingToken(null);
+                    setOtpEmail(loginRole === 'student' ? '' : studentId);
+                    setOtpExpiresAt(null);
+                    setOtpOpen(true);
+                  }}
+                  className="text-white/70 hover:text-[#ffcc00] no-underline"
+                >
                   Forgot Password?
-                </a>
+                </button>
               </div>
               
                 {/* Responsive Demo Credentials */}
@@ -443,22 +812,61 @@ const LoginModal = ({ isOpen, onClose }) => {
                         {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                       </button>
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Confirm Password</label>
-                    <div className="flex items-center bg-white rounded-xl py-3 px-4">
-                      <Lock className="text-slate-400 mr-3 shrink-0" size={20} />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        placeholder="••••••••"
-                        className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        autoComplete="new-password"
-                      />
                     </div>
-                  </div>
+
+                    <div>
+                      <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">Confirm Password</label>
+                      <div className="flex items-center bg-white rounded-xl py-3 px-4">
+                        <Lock className="text-slate-400 mr-3 shrink-0" size={20} />
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          placeholder="••••••••"
+                          className="flex-1 border-none outline-none font-medium text-slate-800 bg-transparent placeholder:text-slate-300"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          autoComplete="new-password"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Live Checklist */}
+                    <div className="mt-2 p-3 bg-white/5 rounded-xl border border-white/10">
+                      <div className="text-sm font-semibold mb-2">Password requirements</div>
+                      <div className="grid gap-2 text-sm">
+                        <div className={`flex items-center gap-2 ${criteria.length ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.length ? '✓' : '✕'}</span>
+                          <span>At least 12 characters</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.upper ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.upper ? '✓' : '✕'}</span>
+                          <span>Contains an uppercase letter</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.lower ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.lower ? '✓' : '✕'}</span>
+                          <span>Contains a lowercase letter</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.number ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.number ? '✓' : '✕'}</span>
+                          <span>Contains a number</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.special ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.special ? '✓' : '✕'}</span>
+                          <span>Contains a special character</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.notUsername ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.notUsername ? '✓' : '✕'}</span>
+                          <span>Does not contain your username</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.notCommon ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.notCommon ? '✓' : '✕'}</span>
+                          <span>Not a commonly used password</span>
+                        </div>
+                        <div className={`flex items-center gap-2 ${criteria.confirmMatches ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="w-5">{criteria.confirmMatches ? '✓' : '✕'}</span>
+                          <span>Confirm password matches</span>
+                        </div>
+                      </div>
+                    </div>
                 </div>
 
                 {changeError && (
@@ -479,7 +887,13 @@ const LoginModal = ({ isOpen, onClose }) => {
           </div>
         </div>
       </div>
+    {toastMessage && (
+      <div className="fixed bottom-6 right-6 bg-[#041c32] text-white px-4 py-2 rounded shadow-lg z-[10000]">
+        {toastMessage}
+      </div>
+    )}
     </div>
+  </div>
   );
 };
 

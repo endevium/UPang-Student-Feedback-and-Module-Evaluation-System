@@ -2,25 +2,31 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { ArrowLeft, ArrowRight, CheckCircle, Star, Send } from 'lucide-react';
 
-const EvaluationForm = ({ moduleId }) => {
+const EvaluationForm = ({ moduleId, instructorFormId }) => {
   const [currentSection, setCurrentSection] = useState(0);
   const [responses, setResponses] = useState({});
   const [submitted, setSubmitted] = useState(false);
-  const [hoverStar, setHoverStar] = useState(null);
+  const [hoverStar, setHoverStar] = useState({});
   const [moduleData, setModuleData] = useState(null);
+  const [instructorData, setInstructorData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [inputError, setInputError] = useState('');
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+  const formType = instructorFormId ? 'Instructor' : 'Module';
 
   useEffect(() => {
+   const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
+    if (!token) {
+      setError('Not authenticated');
+      setLoading(false);
+      return;
+    }
+  
     const fetchModuleData = async () => {
-      const token = localStorage.getItem('authToken');
-      if (!token) {
-        setError('Not authenticated');
-        setLoading(false);
-        return;
-      }
       try {
         const res = await fetch(`${API_BASE_URL}/students/me/`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -34,6 +40,7 @@ const EvaluationForm = ({ moduleId }) => {
         const module = list.find(m => m.id === moduleId);
         if (module) {
           setModuleData({
+            id: module.id,
             code: module.code,
             name: module.name,
             instructor: module.instructor,
@@ -47,13 +54,65 @@ const EvaluationForm = ({ moduleId }) => {
         setLoading(false);
       }
     };
-    if (moduleId) {
+  
+    const fetchInstructorData = async () => {
+      try {
+        // Try to fetch the instructor form meta (if endpoint exists)
+        const res = await fetch(`${API_BASE_URL}/instructor-evaluation-forms/${instructorFormId}/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setInstructorData({
+            id: data?.id ?? instructorFormId,
+            name: data?.title || data?.instructor_name || 'Instructor',
+            status: data?.status,
+            description: data?.description || '',
+          });
+        } else {
+          // If detail endpoint doesn't exist, still allow rendering the form UI
+          setInstructorData({
+            id: instructorFormId,
+            name: 'Instructor',
+            status: null,
+            description: '',
+          });
+        }
+      } catch {
+        // Allow rendering anyway (questions are static)
+        setInstructorData({
+          id: instructorFormId,
+          name: 'Instructor',
+          status: null,
+          description: '',
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+  
+    setLoading(true);
+    setError('');
+    setSubmitError('');
+  
+    if (formType === 'Module') {
+      if (!moduleId) {
+        setError('Module not found');
+        setLoading(false);
+        return;
+      }
       fetchModuleData();
+      return;
     }
-  }, [moduleId]);
-
-  // Mock data matching your second example's structure
-  const formType = 'Module'; // Change to 'Instructor' for instructor forms
+  
+    // Instructor form
+    if (!instructorFormId) {
+      setError('Instructor form not found');
+      setLoading(false);
+      return;
+    }
+    fetchInstructorData();
+  }, [API_BASE_URL, formType, moduleId, instructorFormId]);
 
   const moduleSections = [
     {
@@ -193,12 +252,91 @@ const EvaluationForm = ({ moduleId }) => {
   const handleNext = () => currentSection < sections.length - 1 && setCurrentSection(prev => prev + 1);
   const handlePrevious = () => currentSection > 0 && setCurrentSection(prev => prev - 1);
   
-  const handleSubmit = () => {
-    if (answeredCount < totalQuestions) {
-        alert("Please complete all questions");
-        return;
+  const hasAngleBrackets = (s) => /[<>]/.test(s);
+
+  const hasEmoji = (s) => {
+    try {
+      return /[\p{Extended_Pictographic}]/u.test(s);
+    } catch {
+      return /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(s);
     }
-    setSubmitted(true);
+  };
+
+  const validateFreeText = (s) => {
+    if (hasAngleBrackets(s)) return 'Text must not contain "<" or ">".';
+    if (hasEmoji(s)) return 'Emojis are not allowed.';
+    return '';
+  };
+
+  const handleTextResponse = (id, value) => {
+    const msg = validateFreeText(value);
+    setInputError(msg);
+    if (msg) return;
+    setResponses((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const handleSubmit = async () => {
+    // ensure all questions are answered (text fields must be non-empty)
+    const allQuestions = sections.flatMap(s => s.questions);
+    const missing = allQuestions.filter(q => {
+    const val = responses[q.id];
+    return val === undefined || val === null || (typeof val === 'string' && val.trim() === '');
+    });
+    if (missing.length > 0) {
+      const first = missing[0];
+      const sectionIdx = sections.findIndex(s => s.questions.some(qq => qq.id === first.id));
+      setCurrentSection(sectionIdx >= 0 ? sectionIdx : 0);
+      setSubmitError(`Please answer: "${first.question}"`);
+      return;
+    }
+
+    if (inputError) {
+      setSubmitError(inputError);
+      return;
+    }
+    
+    setSubmitting(true);
+    setSubmitError('');
+    const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
+    const formIdentifier =
+      formType === 'Instructor'
+        ? instructorFormId
+        : (moduleData?.id ?? moduleData?.code ?? moduleId);
+
+    const payload = {
+      form_type: formType === 'Module' ? 'module' : 'instructor',
+      form_id: formIdentifier,
+      is_anonymous: false,
+      pseudonym: localStorage.getItem('anonPseudonym') || null,
+      responses: allQuestions.map(q => {
+        const val = responses[q.id];
+          if (q.type === 'text') return { question: q.id, comment: val || '' };
+            return { question: q.id, rating: parseInt(val, 10) };
+          }),
+      };
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/feedback/submit/`, {
+        method: 'POST',
+        headers: {
+         'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.detail || data?.errors || JSON.stringify(data) || 'Failed to submit feedback';
+        setSubmitError(Array.isArray(msg) ? msg.join('; ') : (typeof msg === 'object' ? JSON.stringify(msg) : msg));
+        setSubmitting(false);
+        return;
+      }
+      setSubmitted(true);
+    } catch (err) {
+      setSubmitError('Network error: failed to submit feedback');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (loading) {
@@ -217,7 +355,25 @@ const EvaluationForm = ({ moduleId }) => {
     );
   }
 
-  if (error || !moduleData) {
+  if (submitted) {
+    return (
+      <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
+        <div className="flex flex-1">
+          <Sidebar role="student" activeItem="modules" onLogout={() => {}} />
+          <main className="flex-1 flex items-center justify-center p-6">
+            <div className="text-center max-w-md bg-white p-8 rounded-2xl border border-slate-200 shadow">
+              <CheckCircle size={48} className="text-emerald-500 mx-auto mb-4" />
+              <h1 className="text-2xl font-black text-slate-900 mb-2">Thank you</h1>
+              <p className="text-slate-500 mb-4">Your feedback has been submitted.</p>
+              <button onClick={() => window.history.back()} className="bg-[#1f474d] text-white px-4 py-2 rounded">Back to Modules</button>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || (formType === 'Module' && !moduleData) || (formType === 'Instructor' && !instructorData)) {
     return (
       <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
         <div className="flex flex-1">
@@ -225,7 +381,7 @@ const EvaluationForm = ({ moduleId }) => {
           <main className="flex-1 flex items-center justify-center p-6">
             <div className="text-center max-w-md">
               <h1 className="text-2xl font-bold text-slate-900 mb-2">Error</h1>
-              <p className="text-slate-500 mb-4">{error || 'Module not found'}</p>
+              <p className="text-slate-500 mb-4">{error || 'Form not found'}</p>
               <button onClick={() => window.history.back()} className="bg-[#1f474d] text-white px-4 py-2 rounded">Back to Modules</button>
             </div>
           </main>
@@ -249,8 +405,14 @@ const EvaluationForm = ({ moduleId }) => {
               </button>
               <div>
                 {formType === 'Module' && <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded text-xs font-mono font-bold">{moduleData.code}</span>}
-                <h1 className="text-4xl font-black text-slate-900 mt-2">{formType === 'Module' ? moduleData.name : moduleData.instructor}</h1>
-                {formType === 'Module' && <p className="text-slate-500">{moduleData.instructor}</p>}
+                <h1 className="text-4xl font-black text-slate-900 mt-2">
+                 {formType === 'Module' ? moduleData.name : (instructorData?.name || 'Instructor')}
+               </h1>
+               {formType === 'Module' ? (
+                 <p className="text-slate-500">{moduleData.instructor}</p>
+               ) : (
+                 instructorData?.description ? <p className="text-slate-500">{instructorData.description}</p> : null
+               )}
               </div>
             </div>
 
@@ -294,43 +456,74 @@ const EvaluationForm = ({ moduleId }) => {
 
                     <div className="pl-12">
                         {q.type === 'scale' && (
-                           <div className="flex flex-col gap-2 max-w-md">
+                           // For sections 1-4 render a horizontal 5→1 pill selector with colored styles
+                           (currentSection >= 0 && currentSection < 5) ? (
+                            <div className="flex items-center gap-4 max-w-3xl">
+              
+                              <div className="flex items-center gap-3 flex-1 justify-center">
                                 {[
-                                    {v: "5", l: "Strongly Agree", c: "bg-emerald-500"},
-                                    {v: "4", l: "Agree", c: "bg-emerald-400"},
-                                    {v: "3", l: "Neutral", c: "bg-amber-400"},
-                                    {v: "2", l: "Disagree", c: "bg-orange-400"},
-                                    {v: "1", l: "Strongly Disagree", c: "bg-red-500"}
-                                ].map(s => (
-                                    <button 
-                                        key={s.v}
-                                        onClick={() => handleResponse(q.id, s.v)}
-                                        className={`flex items-center p-3 rounded-xl border-2 transition-all ${
-                                            responses[q.id] === s.v ? "border-teal-600 bg-teal-50" : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"
-                                        }`}
+                                  {v:1, label: 'Strongly Disagree', selected: 'bg-red-500 border-red-600 text-white', normal: 'bg-white border-slate-200 text-slate-700'},
+                                  {v:2, label: 'Disagree', selected: 'bg-orange-400 border-orange-500 text-white', normal: 'bg-white border-slate-200 text-slate-700'},
+                                  {v:3, label: 'Neutral', selected: 'bg-amber-400 border-amber-500 text-white', normal: 'bg-white border-slate-200 text-slate-700'},
+                                  {v:4, label: 'Agree', selected: 'bg-emerald-400 border-emerald-500 text-white', normal: 'bg-white border-slate-200 text-slate-700'},
+                                  {v:5, label: 'Strongly Agree', selected: 'bg-emerald-600 border-emerald-700 text-white', normal: 'bg-white border-slate-200 text-slate-700'},
+                                ].map(opt => {
+                                  const selected = responses[q.id] === opt.v.toString();
+                                  return (
+                                    <button
+                                      key={opt.v}
+                                      onClick={() => handleResponse(q.id, opt.v.toString())}
+                                      className={`flex items-center gap-3 px-4 py-2 rounded-lg border transition-shadow ${selected ? opt.selected : opt.normal}`}
+                                      aria-pressed={selected}
                                     >
-                                        <div className={`w-7 h-7 rounded flex items-center justify-center text-white text-xs font-black mr-4 ${s.c}`}>{s.v}</div>
-                                        <span className="text-sm font-bold text-slate-700">{s.l}</span>
+                                      <div className={`w-7 h-7 rounded-full flex items-center justify-center font-black ${selected ? 'bg-white/10' : 'bg-slate-100'}`}>
+                                        {opt.v}
+                                      </div>
+                                      <span className="text-sm font-semibold">{opt.label}</span>
                                     </button>
-                                ))}
-                           </div>
+                                  );
+                                })}
+                              </div>
+                              
+                            </div>
+                           ) : (
+                            <div className="flex flex-col gap-2 max-w-md">
+                                 {[
+                                     {v: "5", l: "Strongly Agree", c: "bg-emerald-500"},
+                                     {v: "4", l: "Agree", c: "bg-emerald-400"},
+                                     {v: "3", l: "Neutral", c: "bg-amber-400"},
+                                     {v: "2", l: "Disagree", c: "bg-orange-400"},
+                                     {v: "1", l: "Strongly Disagree", c: "bg-red-500"}
+                                 ].map(s => (
+                                     <button 
+                                         key={s.v}
+                                         onClick={() => handleResponse(q.id, s.v)}
+                                         className={`flex items-center p-3 rounded-xl border-2 transition-all ${
+                                             responses[q.id] === s.v ? "border-teal-600 bg-teal-50" : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"
+                                         }`}>
+                                         <div className={`w-7 h-7 rounded flex items-center justify-center text-white text-xs font-black mr-4 ${s.c}`}>{s.v}</div>
+                                         <span className="text-sm font-bold text-slate-700">{s.l}</span>
+                                     </button>
+                                 ))}
+                            </div>
+                           )
                         )}
 
                         {q.type === 'rating' && (
                             <div className="flex items-center gap-3">
                                 {[1,2,3,4,5].map(star => (
-                                    <button 
-                                        key={star}
-                                        onMouseEnter={() => setHoverStar(star)}
-                                        onMouseLeave={() => setHoverStar(null)}
-                                        onClick={() => handleResponse(q.id, star.toString())}
-                                        className="transition-transform hover:scale-110"
-                                    >
-                                        <Star 
-                                            size={40} 
-                                            className={`${(hoverStar || responses[q.id]) >= star ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} 
-                                        />
-                                    </button>
+                                  <button 
+                                    key={star}
+                                    onMouseEnter={() => setHoverStar(prev => ({ ...prev, [q.id]: star }))}
+                                    onMouseLeave={() => setHoverStar(prev => ({ ...prev, [q.id]: null }))}
+                                    onClick={() => handleResponse(q.id, star.toString())}
+                                    className="transition-transform hover:scale-110"
+                                  >
+                                    <Star 
+                                      size={40} 
+                                      className={`${Number(hoverStar[q.id] ?? responses[q.id] ?? 0) >= star ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} 
+                                    />
+                                  </button>
                                 ))}
                                 {responses[q.id] && <span className="ml-4 text-xl font-black text-slate-800">{responses[q.id]} / 5</span>}
                             </div>
@@ -341,7 +534,7 @@ const EvaluationForm = ({ moduleId }) => {
                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 focus:outline-none focus:ring-2 focus:ring-teal-500/20 min-h-[120px]"
                                 placeholder="Type your feedback here..."
                                 value={responses[q.id] || ""}
-                                onChange={(e) => handleResponse(q.id, e.target.value)}
+                                onChange={(e) => handleTextResponse(q.id, e.target.value)}
                             />
                         )}
                     </div>
@@ -351,39 +544,27 @@ const EvaluationForm = ({ moduleId }) => {
             </div>
 
             {/* Bottom Navigation */}
-            <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <button 
-                    disabled={currentSection === 0}
-                    onClick={handlePrevious}
-                    className="flex items-center gap-2 px-6 py-2 rounded-xl font-bold text-slate-400 disabled:opacity-30 hover:text-slate-700"
-                >
-                    <ArrowLeft size={18} /> Previous
-                </button>
-
-                <div className="hidden sm:block">
-                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Section {currentSection + 1} of {sections.length}</p>
-                    <div className="w-32 h-1.5 bg-slate-100 rounded-full mt-1">
-                        <div className="h-full bg-teal-500 rounded-full transition-all" style={{width: `${((currentSection+1)/sections.length)*100}%`}} />
-                    </div>
-                </div>
-
+            {inputError && <div className="text-sm text-red-500 mb-2">{inputError}</div>}
+            {submitError && <div className="text-sm text-red-500 mb-2">{submitError}</div>}
+             <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 {currentSection === sections.length - 1 ? (
                     <button 
                         onClick={handleSubmit}
-                        className="flex items-center gap-2 px-8 py-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 shadow-lg shadow-emerald-100"
+                        disabled={submitting}
+                        className="flex items-center gap-2 px-8 py-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 disabled:opacity-50 shadow-lg shadow-emerald-100"
                     >
-                        Submit <Send size={18} />
+                        {submitting ? 'Submitting...' : 'Submit'} <Send size={18} />
                     </button>
                 ) : (
-                    <button 
-                        onClick={handleNext}
-                        disabled={!isSectionComplete(currentSection)}
-                        className="flex items-center gap-2 px-8 py-3 bg-[#1f474d] text-white rounded-xl font-black hover:bg-[#163539] disabled:opacity-50"
-                    >
-                        Next Section <ArrowRight size={18} />
-                    </button>
-                )}
-            </div>
+                     <button 
+                         onClick={handleNext}
+                         disabled={!isSectionComplete(currentSection)}
+                         className="flex items-center gap-2 px-8 py-3 bg-[#1f474d] text-white rounded-xl font-black hover:bg-[#163539] disabled:opacity-50"
+                     >
+                         Next Section <ArrowRight size={18} />
+                     </button>
+                 )}
+             </div>
           </div>
         </main>
       </div>
