@@ -35,6 +35,9 @@ class FeedbackResponseItemSerializer(serializers.Serializer):
 class FeedbackResponseSerializer(serializers.ModelSerializer):
     form_type = serializers.ChoiceField(choices=[('module','module'), ('instructor','instructor')], write_only=True)
     form_id = serializers.CharField(write_only=True)
+    form_object_id = serializers.IntegerField(read_only=True)
+    form_content_type_id = serializers.IntegerField(read_only=True)
+    form_model = serializers.SerializerMethodField(read_only=True)
 
     # Accept input list, but don't let DRF try to serialize stored JSON using this schema
     responses = serializers.ListField(child=FeedbackResponseItemSerializer(), write_only=True)
@@ -45,6 +48,7 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'form_type', 'form_id',
+            'form_object_id', 'form_content_type_id', 'form_model',
             'student', 'pseudonym',
             'responses',        # write-only input
             'responses_out',    # read-only output
@@ -179,6 +183,13 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
                 'comment': r.get('comment'),
             })
         return expanded
+
+    def get_form_model(self, instance):
+        try:
+            ct = getattr(instance, 'form_content_type', None)
+            return getattr(ct, 'model', None)
+        except Exception:
+            return None
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

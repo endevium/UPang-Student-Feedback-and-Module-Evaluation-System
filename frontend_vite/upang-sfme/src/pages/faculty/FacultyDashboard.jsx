@@ -1,63 +1,78 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { BookOpen, Users, Star, TrendingUp, MessageSquare, ChevronRight } from 'lucide-react';
-import { getToken, logoutAndReload } from '../../utils/auth';
+import { getAccessToken, getUser, logoutAndReload } from '../../utils/auth';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
 const FacultyDashboard = () => {
   useEffect(() => {
-    const token = getToken();
+    const token = getAccessToken();
     if (!token) {
       window.history.replaceState({}, '', '/');
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
   }, []);
 
-  const [facultyInfo] = useState({
-    name: "Prof. Ana Reyes",
-    department: "Computer Science",
-    specialization: "Web Development",
-    overallRating: 4.7,
-    totalEvaluations: 145,
-    totalStudents: 135,
-  });
+  const [facultyInfo, setFacultyInfo] = useState(null);
+  const [modules, setModules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const [modules] = useState([
-    {
-      id: "mod_001",
-      code: "CS403",
-      name: "Web Development",
-      semester: "2nd Semester 2025-2026",
-      students: 45,
-      evaluations: 42,
-      averageRating: 4.8,
-      responseRate: 93,
-      status: "active"
-    },
-    {
-      id: "mod_002",
-      code: "CS406",
-      name: "Computer Networks",
-      semester: "2nd Semester 2025-2026",
-      students: 42,
-      evaluations: 38,
-      averageRating: 4.7,
-      responseRate: 90,
-      status: "active"
-    },
-    {
-      id: "mod_003",
-      code: "CS401",
-      name: "Advanced Database Systems",
-      semester: "2nd Semester 2025-2026",
-      students: 48,
-      evaluations: 45,
-      averageRating: 4.6,
-      responseRate: 94,
-      status: "active"
-    },
-  ]);
+  const handleViewDetails = (moduleId) => {
+    // navigate to module details route if available
+    window.history.pushState({}, '', `/faculty/modules/${moduleId}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
 
-  const handleViewDetails = (moduleId) => alert(`Viewing detailed feedback for ${moduleId}`);
+  useEffect(() => {
+    const token = getAccessToken();
+    const user = getUser();
+    if (!token) return; // already handled by initial auth check
+
+    setFacultyInfo({
+      name: user?.firstname ? `${user.firstname} ${user.lastname || ''}`.trim() : user?.email || 'Faculty',
+      department: user?.department || '',
+      specialization: user?.specialization || '',
+      overallRating: null,
+      totalEvaluations: null,
+      totalStudents: null,
+    });
+
+    const fetchModules = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE_URL}/faculty/modules/`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) throw new Error(`Failed to load modules (${res.status})`);
+        const data = await res.json();
+
+        // Map backend module-assignment objects into the module shape used by this page
+        const mapped = (Array.isArray(data) ? data : data.results || []).map((m) => ({
+          id: m.module_id || m.id || m.subject_code,
+          code: (m.subject_code || '').toUpperCase(),
+          name: m.module_name || m.subject_code || 'Untitled',
+          semester: m.semester || m.academic_year || '',
+          students: m.students_count || 0,
+          evaluations: m.responses_count || m.responses_count || 0,
+          averageRating: m.average_rating || null,
+          responseRate: m.response_rate || 0,
+          status: 'active',
+        }));
+
+        setModules(mapped);
+      } catch (err) {
+        console.error('FacultyDashboard fetch error', err);
+        setError(err.message || 'Failed to load modules');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchModules();
+  }, []);
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
@@ -75,10 +90,10 @@ const FacultyDashboard = () => {
           <section className="bg-white border-b border-slate-200 py-10 px-8">
             <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
               <div>
-                <h1 className="text-3xl font-bold text-[#1f474d]">Welcome, {facultyInfo.name}</h1>
-                <p className="text-slate-500 mt-1">{facultyInfo.department} • {facultyInfo.specialization}</p>
+                <h1 className="text-3xl font-bold text-[#1f474d]">Welcome, {facultyInfo?.name || 'Faculty'}</h1>
+                <p className="text-slate-500 mt-1">{facultyInfo?.department || ''}{facultyInfo?.department && facultyInfo?.specialization ? ' • ' : ''}{facultyInfo?.specialization || ''}</p>
                 <p className="text-xs mt-2 font-semibold text-slate-400 uppercase tracking-wider">
-                  Employee ID: <span className="text-amber-600">{facultyInfo.employeeId}</span>
+                  Employee ID: <span className="text-amber-600">{facultyInfo?.employeeId || '—'}</span>
                 </p>
               </div>
               <div className="hidden md:block p-4 bg-slate-50 rounded-2xl border border-slate-100">
@@ -94,7 +109,7 @@ const FacultyDashboard = () => {
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <p className="text-slate-500 text-xs font-bold uppercase mb-2">Overall Rating</p>
                 <div className="flex items-center gap-2">
-                  <p className="text-4xl font-bold text-amber-500">{facultyInfo.overallRating}</p>
+                  <p className="text-4xl font-bold text-amber-500">{facultyInfo?.overallRating ?? '-'}</p>
                   <Star className="text-amber-500 fill-amber-500" size={24} />
                 </div>
               </div>
@@ -102,7 +117,7 @@ const FacultyDashboard = () => {
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <p className="text-slate-500 text-xs font-bold uppercase mb-2">Total Students</p>
                 <div className="flex items-center justify-between">
-                  <p className="text-4xl font-bold text-slate-800">{facultyInfo.totalStudents}</p>
+                  <p className="text-4xl font-bold text-slate-800">{facultyInfo?.totalStudents ?? '-'}</p>
                   <Users className="text-blue-500" size={32} />
                 </div>
               </div>
@@ -110,7 +125,7 @@ const FacultyDashboard = () => {
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <p className="text-slate-500 text-xs font-bold uppercase mb-2">Evaluations</p>
                 <div className="flex items-center justify-between">
-                  <p className="text-4xl font-bold text-slate-800">{facultyInfo.totalEvaluations}</p>
+                  <p className="text-4xl font-bold text-slate-800">{facultyInfo?.totalEvaluations ?? '-'}</p>
                   <MessageSquare className="text-emerald-500" size={32} />
                 </div>
               </div>
