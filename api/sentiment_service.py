@@ -54,7 +54,7 @@ def predict_sentiment(text: str) -> str:
     sexual_words = [
         'daddy', 'mommy', 'porn', 'sex', 'sexy', 'nude', 'nsfw', 'fuck', 'cum', 'orgasm', 'xxx'
     ]
-    SEXUAL_RE = re.compile(r"\\b(" + r"|".join(re.escape(w) for w in sexual_words) + r")\\b", flags=re.IGNORECASE)
+    SEXUAL_RE = re.compile(r"\b(" + r"|".join(re.escape(w) for w in sexual_words) + r")\b", flags=re.IGNORECASE)
     if SEXUAL_RE.search(txt):
         return "Sorry, sexual words are not permitted"
 
@@ -62,7 +62,7 @@ def predict_sentiment(text: str) -> str:
     profane_words = [
         'fuck', 'shit', 'bitch', 'asshole', 'idiot', 'stupid', 'moron', 'bastard', 'dumb', 'crap'
     ]
-    PROFANE_RE = re.compile(r"\\b(" + r"|".join(re.escape(w) for w in profane_words) + r")\\b", flags=re.IGNORECASE)
+    PROFANE_RE = re.compile(r"\b(" + r"|".join(re.escape(w) for w in profane_words) + r")\b", flags=re.IGNORECASE)
     if PROFANE_RE.search(txt):
         return "Sorry, harsh words are not permitted"
 
