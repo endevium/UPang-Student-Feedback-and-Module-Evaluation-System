@@ -3,7 +3,7 @@ from typing import Optional
 import re
 
 import torch
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
 
 # Model directory (repo_root/sentiment_model_final)
@@ -11,7 +11,10 @@ MODEL_DIR = Path(__file__).resolve().parent.parent / "sentiment_model_final"
 
 _tokenizer: Optional[AutoTokenizer] = None
 _model: Optional[AutoModelForSequenceClassification] = None
+_theme_classifier = None
 _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+BLOCKED_THEME_LABELS = {"harsh language", "insult", "sexual content"}
 
 
 def _load_model_once():
@@ -54,15 +57,15 @@ def predict_sentiment(text: str) -> str:
     sexual_words = [
         'daddy', 'mommy', 'porn', 'sex', 'sexy', 'nude', 'nsfw', 'fuck', 'cum', 'orgasm', 'xxx'
     ]
-    SEXUAL_RE = re.compile(r"\\b(" + r"|".join(re.escape(w) for w in sexual_words) + r")\\b", flags=re.IGNORECASE)
+    SEXUAL_RE = re.compile(r"\b(" + r"|".join(re.escape(w) for w in sexual_words) + r")\b", flags=re.IGNORECASE)
     if SEXUAL_RE.search(txt):
         return "Sorry, sexual words are not permitted"
 
-    # Harsh / profane words
-    profane_words = [
+    # Check profanity/harsh words
+    PROFANE_WORDS = [
         'fuck', 'shit', 'bitch', 'asshole', 'idiot', 'stupid', 'moron', 'bastard', 'dumb', 'crap'
     ]
-    PROFANE_RE = re.compile(r"\\b(" + r"|".join(re.escape(w) for w in profane_words) + r")\\b", flags=re.IGNORECASE)
+    PROFANE_RE = re.compile(r"\b(" + r"|".join(re.escape(w) for w in PROFANE_WORDS) + r")\b", flags=re.IGNORECASE)
     if PROFANE_RE.search(txt):
         return "Sorry, harsh words are not permitted"
 
@@ -105,3 +108,36 @@ def predict_sentiment(text: str) -> str:
 
     # Fallback to whatever label_name is or numeric index
     return (label_name or str(pred_idx)).lower()
+
+
+def _load_theme_classifier_once():
+    """Load zero-shot classifier once and reuse it."""
+    global _theme_classifier
+    if _theme_classifier is not None:
+        return
+    
+    _theme_classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+
+
+def analyze_theme(text: str) -> str:
+    """Classify text into a theme category using zero-shot classification.
+    
+    Returns the top theme label based on confidence.
+    """
+    THEME_LABELS = [
+        "teaching clarity",
+        "course workload",
+        "module materials",
+        "instructor engagement",
+        "harsh language",
+        "insult",
+        "sexual content",
+        "general feedback",
+        "constructive feedback",
+        "praise"
+    ]
+    
+    _load_theme_classifier_once()
+    
+    result = _theme_classifier(text, THEME_LABELS)
+    return result['labels'][0]  # Top-scoring label

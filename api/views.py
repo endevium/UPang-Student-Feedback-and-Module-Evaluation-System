@@ -10,10 +10,12 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.conf import settings
 import logging
+import os
+import requests
 
 from .throttles import AIRequestRateThrottle, LoginRateThrottle
 from .models import Student
-from .sentiment_service import predict_sentiment
+from .sentiment_service import predict_sentiment, analyze_theme, BLOCKED_THEME_LABELS
 import csv
 import io
 from .recaptcha import verify_recaptcha_v2
@@ -51,6 +53,29 @@ from .serializers.PasswordReset import PasswordResetConfirmSerializer
 
 from .utils import create_and_send_otp, is_password_expired, validate_uploaded_csv, validate_plain_text
 logger = logging.getLogger(__name__)
+
+
+def _classify_blocked_theme(text: str):
+    content = str(text or "").strip()
+    if not content:
+        return None
+
+    try:
+        sentiment_label = str(predict_sentiment(content)).strip().lower()
+        if "sexual words are not permitted" in sentiment_label:
+            return "sexual content"
+        if "harsh words are not permitted" in sentiment_label:
+            return "harsh language"
+    except Exception:
+        pass
+
+    try:
+        theme = str(analyze_theme(content)).strip().lower()
+    except Exception:
+        return None
+    if theme in BLOCKED_THEME_LABELS:
+        return theme
+    return None
 
 def _issue_jwt(role: str, legacy_user_id: int) -> str:
     token = AccessToken()
@@ -640,6 +665,79 @@ class StudentMeView(APIView):
             }, status=status.HTTP_200_OK)
         except Student.DoesNotExist:
             return Response({"detail": "Student not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class FacultyModulesView(APIView):
+    """Return modules assigned to the logged-in faculty along with basic evaluation stats."""
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded.get("role") != "faculty":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        faculty_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        if not faculty_id:
+            return Response({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            faculty = Faculty.objects.get(id=faculty_id)
+        except Faculty.DoesNotExist:
+            return Response({"detail": "Faculty not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        assignments = ModuleAssignment.objects.filter(faculty=faculty).select_related('module')
+        results = []
+        from django.contrib.contenttypes.models import ContentType
+        mef_ct = ContentType.objects.get_for_model(ModuleEvaluationForm)
+
+        for a in assignments:
+            mod = a.module
+            # try find a matching module evaluation form by subject code
+            mef = ModuleEvaluationForm.objects.filter(subject_code__iexact=getattr(mod, 'subject_code', '')).first()
+            responses_count = 0
+            average_rating = None
+            if mef:
+                qs = FeedbackResponse.objects.filter(form_content_type=mef_ct, form_object_id=mef.id)
+                responses_count = qs.count()
+                # compute simple average across numeric ratings if present
+                try:
+                    total = 0
+                    cnt = 0
+                    for fr in qs:
+                        if isinstance(fr.responses, list):
+                            for item in fr.responses:
+                                try:
+                                    r = float(item.get('rating'))
+                                except Exception:
+                                    r = None
+                                if r is not None:
+                                    total += r
+                                    cnt += 1
+                    average_rating = (total / cnt) if cnt > 0 else None
+                except Exception:
+                    average_rating = None
+
+            results.append({
+                'module_id': getattr(mod, 'id', None),
+                'subject_code': getattr(mod, 'subject_code', None),
+                'module_name': getattr(mod, 'module_name', None),
+                'department': getattr(mod, 'department', None),
+                'semester': getattr(mod, 'semester', None),
+                'academic_year': getattr(mod, 'academic_year', None),
+                'evaluation_form_id': mef.id if mef else None,
+                'responses_count': responses_count,
+                'average_rating': average_rating,
+            })
+
+        return Response(results, status=status.HTTP_200_OK)
     
 class EvaluationFormListCreateView(generics.ListCreateAPIView):
     authentication_classes = []
@@ -1471,6 +1569,27 @@ class FeedbackResponseCreateView(generics.CreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        violations = []
+        for item in serializer.validated_data.get('responses', []):
+            comment = str(item.get('comment') or '').strip()
+            if not comment:
+                continue
+            blocked_theme = _classify_blocked_theme(comment)
+            if blocked_theme:
+                violations.append({
+                    "question": item.get('question_code') or item.get('question_id'),
+                    "theme": blocked_theme,
+                })
+
+        if violations:
+            return Response(
+                {
+                    "detail": "Submission blocked: comment contains restricted content (harsh language, insult, or sexual content).",
+                    "violations": violations,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         obj = serializer.save(
             student=student,
             ip_address=request.META.get('REMOTE_ADDR', 'Unknown'),
@@ -1557,6 +1676,241 @@ class SentimentTestView(APIView):
             return Response({"detail": "Model error", "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({"label": label}, status=status.HTTP_200_OK)
+
+
+class FeedbackThemeCheckView(APIView):
+    throttle_classes = []
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        comments = request.data.get("comments")
+        if comments is None:
+            text = request.data.get("text")
+            comments = [text] if text is not None else []
+
+        if not isinstance(comments, list):
+            return Response({"detail": '"comments" must be a list'}, status=status.HTTP_400_BAD_REQUEST)
+
+        violations = []
+        for idx, item in enumerate(comments):
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("comment") or ""
+                question = item.get("question")
+            else:
+                text = item
+                question = None
+
+            content = str(text or "").strip()
+            if not content:
+                continue
+
+            blocked_theme = _classify_blocked_theme(content)
+            if blocked_theme:
+                violations.append({
+                    "index": idx,
+                    "question": question,
+                    "theme": blocked_theme,
+                })
+
+        return Response(
+            {
+                "blocked": len(violations) > 0,
+                "violations": violations,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ModuleRecommendationView(APIView):
+    throttle_classes = [AIRequestRateThrottle]
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        module_name = str(request.data.get("module_name") or "").strip()
+        average_rating = request.data.get("average_rating")
+        responses_count = request.data.get("responses_count")
+        rating_breakdown = request.data.get("rating_breakdown") or {}
+        comments = request.data.get("comments") or []
+
+        if not module_name:
+            return Response({"detail": "module_name is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not isinstance(comments, list):
+            comments = []
+
+        comments = [str(c).strip() for c in comments if str(c).strip()][:8]
+
+        sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0, "unknown": 0}
+        sentiment_by_comment = []
+        for comment in comments:
+            try:
+                label = str(predict_sentiment(comment)).lower().strip()
+            except Exception:
+                label = "unknown"
+
+            if label not in sentiment_counts:
+                label = "unknown"
+
+            sentiment_counts[label] += 1
+            sentiment_by_comment.append({"comment": comment, "sentiment": label})
+
+        try:
+            avg_text = f"{float(average_rating):.2f}" if average_rating is not None else "N/A"
+        except Exception:
+            avg_text = "N/A"
+
+        try:
+            count_text = str(int(responses_count))
+        except Exception:
+            count_text = "0"
+
+        rb = {
+            "very_good": int(rating_breakdown.get("very_good", 0) or 0),
+            "good": int(rating_breakdown.get("good", 0) or 0),
+            "fair": int(rating_breakdown.get("fair", 0) or 0),
+            "poor": int(rating_breakdown.get("poor", 0) or 0),
+        }
+
+        def build_fallback(reason=None):
+            reason_text = f"\nReason: {reason}" if reason else ""
+            return (
+                f"Module: {module_name}\n"
+                f"Average rating: {avg_text}\n"
+                f"Responses: {count_text}\n"
+                f"Rating breakdown: Very Good={rb['very_good']}, Good={rb['good']}, Fair={rb['fair']}, Poor={rb['poor']}\n"
+                f"Comment sentiment: Positive={sentiment_counts['positive']}, Neutral={sentiment_counts['neutral']}, Negative={sentiment_counts['negative']}, Unknown={sentiment_counts['unknown']}\n"
+                "Recommendations:\n"
+                "- Prioritize action plans for items with Fair/Poor ratings.\n"
+                "- Keep and replicate strategies behind Very Good/Good responses.\n"
+                "- Review student comments and set measurable targets for the next evaluation cycle."
+                f"{reason_text}"
+            )
+
+        api_key = os.getenv("GEMINI_API_KEY", "").strip().strip('"').strip("'")
+        if not api_key:
+            fallback = build_fallback("Gemini API key is not configured")
+            return Response({"recommendation": fallback, "source": "fallback"}, status=status.HTTP_200_OK)
+
+        prompt = (
+            "You are an academic quality assistant. "
+            "Given the module evaluation summary, provide concise recommendations for department heads. "
+            "Output must have exactly 3 sections with short bullet points: '\n"
+            "1) Key Findings\n2) Priority Actions (next 30 days)\n3) Longer-Term Improvements'.\n\n"
+            f"Module: {module_name}\n"
+            f"Average Rating: {avg_text}\n"
+            f"Total Responses: {count_text}\n"
+            f"Rating Breakdown: Very Good={rb['very_good']}, Good={rb['good']}, Fair={rb['fair']}, Poor={rb['poor']}\n"
+            f"Comment Sentiment Summary (from sentiment_service): Positive={sentiment_counts['positive']}, Neutral={sentiment_counts['neutral']}, Negative={sentiment_counts['negative']}, Unknown={sentiment_counts['unknown']}\n"
+            f"Comment-level Sentiments: {sentiment_by_comment if sentiment_by_comment else 'None provided'}\n"
+            "Use both rating aggregates and sentiment summary when producing recommendations."
+        )
+
+        model_candidates = []
+        payload = {
+            "contents": [
+                {
+                    "parts": [{"text": prompt}]
+                }
+            ]
+        }
+
+        try:
+            # Discover models available to this API key for generateContent.
+            models_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            models_resp = requests.get(models_url, timeout=20)
+            if models_resp.ok:
+                models_data = models_resp.json()
+                for model in (models_data.get("models") or []):
+                    if not isinstance(model, dict):
+                        continue
+                    name = str(model.get("name") or "")
+                    methods = model.get("supportedGenerationMethods") or []
+                    if "generateContent" not in methods:
+                        continue
+                    if not name:
+                        continue
+                    # API expects model id without "models/" prefix.
+                    model_id = name.split("/", 1)[1] if name.startswith("models/") else name
+                    if model_id and model_id not in model_candidates:
+                        model_candidates.append(model_id)
+
+            # Safety fallback if list call fails or returns no compatible models.
+            if not model_candidates:
+                model_candidates = [
+                    "gemini-2.0-flash",
+                    "gemini-2.0-flash-lite",
+                    "gemini-1.5-flash",
+                ]
+
+            last_status = None
+            last_reason = "Gemini request failed"
+
+            for model_id in model_candidates:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={api_key}"
+                resp = requests.post(url, json=payload, timeout=20)
+
+                if not resp.ok:
+                    last_status = resp.status_code
+                    body_snippet = (resp.text or "").strip().replace("\n", " ")[:240]
+                    last_reason = f"Model {model_id} failed with status {resp.status_code}" + (f": {body_snippet}" if body_snippet else "")
+                    continue
+
+                data = resp.json()
+                text = ""
+                candidates = data.get("candidates") or []
+                if candidates:
+                    parts = (((candidates[0] or {}).get("content") or {}).get("parts") or [])
+                    text = "\n".join(str(p.get("text", "")).strip() for p in parts if isinstance(p, dict)).strip()
+
+                if text:
+                    return Response(
+                        {
+                            "recommendation": text,
+                            "source": "gemini",
+                            "model": model_id,
+                            "sentiment_summary": sentiment_counts,
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+
+                last_reason = f"Model {model_id} returned empty content"
+
+            fallback = build_fallback(last_reason)
+            return Response(
+                {
+                    "recommendation": fallback,
+                    "source": "fallback",
+                    "sentiment_summary": sentiment_counts,
+                    "detail": "Gemini request failed",
+                    "status": last_status,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except requests.RequestException:
+            fallback = build_fallback("Unable to reach Gemini service")
+            return Response(
+                {
+                    "recommendation": fallback,
+                    "source": "fallback",
+                    "sentiment_summary": sentiment_counts,
+                    "detail": "Unable to reach Gemini service",
+                },
+                status=status.HTTP_200_OK,
+            )
     
 class SendOTPView(APIView):
     throttle_classes = [LoginRateThrottle]

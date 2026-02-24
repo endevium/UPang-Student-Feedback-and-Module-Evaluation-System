@@ -11,6 +11,7 @@ urlpatterns = [
 
     path("faculty/", views.FacultyListCreateView.as_view(), name="faculty-list-create"),
     path("faculty/<int:pk>/", views.FacultyDetailView.as_view(), name="faculty-detail"),
+    path("faculty/modules/", views.FacultyModulesView.as_view(), name="faculty-modules"),
     path("faculty/login/", views.FacultyLoginView.as_view(), name="faculty-login"),
     path("faculty/change-password/", views.FacultyChangePasswordView.as_view(), name="faculty-change-password"),
 
@@ -29,7 +30,9 @@ urlpatterns = [
     path("faculty/bulk-import/", views.FacultyBulkImportView.as_view(), name="faculty-bulk-import"),
 
     path("feedback/submit/", views.FeedbackResponseCreateView.as_view(), name="student-submit-feedback"),
+    path("feedback/theme-check/", views.FeedbackThemeCheckView.as_view(), name="feedback-theme-check"),
     path("feedback/submissions/", views.FeedbackResponseListView.as_view(), name="student-feedback-detail"),
+    path("ai/module-recommendation/", views.ModuleRecommendationView.as_view(), name="module-recommendation"),
 
     path("audit-logs/", views.AuditLogListView.as_view(), name="audit-log-list"),
 

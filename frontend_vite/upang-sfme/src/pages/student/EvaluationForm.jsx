@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { ArrowLeft, ArrowRight, CheckCircle, Star, Send } from 'lucide-react';
 
+const TEXT_QUESTION_IDS = ['strengths', 'improvements', 'additional'];
+
 const EvaluationForm = ({ moduleId, instructorFormId }) => {
   const [currentSection, setCurrentSection] = useState(0);
   const [responses, setResponses] = useState({});
@@ -14,6 +16,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [inputError, setInputError] = useState('');
+  const [themeCheck, setThemeCheck] = useState({ checking: false, blocked: false, message: '' });
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   const formType = instructorFormId ? 'Instructor' : 'Module';
@@ -48,7 +51,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
         } else {
           setError('Module not found');
         }
-      } catch (err) {
+      } catch {
         setError('Failed to load module data');
       } finally {
         setLoading(false);
@@ -241,16 +244,11 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
 
   const sections = formType === 'Module' ? moduleSections : instructorSections;
 
-  const totalQuestions = sections.reduce((acc, s) => acc + s.questions.length, 0);
-  const answeredCount = Object.keys(responses).length;
-  const progressPercentage = (answeredCount / totalQuestions) * 100;
-
   const handleResponse = (id, val) => setResponses(prev => ({ ...prev, [id]: val }));
   
   const isSectionComplete = (idx) => sections[idx].questions.every(q => responses[q.id]);
 
   const handleNext = () => currentSection < sections.length - 1 && setCurrentSection(prev => prev + 1);
-  const handlePrevious = () => currentSection > 0 && setCurrentSection(prev => prev - 1);
   
   const hasAngleBrackets = (s) => /[<>]/.test(s);
 
@@ -275,6 +273,51 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
     setResponses((prev) => ({ ...prev, [id]: value }));
   };
 
+  useEffect(() => {
+    const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
+    const comments = TEXT_QUESTION_IDS
+      .map((id) => ({ question: id, text: (responses[id] || '').trim() }))
+      .filter((item) => item.text);
+
+    if (comments.length === 0) {
+      setThemeCheck({ checking: false, blocked: false, message: '' });
+      return;
+    }
+
+    let cancelled = false;
+    setThemeCheck((prev) => ({ ...prev, checking: true, message: '' }));
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/feedback/theme-check/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ comments }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+
+        const violations = Array.isArray(data?.violations) ? data.violations : [];
+        const blocked = Boolean(data?.blocked) || violations.length > 0;
+        const message = blocked
+          ? 'Submit is disabled because one or more comments were detected as harsh language, insult, or sexual content.'
+          : '';
+        setThemeCheck({ checking: false, blocked, message });
+      } catch {
+        if (cancelled) return;
+        setThemeCheck({ checking: false, blocked: false, message: '' });
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [API_BASE_URL, responses]);
+
   const handleSubmit = async () => {
     // ensure all questions are answered (text fields must be non-empty)
     const allQuestions = sections.flatMap(s => s.questions);
@@ -292,6 +335,16 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
 
     if (inputError) {
       setSubmitError(inputError);
+      return;
+    }
+
+    if (themeCheck.checking) {
+      setSubmitError('Please wait while comment content is being checked.');
+      return;
+    }
+
+    if (themeCheck.blocked) {
+      setSubmitError(themeCheck.message || 'Submission blocked due to restricted comment content.');
       return;
     }
     
@@ -332,7 +385,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
         return;
       }
       setSubmitted(true);
-    } catch (err) {
+    } catch {
       setSubmitError('Network error: failed to submit feedback');
     } finally {
       setSubmitting(false);
@@ -544,13 +597,15 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
             </div>
 
             {/* Bottom Navigation */}
+            {themeCheck.message && <div className="text-sm text-red-500 mb-2">{themeCheck.message}</div>}
+            {themeCheck.checking && <div className="text-sm text-slate-500 mb-2">Checking comment content...</div>}
             {inputError && <div className="text-sm text-red-500 mb-2">{inputError}</div>}
             {submitError && <div className="text-sm text-red-500 mb-2">{submitError}</div>}
              <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 {currentSection === sections.length - 1 ? (
                     <button 
                         onClick={handleSubmit}
-                        disabled={submitting}
+                  disabled={submitting || themeCheck.blocked || themeCheck.checking}
                         className="flex items-center gap-2 px-8 py-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 disabled:opacity-50 shadow-lg shadow-emerald-100"
                     >
                         {submitting ? 'Submitting...' : 'Submit'} <Send size={18} />
