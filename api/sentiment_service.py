@@ -1,10 +1,16 @@
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import re
-from functools import lru_cache
 import logging
+import os
 import time
 import threading
+
+try:
+    from dotenv import load_dotenv, find_dotenv
+    load_dotenv(find_dotenv(), override=False)
+except Exception:
+    pass
 
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
@@ -13,6 +19,8 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipe
 from .security.implementation import sanitize_prompt, redact_sensitive, detect_poisoned_feedback, bias_check
 
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
 
 # Model directory (repo_root/sentiment_model_final)
 MODEL_DIR = Path(__file__).resolve().parent.parent / "sentiment_model_final"
@@ -20,7 +28,13 @@ MODEL_DIR = Path(__file__).resolve().parent.parent / "sentiment_model_final"
 _tokenizer: Optional[AutoTokenizer] = None
 _model: Optional[AutoModelForSequenceClassification] = None
 _theme_classifier = None
+_theme_classifier_lock = threading.Lock()
+_theme_classifier_init_attempted = False
+_THEME_UNAVAILABLE = object()
 _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+_HF_CACHE_DIR = os.getenv("HF_MODEL_CACHE_DIR")
+_HF_LOCAL_FILES_ONLY = os.getenv("HF_LOCAL_FILES_ONLY", "0") == "1"
 
 # Simple in-process rate limiter (per-caller key). Not a replacement for production throttles.
 _rate_locks: Dict[str, Dict[str, Any]] = {}
@@ -64,19 +78,44 @@ def _consume_rate_token(caller: Optional[str], limit: Dict[str, int] = None) -> 
 
 def _load_theme_classifier_once():
     """Load zero-shot classifier once and reuse it. Prefer GPU when available and warm up."""
-    global _theme_classifier
+    global _theme_classifier, _theme_classifier_init_attempted
+
+    if _theme_classifier is _THEME_UNAVAILABLE:
+        return
     if _theme_classifier is not None:
         return
+    if _theme_classifier_init_attempted:
+        return
 
-    # pipeline accepts device: 0 for first CUDA device, -1 for CPU
-    device_arg = 0 if _device.type == "cuda" else -1
-    _theme_classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", device=device_arg)
+    with _theme_classifier_lock:
+        if _theme_classifier is _THEME_UNAVAILABLE:
+            return
+        if _theme_classifier is not None:
+            return
+        if _theme_classifier_init_attempted:
+            return
 
-    # Warm-up to avoid first-call latency spike
-    try:
-        _theme_classifier("warmup", candidate_labels=THEME_LABELS)
-    except Exception:
-        pass
+        _theme_classifier_init_attempted = True
+
+        try:
+            # pipeline accepts device: 0 for first CUDA device, -1 for CPU
+            device_arg = 0 if _device.type == "cuda" else -1
+            _theme_classifier = pipeline(
+                "zero-shot-classification",
+                model="facebook/bart-large-mnli",
+                device=device_arg,
+                cache_dir=_HF_CACHE_DIR,
+                local_files_only=_HF_LOCAL_FILES_ONLY,
+            )
+
+            # Warm-up to avoid first-call latency spike
+            try:
+                _theme_classifier("warmup", candidate_labels=THEME_LABELS)
+            except Exception:
+                pass
+        except Exception:
+            logger.exception("Failed to load theme classifier; rule-based fallback will be used")
+            _theme_classifier = _THEME_UNAVAILABLE
 
 
 def analyze_theme(text: str, meta = None) -> str:
@@ -115,6 +154,8 @@ def analyze_theme(text: str, meta = None) -> str:
             return "insult"
 
     try:
+        if _theme_classifier in (None, _THEME_UNAVAILABLE):
+            raise RuntimeError("theme_classifier_unavailable")
         result = _theme_classifier(text, candidate_labels=THEME_LABELS)
         label = result['labels'][0]
         # If detected blocked theme return normalized label
@@ -161,6 +202,8 @@ def analyze_theme_batch(texts: List[str], meta: Optional[Dict[str, Any]] = None)
     _load_theme_classifier_once()
 
     try:
+        if _theme_classifier in (None, _THEME_UNAVAILABLE):
+            raise RuntimeError("theme_classifier_unavailable")
         results = _theme_classifier(list(cleaned_texts), candidate_labels=THEME_LABELS)
         labels = [r['labels'][0] for r in results]
         return [redact_sensitive(l) for l in labels]

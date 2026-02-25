@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Tuple
 from api.sentiment_service import analyze_theme
 
@@ -24,8 +25,20 @@ def require_env_keys():
 def moderate_feedback(text: str) -> Tuple[bool, str]:
     if not isinstance(text, str) or not text.strip():
         return False, "empty"
+
+    # Deterministic fast-path checks so explicit harmful content is blocked
+    # even if upstream prompt-injection filters are noisy.
+    lowered = text.lower()
+    if re.search(r"\b(idiot|stupid|dumb|trash|worthless|moron|bitch|asshole)\b", lowered):
+        return False, "insult"
+    if re.search(r"\b(daddy|mommy|porn|sex|sexy|nude|nsfw|fuck|cum|orgasm|xxx)\b", lowered):
+        return False, "sexual content"
+
     theme = analyze_theme(text)
-    if theme in ("insult", "sexual", "threat", "harassment"):
+    if isinstance(theme, str) and "prompt injection detected" in theme.lower():
+        return False, "prompt_injection"
+    if theme in ("insult", "sexual", "sexual content", "threat", 
+        "harassment", "toxic", "prompt_injection"):
         return False, theme
     return True, "ok"
 

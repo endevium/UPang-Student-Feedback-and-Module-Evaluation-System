@@ -1,11 +1,125 @@
 import re
+import os
+import threading
+import logging
 from collections import Counter
 from typing import List, Dict, Tuple, Any
 
+try:
+    from dotenv import load_dotenv, find_dotenv
+    load_dotenv(find_dotenv(), override=False)
+except Exception:
+    pass
+
+logger = logging.getLogger(__name__)
+
+_prompt_injection_classifier = None
+_prompt_injection_lock = threading.Lock()
+_prompt_injection_init_attempted = False
+_PROMPT_INJECTION_UNAVAILABLE = object()
+_PROMPT_INJECTION_MODEL = "ProtectAI/deberta-v3-base-prompt-injection"
+_PROMPT_INJECTION_THRESHOLD = float(os.getenv("PROMPT_INJECTION_SCORE_THRESHOLD", "0.50"))
+_PROMPT_INJECTION_CACHE_DIR = os.getenv("HF_MODEL_CACHE_DIR")
+_PROMPT_INJECTION_LOCAL_FILES_ONLY = os.getenv("PROMPT_INJECTION_LOCAL_FILES_ONLY", "0") == "1"
+
+
+def _load_prompt_injection_classifier_once():
+    """Lazily load ProtectAI classifier once. Returns None if unavailable."""
+    global _prompt_injection_classifier, _prompt_injection_init_attempted
+
+    if _prompt_injection_classifier is _PROMPT_INJECTION_UNAVAILABLE:
+        return None
+    if _prompt_injection_classifier is not None:
+        return _prompt_injection_classifier
+    if _prompt_injection_init_attempted:
+        return None
+
+    with _prompt_injection_lock:
+        if _prompt_injection_classifier is _PROMPT_INJECTION_UNAVAILABLE:
+            return None
+        if _prompt_injection_classifier is not None:
+            return _prompt_injection_classifier
+        if _prompt_injection_init_attempted:
+            return None
+
+        _prompt_injection_init_attempted = True
+
+        try:
+            import torch
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
+
+            tokenizer = AutoTokenizer.from_pretrained(
+                _PROMPT_INJECTION_MODEL,
+                cache_dir=_PROMPT_INJECTION_CACHE_DIR,
+                local_files_only=_PROMPT_INJECTION_LOCAL_FILES_ONLY,
+            )
+            model = AutoModelForSequenceClassification.from_pretrained(
+                _PROMPT_INJECTION_MODEL,
+                cache_dir=_PROMPT_INJECTION_CACHE_DIR,
+                local_files_only=_PROMPT_INJECTION_LOCAL_FILES_ONLY,
+            )
+            _prompt_injection_classifier = pipeline(
+                "text-classification",
+                model=model,
+                tokenizer=tokenizer,
+                truncation=True,
+                max_length=512,
+                device=0 if torch.cuda.is_available() else -1,
+            )
+            logger.debug("Prompt-injection classifier loaded once: %s", _PROMPT_INJECTION_MODEL)
+            return _prompt_injection_classifier
+        except Exception:
+            logger.exception("Failed to load prompt-injection classifier; continuing with heuristic detection")
+            _prompt_injection_classifier = _PROMPT_INJECTION_UNAVAILABLE
+            return None
+
+
+def _is_injection_label(label: str) -> bool:
+    """Map model labels to injection/non-injection decision."""
+    normalized = str(label).strip().lower()
+    if normalized in {"1", "label_1", "injection", "prompt_injection", "malicious", "jailbreak"}:
+        return True
+    if normalized in {"0", "label_0", "safe", "benign", "not_injection"}:
+        return False
+    return "inject" in normalized or "jailbreak" in normalized
+
+
+def _detect_prompt_injection_with_model(text: str) -> Tuple[bool, Dict[str, Any]]:
+    """Run model inference; returns (flagged, info)."""
+    classifier = _load_prompt_injection_classifier_once()
+    if not classifier:
+        return False, {"available": False, "reason": "model_unavailable"}
+
+    try:
+        prediction = classifier(text)[0]
+        label = str(prediction.get("label", ""))
+        score = float(prediction.get("score", 0.0))
+        flagged = _is_injection_label(label) and score >= _PROMPT_INJECTION_THRESHOLD
+        return flagged, {
+            "available": True,
+            "reason": "model_detection" if flagged else "model_safe",
+            "label": label,
+            "score": score,
+            "threshold": _PROMPT_INJECTION_THRESHOLD,
+        }
+    except Exception:
+        logger.exception("Prompt-injection model inference failed; continuing with heuristic detection")
+        return False, {"available": True, "reason": "model_error"}
+
 def sanitize_prompt(text: str) -> Dict[str, Any]:
-    """Detect and sanitize simple prompt-injection patterns."""
+    """Detect and sanitize prompt-injection using regex heuristics + ProtectAI classifier."""
     if not isinstance(text, str):
         raise TypeError("text must be a string")
+
+    # Model-based detector first to capture non-obvious attacks.
+    model_flagged, model_info = _detect_prompt_injection_with_model(text)
+    if model_flagged:
+        return {
+            "safe": False,
+            "reason": "prompt_injection_model",
+            "cleaned": "[REDACTED_INJECTION]",
+            "meta": model_info,
+        }
 
     lowered = text.lower()
     suspicious_patterns = [
@@ -21,13 +135,23 @@ def sanitize_prompt(text: str) -> Dict[str, Any]:
     for p in suspicious_patterns:
         if re.search(p, lowered):
             cleaned = re.sub(p, "[REDACTED_INJECTION]", text, flags=re.IGNORECASE)
-            return {"safe": False, "reason": "prompt_injection_pattern", "cleaned": cleaned}
+            return {
+                "safe": False,
+                "reason": "prompt_injection_pattern",
+                "cleaned": cleaned,
+                "meta": model_info,
+            }
 
     if re.search(r"(from now on|from now onwards).{0,40}\b(do|always|must|never)\b", lowered):
         cleaned = re.sub(r"(from now on|from now onwards).{0,40}\b(do|always|must|never)\b", "[REDACTED_INJECTION]", text, flags=re.IGNORECASE)
-        return {"safe": False, "reason": "prompt_injection_imperative", "cleaned": cleaned}
+        return {
+            "safe": False,
+            "reason": "prompt_injection_imperative",
+            "cleaned": cleaned,
+            "meta": model_info,
+        }
 
-    return {"safe": True, "reason": None, "cleaned": text}
+    return {"safe": True, "reason": None, "cleaned": text, "meta": model_info}
 
 
 def detect_poisoned_feedback(feedbacks: List[Dict[str, str]], identical_threshold: float = 0.6, user_rate_threshold: float = 0.6) -> Tuple[bool, Dict[str, Any]]:

@@ -5,6 +5,7 @@ import logging
 import io
 import contextlib
 import uuid
+import uuid
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
@@ -26,10 +27,14 @@ def assert_print(cond: bool, msg: str):
 
 def test_logic_flaws_and_formal():
     print("\n=== Logic flaws / formal verification tests (3 cases) ===")
+    run_id = uuid.uuid4().hex
+
     # Case 1 – normal store + retrieval + mapping flag
     payload = str(uuid.uuid4())                  # unique per run
     h = gas_tests.sha256_bytes32(payload)
     try:
+        payload = f"normal feedback::{run_id}::case1"
+        h = gas_tests.sha256_bytes32(payload)
         receipt = gas_tests.send_signed_function_tx(
             gas_tests.OWNER_ADDRESS,
             gas_tests.OWNER_PRIVATE_KEY,
@@ -71,7 +76,8 @@ def test_logic_flaws_and_formal():
     dup_payload = str(uuid.uuid4())
     dup_hash = gas_tests.sha256_bytes32(dup_payload)
     try:
-        # first attempt – may already exist
+        dup_payload = f"duplicate::{run_id}::case3"
+        dup_hash = gas_tests.sha256_bytes32(dup_payload)
         gas_tests.send_signed_function_tx(
             gas_tests.OWNER_ADDRESS,
             gas_tests.OWNER_PRIVATE_KEY,
