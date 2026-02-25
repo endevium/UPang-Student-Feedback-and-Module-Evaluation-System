@@ -73,9 +73,22 @@ def send_signed_function_tx(signer_address: str, signer_private_key: str, fn, ar
     tx = fn(*args).build_transaction({
         "from": Web3.to_checksum_address(signer_address),
         "nonce": nonce,
-        "gas": gas,
+        # "gas": gas,  # removed: we'll estimate if not provided
         "gasPrice": w3.eth.gas_price,
     })
+
+    # Estimate gas if not provided
+    try:
+        if gas is None:
+            estimated = w3.eth.estimate_gas(tx)
+            # add small headroom (5-10%) to avoid OOG
+            tx["gas"] = int(estimated * 1.05)
+        else:
+            tx["gas"] = gas
+    except Exception:
+        # fallback to a safe upper bound if estimate fails
+        tx["gas"] = gas or 300_000
+
     signed = w3.eth.account.sign_transaction(tx, private_key=signer_private_key)
     raw_tx = getattr(signed, "raw_transaction", None) or getattr(signed, "rawTransaction", None)
 
@@ -129,9 +142,21 @@ def main():
 
     # Test 2: owner -> getCount via signed transaction (view function sent as tx to measure gas)
     print("\nTest 2: owner getCount sent as transaction (measures gas)")
-    send_signed_function_tx(OWNER_ADDRESS, OWNER_PRIVATE_KEY, contract.functions.getCount, args=(), gas=120_000, label="Test2-owner-getCount-tx")
-    count = contract.functions.getCount().call()
-    print("getCount:", count)
+    try:
+        count = contract.functions.getCount().call({"from": Web3.to_checksum_address(OWNER_ADDRESS)})
+        print("getCount (call):", count)
+    except Exception as e:
+        print("getCount call failed:", e)
+    # If you still need gas estimate for curiosity:
+    try:
+        tx_for_est = contract.functions.getCount().build_transaction({
+            "from": Web3.to_checksum_address(OWNER_ADDRESS),
+            "nonce": w3.eth.get_transaction_count(Web3.to_checksum_address(OWNER_ADDRESS)),
+        })
+        est = w3.eth.estimate_gas(tx_for_est)
+        print("Estimated gas for getCount tx (simulation):", est)
+    except Exception:
+        pass
 
     # Test 3: non-owner attempt to storeFeedbackHash (should revert and consume gas)
     print("\nTest 3: non-owner attempt storeFeedbackHash (expect revert / gas used)")

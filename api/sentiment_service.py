@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Optional
 import re
+from functools import lru_cache
 
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
@@ -15,8 +16,90 @@ _theme_classifier = None
 _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 BLOCKED_THEME_LABELS = {"harsh language", "insult", "sexual content"}
+THEME_LABELS = [
+    "teaching clarity",
+    "course workload",
+    "module materials",
+    "instructor engagement",
+    "harsh language",
+    "insult",
+    "sexual content",
+    "general feedback",
+    "constructive feedback",
+    "praise"
+]
+
+def _load_theme_classifier_once():
+    """Load zero-shot classifier once and reuse it. Prefer GPU when available and warm up."""
+    global _theme_classifier
+    if _theme_classifier is not None:
+        return
+
+    # pipeline accepts device: 0 for first CUDA device, -1 for CPU
+    device_arg = 0 if _device.type == "cuda" else -1
+    _theme_classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli", device=device_arg)
+
+    # Warm-up to avoid first-call latency spike
+    try:
+        # small warm-up call; candidate labels passed explicitly
+        _theme_classifier("warmup", candidate_labels=THEME_LABELS)
+    except Exception:
+        # Best-effort warm-up - ignore failures
+        pass
 
 
+@lru_cache(maxsize=2048)
+def analyze_theme(text: str) -> str:
+    """Classify text into a theme label using zero-shot classification with caching."""
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    _load_theme_classifier_once()
+
+    # Fast rule-based short-circuit for obviously insulting/sexual inputs (cheap)
+    low_cost_insult_re = re.compile(r"\b(idiot|stupid|dumb|fuck|shit|daddy|mommy)\b", flags=re.IGNORECASE)
+    if low_cost_insult_re.search(text):
+        # keep the same labels used elsewhere for consistency
+        if re.search(r"\b(daddy|mommy|porn|sex|sexy|nude|nsfw|fuck|cum|orgasm|xxx)\b", text, flags=re.IGNORECASE):
+            return "sexual content"
+        if re.search(r"\b(idiot|stupid|dumb|trash|worthless)\b", text, flags=re.IGNORECASE):
+            return "insult"
+
+    # Use pipeline — explicit candidate_labels keyword is slightly faster in some HF versions
+    result = _theme_classifier(text, candidate_labels=THEME_LABELS)
+    # pipeline returns ordered labels by score
+    return result['labels'][0]
+
+
+def analyze_theme_batch(texts: list) -> list:
+    """Batched theme classification using the same zero-shot pipeline (more efficient than repeated single calls)."""
+    if not isinstance(texts, (list, tuple)):
+        raise TypeError("texts must be a list or tuple of strings")
+
+    _load_theme_classifier_once()
+
+    # The HF zero-shot pipeline supports a list of sequences and returns a list of dicts
+    try:
+        results = _theme_classifier(list(texts), candidate_labels=THEME_LABELS)
+        labels = [r['labels'][0] for r in results]
+        return labels
+    except Exception:
+        # Fallback to cheap rule-based mapping if pipeline fails
+        def _rule(t):
+            t = t.lower()
+            if any(w in t for w in ["idiot", "stupid", "dumb", "trash", "worthless"]):
+                return "insult"
+            if any(w in t for w in ["great", "excellent", "thank", "helpful", "awesome", "amazing"]):
+                return "praise"
+            if "instructor" in t or "teacher" in t or "professor" in t:
+                if any(k in t for k in ["engag", "clear", "explained", "helpful"]):
+                    return "instructor engagement"
+                return "general feedback"
+            if any(word in t for word in ["teaching", "class", "module", "workload", "confusing", "waste of time", "okay"]):
+                return "general feedback"
+            return "general feedback"
+        return [_rule(t) for t in texts]
+    
 def _load_model_once():
     global _tokenizer, _model
     if _model is not None and _tokenizer is not None:
