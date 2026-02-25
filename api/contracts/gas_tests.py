@@ -150,7 +150,6 @@ def main():
         print("getCount (call):", count)
     except Exception as e:
         print("getCount call failed:", e)
-    # If you still need gas estimate for curiosity:
     try:
         tx_for_est = contract.functions.getCount().build_transaction({
             "from": Web3.to_checksum_address(OWNER_ADDRESS),
