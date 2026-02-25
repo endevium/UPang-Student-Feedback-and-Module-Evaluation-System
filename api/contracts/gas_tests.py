@@ -73,7 +73,6 @@ def send_signed_function_tx(signer_address: str, signer_private_key: str, fn, ar
     tx = fn(*args).build_transaction({
         "from": Web3.to_checksum_address(signer_address),
         "nonce": nonce,
-        # "gas": gas,  # removed: we'll estimate if not provided
         "gasPrice": w3.eth.gas_price,
     })
 
@@ -127,6 +126,10 @@ def send_unlocked_tx(from_addr: str, tx_dict, label="unlocked"):
     receipt = w3.eth.wait_for_transaction_receipt(txh)
     print_receipt(label, receipt)
     return receipt
+
+def is_hash_stored(hash_bytes: bytes) -> bool:
+    """call the new view function added to the contract."""
+    return contract.functions.isHashStored(hash_bytes).call()
 
 def main():
     print("Connected:", w3.is_connected())

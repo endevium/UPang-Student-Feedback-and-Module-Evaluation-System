@@ -13,6 +13,9 @@ contract Feedback {
 
     FeedbackRecord[] public records;
 
+    // new mapping to prevent duplicates
+    mapping(bytes32 => bool) private storedHashes;
+
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
         _;
@@ -23,7 +26,10 @@ contract Feedback {
     }
 
     function storeFeedbackHash(bytes32 _hash) external onlyOwner {
-        // pack fields intentionally to reduce storage slots
+        require(_hash != bytes32(0), "Invalid hash");         // validation
+        require(!storedHashes[_hash], "Duplicate hash");      // logic flaw mitigation
+
+        storedHashes[_hash] = true;
         records.push(FeedbackRecord(_hash, msg.sender, uint32(block.timestamp)));
     }
 
@@ -34,5 +40,10 @@ contract Feedback {
     function getRecord(uint256 index) external view returns (bytes32, uint32, address) {
         FeedbackRecord storage r = records[index];
         return (r.feedbackHash, r.timestamp, r.submittedBy);
+    }
+
+    // helper added for off‑chain verification
+    function isHashStored(bytes32 _hash) external view returns (bool) {
+        return storedHashes[_hash];
     }
 }

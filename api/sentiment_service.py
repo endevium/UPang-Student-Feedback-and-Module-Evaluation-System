@@ -1,11 +1,18 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import re
 from functools import lru_cache
+import logging
+import time
+import threading
 
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
+# Security helpers
+from .security.implementation import sanitize_prompt, redact_sensitive, detect_poisoned_feedback, bias_check
+
+logger = logging.getLogger(__name__)
 
 # Model directory (repo_root/sentiment_model_final)
 MODEL_DIR = Path(__file__).resolve().parent.parent / "sentiment_model_final"
@@ -14,6 +21,11 @@ _tokenizer: Optional[AutoTokenizer] = None
 _model: Optional[AutoModelForSequenceClassification] = None
 _theme_classifier = None
 _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Simple in-process rate limiter (per-caller key). Not a replacement for production throttles.
+_rate_locks: Dict[str, Dict[str, Any]] = {}
+_RATE_LOCK = threading.Lock()
+DEFAULT_RATE_LIMIT = {"tokens": 30, "period": 60}  # 30 calls per 60s per caller
 
 BLOCKED_THEME_LABELS = {"harsh language", "insult", "sexual content"}
 THEME_LABELS = [
@@ -29,6 +41,27 @@ THEME_LABELS = [
     "praise"
 ]
 
+
+def _consume_rate_token(caller: Optional[str], limit: Dict[str, int] = None) -> bool:
+    """Return True if allowed, False if rate-limited."""
+    if limit is None:
+        limit = DEFAULT_RATE_LIMIT
+    key = caller or "anonymous"
+    now = int(time.time())
+    with _RATE_LOCK:
+        state = _rate_locks.get(key)
+        if not state:
+            state = {"reset": now + limit["period"], "tokens": limit["tokens"]}
+            _rate_locks[key] = state
+        if now >= state["reset"]:
+            state["reset"] = now + limit["period"]
+            state["tokens"] = limit["tokens"]
+        if state["tokens"] <= 0:
+            return False
+        state["tokens"] -= 1
+        return True
+
+
 def _load_theme_classifier_once():
     """Load zero-shot classifier once and reuse it. Prefer GPU when available and warm up."""
     global _theme_classifier
@@ -41,50 +74,98 @@ def _load_theme_classifier_once():
 
     # Warm-up to avoid first-call latency spike
     try:
-        # small warm-up call; candidate labels passed explicitly
         _theme_classifier("warmup", candidate_labels=THEME_LABELS)
     except Exception:
-        # Best-effort warm-up - ignore failures
         pass
 
 
-@lru_cache(maxsize=2048)
-def analyze_theme(text: str) -> str:
-    """Classify text into a theme label using zero-shot classification with caching."""
+def analyze_theme(text: str, meta = None) -> str:
+    """Classify text into a theme label using zero-shot classification with caching.
+
+    meta: optional dict for security context (e.g. {'caller': 'ip-or-client-id'}).
+    """
     if not isinstance(text, str):
         raise TypeError("text must be a string")
 
+    # Sanitize prompt / detect prompt-injection attempts
+    try:
+        s = sanitize_prompt(text)
+        if not s.get("safe", True):
+            logger.warning("Prompt injection detected, returning rejection for text snippet: %s", redact_sensitive(text[:200]))
+            return "Sorry, prompt injection detected"
+        text = s.get("cleaned", text)
+    except Exception:
+        # Best-effort: if sanitizer fails, continue but log
+        logger.exception("Prompt sanitizer failure")
+
+    # Rate limiting per caller if provided
+    caller = (meta or {}).get("caller") if isinstance(meta, dict) else None
+    if not _consume_rate_token(caller):
+        logger.warning("Rate limit exceeded for caller=%s", caller or "anonymous")
+        return "Service temporarily overloaded - try again later"
+
     _load_theme_classifier_once()
 
-    # Fast rule-based short-circuit for obviously insulting/sexual inputs (cheap)
+    # Fast rule-based short-circuit for insulting/sexual inputs (cheap)
     low_cost_insult_re = re.compile(r"\b(idiot|stupid|dumb|fuck|shit|daddy|mommy)\b", flags=re.IGNORECASE)
     if low_cost_insult_re.search(text):
-        # keep the same labels used elsewhere for consistency
         if re.search(r"\b(daddy|mommy|porn|sex|sexy|nude|nsfw|fuck|cum|orgasm|xxx)\b", text, flags=re.IGNORECASE):
             return "sexual content"
         if re.search(r"\b(idiot|stupid|dumb|trash|worthless)\b", text, flags=re.IGNORECASE):
             return "insult"
 
-    # Use pipeline — explicit candidate_labels keyword is slightly faster in some HF versions
-    result = _theme_classifier(text, candidate_labels=THEME_LABELS)
-    # pipeline returns ordered labels by score
-    return result['labels'][0]
+    try:
+        result = _theme_classifier(text, candidate_labels=THEME_LABELS)
+        label = result['labels'][0]
+        # If detected blocked theme return normalized label
+        if label in BLOCKED_THEME_LABELS:
+            return label
+        # avoid leaking sensitive tokens in labels
+        return redact_sensitive(str(label))
+    except Exception:
+        # Fallback heuristic mapping
+        t = text.lower()
+        if any(w in t for w in ["idiot", "stupid", "dumb", "trash", "worthless"]):
+            return "insult"
+        if any(w in t for w in ["great", "excellent", "thank", "helpful", "awesome", "amazing"]):
+            return "praise"
+        if "instructor" in t or "teacher" in t or "professor" in t:
+            if any(k in t for k in ["engag", "clear", "explained", "helpful"]):
+                return "instructor engagement"
+            return "general feedback"
+        return "general feedback"
 
 
-def analyze_theme_batch(texts: list) -> list:
+def analyze_theme_batch(texts: List[str], meta: Optional[Dict[str, Any]] = None) -> List[str]:
     """Batched theme classification using the same zero-shot pipeline (more efficient than repeated single calls)."""
     if not isinstance(texts, (list, tuple)):
         raise TypeError("texts must be a list or tuple of strings")
 
+    # Prompt-sanitize and redact inputs in batch
+    cleaned_texts = []
+    for t in texts:
+        try:
+            s = sanitize_prompt(t)
+            if not s.get("safe", True):
+                cleaned_texts.append("[REDACTED_INJECTION]")
+            else:
+                cleaned_texts.append(s.get("cleaned", t))
+        except Exception:
+            cleaned_texts.append(t)
+
+    caller = (meta or {}).get("caller") if isinstance(meta, dict) else None
+    if not _consume_rate_token(caller):
+        logger.warning("Rate limit exceeded for batch caller=%s", caller or "anonymous")
+        raise RuntimeError("Service temporarily overloaded - try again later")
+
     _load_theme_classifier_once()
 
-    # The HF zero-shot pipeline supports a list of sequences and returns a list of dicts
     try:
-        results = _theme_classifier(list(texts), candidate_labels=THEME_LABELS)
+        results = _theme_classifier(list(cleaned_texts), candidate_labels=THEME_LABELS)
         labels = [r['labels'][0] for r in results]
-        return labels
+        return [redact_sensitive(l) for l in labels]
     except Exception:
-        # Fallback to cheap rule-based mapping if pipeline fails
+        # fallback mapping
         def _rule(t):
             t = t.lower()
             if any(w in t for w in ["idiot", "stupid", "dumb", "trash", "worthless"]):
@@ -95,11 +176,10 @@ def analyze_theme_batch(texts: list) -> list:
                 if any(k in t for k in ["engag", "clear", "explained", "helpful"]):
                     return "instructor engagement"
                 return "general feedback"
-            if any(word in t for word in ["teaching", "class", "module", "workload", "confusing", "waste of time", "okay"]):
-                return "general feedback"
             return "general feedback"
-        return [_rule(t) for t in texts]
-    
+        return [_rule(t) for t in cleaned_texts]
+
+
 def _load_model_once():
     global _tokenizer, _model
     if _model is not None and _tokenizer is not None:
@@ -112,31 +192,35 @@ def _load_model_once():
     _model.eval()
 
 
-def predict_sentiment(text: str) -> str:
+def predict_sentiment(text: str, meta: Optional[Dict[str, Any]] = None) -> str:
     """Return a simple sentiment label for `text`.
 
-    Loads model/tokenizer once and reuses them on subsequent calls.
-    Returns one of: 'negative', 'neutral', 'positive' when possible, otherwise the raw label.
+    meta: optional dict for security context (e.g. {'caller': 'ip-or-client-id'}).
     """
     if not isinstance(text, str):
         raise TypeError("text must be a string")
 
-    # Basic input filtering to catch non-textual or disallowed inputs early.
-    # 1) Emojis or punctuation-only input -> not understandable
-    # 2) Sexual content -> reject
-    # 3) Harsh / profane words -> reject
+    # Sanitize prompt / injection
+    try:
+        s = sanitize_prompt(text)
+        if not s.get("safe", True):
+            logger.warning("Prompt injection detected in predict_sentiment for snippet: %s", redact_sensitive(text[:200]))
+            return "Sorry, prompt injection detected"
+        text = s.get("cleaned", text)
+    except Exception:
+        logger.exception("Prompt sanitizer failure in predict_sentiment")
 
-    # Unicode emoji ranges (covers most emoji codepoints)
+    caller = (meta or {}).get("caller") if isinstance(meta, dict) else None
+    if not _consume_rate_token(caller):
+        logger.warning("Rate limit exceeded for caller=%s", caller or "anonymous")
+        return "Service temporarily overloaded - try again later"
+
+    # Basic input filtering
     EMOJI_RE = re.compile("[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\u2600-\u26FF\u2700-\u27BF]+", flags=re.UNICODE)
-
-    # Normalize whitespace
     txt = text.strip()
-
-    # If input is empty after trimming
     if not txt:
         return "Sorry, I cannot understand this"
 
-    # If text contains sexual terms, reject with a specific message
     sexual_words = [
         'daddy', 'mommy', 'porn', 'sex', 'sexy', 'nude', 'nsfw', 'fuck', 'cum', 'orgasm', 'xxx'
     ]
@@ -144,7 +228,6 @@ def predict_sentiment(text: str) -> str:
     if SEXUAL_RE.search(txt):
         return "Sorry, sexual words are not permitted"
 
-    # Check profanity/harsh words
     PROFANE_WORDS = [
         'fuck', 'shit', 'bitch', 'asshole', 'idiot', 'stupid', 'moron', 'bastard', 'dumb', 'crap'
     ]
@@ -152,12 +235,9 @@ def predict_sentiment(text: str) -> str:
     if PROFANE_RE.search(txt):
         return "Sorry, harsh words are not permitted"
 
-    # Remove emojis and punctuation to see if there's any readable text left
     without_emojis = EMOJI_RE.sub('', txt)
-    # Remove punctuation (keep word characters and whitespace)
     cleaned = re.sub(r"[^\w\s]", '', without_emojis).strip()
     if not cleaned:
-        # Input was only emojis/punctuation/symbols
         return "Sorry, I cannot understand this"
 
     _load_model_once()
@@ -171,17 +251,14 @@ def predict_sentiment(text: str) -> str:
         logits = outputs.logits
         pred_idx = int(torch.argmax(logits, dim=-1).cpu().item())
 
-    # Try to read a human-readable label from model config
     label_name = None
     try:
         id2label = getattr(_model.config, "id2label", None)
         if id2label is not None:
-            # id2label keys may be ints or strings
             label_name = id2label.get(pred_idx) or id2label.get(str(pred_idx))
     except Exception:
         label_name = None
 
-    # Friendly mapping used in training: 0=negative,1=neutral,2=positive
     if label_name in ("LABEL_0", "0") or pred_idx == 0:
         return "negative"
     if label_name in ("LABEL_1", "1") or pred_idx == 1:
@@ -189,31 +266,4 @@ def predict_sentiment(text: str) -> str:
     if label_name in ("LABEL_2", "2") or pred_idx == 2:
         return "positive"
 
-    # Fallback to whatever label_name is or numeric index
-    return (label_name or str(pred_idx)).lower()
-
-
-def _load_theme_classifier_once():
-    """Load zero-shot classifier once and reuse it."""
-    global _theme_classifier
-    if _theme_classifier is not None:
-        return
-    
-    _theme_classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
-
-
-def analyze_theme(text: str) -> str:
-    """Classify text into a theme category using zero-shot classification.
-    
-    Returns the top theme label based on confidence.
-    """
-    THEME_LABELS = [
-        "harsh language",
-        "insult",
-        "sexual content",
-    ]
-    
-    _load_theme_classifier_once()
-    
-    result = _theme_classifier(text, THEME_LABELS)
-    return result['labels'][0]  # Top-scoring label
+    return redact_sensitive((label_name or str(pred_idx)).lower())
