@@ -1755,7 +1755,6 @@ class ModuleRecommendationView(APIView):
         comments = [str(c).strip() for c in comments if str(c).strip()][:8]
 
         sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0, "unknown": 0}
-        sentiment_by_comment = []
         for comment in comments:
             try:
                 label = str(predict_sentiment(comment)).lower().strip()
@@ -1766,7 +1765,6 @@ class ModuleRecommendationView(APIView):
                 label = "unknown"
 
             sentiment_counts[label] += 1
-            sentiment_by_comment.append({"comment": comment, "sentiment": label})
 
         try:
             avg_text = f"{float(average_rating):.2f}" if average_rating is not None else "N/A"
@@ -1810,12 +1808,13 @@ class ModuleRecommendationView(APIView):
             "Given the module evaluation summary, provide concise recommendations for department heads. "
             "Output must have exactly 3 sections with short bullet points: '\n"
             "1) Key Findings\n2) Priority Actions (next 30 days)\n3) Longer-Term Improvements'.\n\n"
+            "Important privacy rule: Do not request, infer, output, or reference any student-identifying data or raw student comments. "
+            "Use only the aggregate statistics provided below.\n\n"
             f"Module: {module_name}\n"
             f"Average Rating: {avg_text}\n"
             f"Total Responses: {count_text}\n"
             f"Rating Breakdown: Very Good={rb['very_good']}, Good={rb['good']}, Fair={rb['fair']}, Poor={rb['poor']}\n"
             f"Comment Sentiment Summary (from sentiment_service): Positive={sentiment_counts['positive']}, Neutral={sentiment_counts['neutral']}, Negative={sentiment_counts['negative']}, Unknown={sentiment_counts['unknown']}\n"
-            f"Comment-level Sentiments: {sentiment_by_comment if sentiment_by_comment else 'None provided'}\n"
             "Use both rating aggregates and sentiment summary when producing recommendations."
         )
 

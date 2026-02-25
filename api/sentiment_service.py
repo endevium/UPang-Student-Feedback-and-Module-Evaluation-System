@@ -208,16 +208,9 @@ def analyze_theme(text: str) -> str:
     Returns the top theme label based on confidence.
     """
     THEME_LABELS = [
-        "teaching clarity",
-        "course workload",
-        "module materials",
-        "instructor engagement",
         "harsh language",
         "insult",
         "sexual content",
-        "general feedback",
-        "constructive feedback",
-        "praise"
     ]
     
     _load_theme_classifier_once()
