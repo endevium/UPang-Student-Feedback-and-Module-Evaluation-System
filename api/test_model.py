@@ -9,8 +9,8 @@ if str(ROOT) not in sys.path:
 from api.sentiment_service import predict_sentiment, analyze_theme
 
 SAMPLES = [
-    ("I absolutely not recommend this course.", "negative"),
-    ("meow", "Sorry, I cannot understand this"),
+    ("none", "neutral"),
+    ("nothing", "neutral"),
     ("!!!???", "Sorry, I cannot understand this"),
     ("You are an idiot", "Sorry, harsh words are not permitted"),
     ("ahhhh daddy", "Sorry, sexual words are not permitted"),
