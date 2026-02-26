@@ -753,7 +753,7 @@ const LoginModal = ({ isOpen, onClose }) => {
                 disabled={isSubmitting}
                 className="w-full py-4 bg-[#ffcc00] text-[#041c32] font-black rounded-xl cursor-pointer mt-6 shadow-lg hover:bg-[#e6b800] active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? 'LOGGING IN...' : `LOGIN AS ${loginRole.toUpperCase()}`}
+                {isSubmitting ? 'LOGGING IN...' : `LOGIN`}
               </button>
 
               <div className="flex flex-col sm:flex-row justify-between items-center mt-6 gap-4 text-sm">

@@ -12,10 +12,12 @@ from django.conf import settings
 import logging
 import os
 import requests
+import re
 
 from .throttles import AIRequestRateThrottle, LoginRateThrottle
 from .models import Student
 from .sentiment_service import predict_sentiment, analyze_theme, BLOCKED_THEME_LABELS
+from .security.implementation import sanitize_prompt, detect_poisoned_feedback
 import csv
 import io
 from .recaptcha import verify_recaptcha_v2
@@ -54,14 +56,39 @@ from .serializers.PasswordReset import PasswordResetConfirmSerializer
 from .utils import create_and_send_otp, is_password_expired, validate_uploaded_csv, validate_plain_text
 logger = logging.getLogger(__name__)
 
+_SEXUAL_RE = re.compile(
+    r"\b(daddy|mommy|porn|sex|sexy|nude|nsfw|cum|orgasm|xxx)\b",
+    flags=re.IGNORECASE,
+)
+_HARSH_RE = re.compile(
+    r"\b(fuck|fucking|shit|bitch|asshole|idiot|stupid|moron|bastard|dumb|crap|ugly|shut\s+the\s+fuck\s+up)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _classify_blocked_theme_local(content: str):
+    """Deterministic lexical checks to avoid fail-open moderation."""
+    if _SEXUAL_RE.search(content):
+        return "sexual content"
+    if _HARSH_RE.search(content):
+        return "harsh language"
+    return None
+
 
 def _classify_blocked_theme(text: str):
     content = str(text or "").strip()
     if not content:
         return None
 
+    # Local deterministic checks first so moderation does not depend on model availability/rate limits.
+    local_block = _classify_blocked_theme_local(content)
+    if local_block:
+        return local_block
+
     try:
         sentiment_label = str(predict_sentiment(content)).strip().lower()
+        if "prompt injection detected" in sentiment_label:
+            return "prompt injection"
         if "sexual words are not permitted" in sentiment_label:
             return "sexual content"
         if "harsh words are not permitted" in sentiment_label:
@@ -75,7 +102,79 @@ def _classify_blocked_theme(text: str):
         return None
     if theme in BLOCKED_THEME_LABELS:
         return theme
+    if "prompt injection detected" in theme:
+        return "prompt injection"
     return None
+
+
+def _run_feedback_ai_security_checks(comments):
+    """Run AI security checks inspired by api/test_model.py for feedback comments."""
+    violations = []
+    normalized_feedbacks = []
+
+    for idx, item in enumerate(comments):
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("comment") or ""
+            question = item.get("question")
+        else:
+            text = item
+            question = None
+
+        content = str(text or "").strip()
+        if not content:
+            continue
+
+        prompt_check = sanitize_prompt(content)
+        if not prompt_check.get("safe", True):
+            violations.append(
+                {
+                    "index": idx,
+                    "question": question,
+                    "theme": "prompt injection",
+                    "reason": prompt_check.get("reason") or "prompt_injection_detected",
+                }
+            )
+
+        blocked_theme = _classify_blocked_theme(content)
+        if blocked_theme:
+            violations.append(
+                {
+                    "index": idx,
+                    "question": question,
+                    "theme": blocked_theme,
+                    "reason": "restricted_theme",
+                }
+            )
+
+        normalized_feedbacks.append(
+            {
+                "user": str(question or f"q_{idx}"),
+                "text": content,
+            }
+        )
+
+    if len(normalized_feedbacks) >= 3:
+        poisoned, poison_info = detect_poisoned_feedback(normalized_feedbacks)
+        if poisoned:
+            violations.append(
+                {
+                    "index": None,
+                    "question": None,
+                    "theme": "poisoning",
+                    "reason": poison_info.get("reason") or "poisoned_feedback_detected",
+                }
+            )
+
+    deduped = []
+    seen = set()
+    for v in violations:
+        key = (v.get("index"), v.get("question"), v.get("theme"), v.get("reason"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(v)
+
+    return deduped
 
 def _issue_jwt(role: str, legacy_user_id: int) -> str:
     token = AccessToken()
@@ -1569,22 +1668,22 @@ class FeedbackResponseCreateView(generics.CreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        violations = []
-        for item in serializer.validated_data.get('responses', []):
-            comment = str(item.get('comment') or '').strip()
-            if not comment:
-                continue
-            blocked_theme = _classify_blocked_theme(comment)
-            if blocked_theme:
-                violations.append({
-                    "question": item.get('question_code') or item.get('question_id'),
-                    "theme": blocked_theme,
-                })
+        response_items = serializer.validated_data.get('responses', [])
+        comment_items = [
+            {
+                "question": item.get('question_code') or item.get('question_id'),
+                "text": item.get('comment') or '',
+            }
+            for item in response_items
+            if str(item.get('comment') or '').strip()
+        ]
+
+        violations = _run_feedback_ai_security_checks(comment_items)
 
         if violations:
             return Response(
                 {
-                    "detail": "Submission blocked: comment contains restricted content (harsh language, insult, or sexual content).",
+                    "detail": "Submission blocked: comment failed AI security checks (restricted theme, prompt-injection, or poisoning pattern).",
                     "violations": violations,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1692,30 +1791,16 @@ class FeedbackThemeCheckView(APIView):
         if not isinstance(comments, list):
             return Response({"detail": '"comments" must be a list'}, status=status.HTTP_400_BAD_REQUEST)
 
-        violations = []
-        for idx, item in enumerate(comments):
-            if isinstance(item, dict):
-                text = item.get("text") or item.get("comment") or ""
-                question = item.get("question")
-            else:
-                text = item
-                question = None
+        violations = _run_feedback_ai_security_checks(comments)
 
-            content = str(text or "").strip()
-            if not content:
-                continue
-
-            blocked_theme = _classify_blocked_theme(content)
-            if blocked_theme:
-                violations.append({
-                    "index": idx,
-                    "question": question,
-                    "theme": blocked_theme,
-                })
+        detail = ""
+        if violations:
+            detail = "Some comments cannot be submitted yet. Please use respectful, original feedback and remove any instruction-like wording."
 
         return Response(
             {
                 "blocked": len(violations) > 0,
+                "detail": detail,
                 "violations": violations,
             },
             status=status.HTTP_200_OK,
