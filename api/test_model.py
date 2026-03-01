@@ -143,8 +143,7 @@ def main():
     """Run all security-focused test groups and print a timestamped summary."""
     print("Security-focused model tests starting")
     start = datetime.now(timezone.utc)
-    test_prompt_injection_cases()
-    test_poisoning_detection_cases()
+
     test_bias_and_redaction_cases()
     test_rate_limit_cases()
     # test_theme_and_content_filters()

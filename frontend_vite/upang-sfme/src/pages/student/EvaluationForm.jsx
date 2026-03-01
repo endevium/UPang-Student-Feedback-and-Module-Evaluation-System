@@ -4,6 +4,49 @@ import { ArrowLeft, ArrowRight, CheckCircle, Star, Send } from 'lucide-react';
 
 const TEXT_QUESTION_IDS = ['strengths', 'improvements', 'additional'];
 
+const toReadable = (value) => String(value || '').replaceAll('_', ' ').trim();
+
+const buildStudentFriendlySecurityMessage = (violations = []) => {
+  if (!Array.isArray(violations) || violations.length === 0) {
+    return 'Some comments could not be checked. Please review your wording and try again.';
+  }
+
+  const first = violations[0] || {};
+  const theme = String(first.theme || '').toLowerCase();
+  const reason = String(first.reason || '').toLowerCase();
+
+  if (theme === 'prompt injection' || reason.includes('prompt_injection')) {
+    return 'Please rewrite your comment as feedback only. Instructions like "ignore previous" or command-like prompts are not allowed.';
+  }
+
+  if (theme === 'sexual content') {
+    return 'Your comment includes sexual language. Please remove it and keep your feedback respectful.';
+  }
+
+  if (theme === 'insult' || theme === 'harsh language') {
+    return 'Your comment includes insulting or harsh words. Please use respectful language.';
+  }
+
+  if (theme === 'poisoning' || reason.includes('identical_texts') || reason.includes('single_user_flood')) {
+    return 'Your comments look too repetitive. Please provide clear, original feedback for each text field.';
+  }
+
+  return 'Some comment text is not allowed. Please edit your comments and try again.';
+};
+
+const mapViolationsToFieldErrors = (violations = []) => {
+  const fieldErrors = {};
+  if (!Array.isArray(violations)) return fieldErrors;
+
+  violations.forEach((violation) => {
+    const questionId = String(violation?.question || '').trim();
+    if (!questionId || !TEXT_QUESTION_IDS.includes(questionId)) return;
+    fieldErrors[questionId] = buildStudentFriendlySecurityMessage([violation]);
+  });
+
+  return fieldErrors;
+};
+
 const EvaluationForm = ({ moduleId, instructorFormId }) => {
   const [currentSection, setCurrentSection] = useState(0);
   const [responses, setResponses] = useState({});
@@ -17,6 +60,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
   const [submitError, setSubmitError] = useState('');
   const [inputError, setInputError] = useState('');
   const [themeCheck, setThemeCheck] = useState({ checking: false, blocked: false, message: '' });
+  const [commentFieldErrors, setCommentFieldErrors] = useState({});
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   const formType = instructorFormId ? 'Instructor' : 'Module';
@@ -270,6 +314,12 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
     const msg = validateFreeText(value);
     setInputError(msg);
     if (msg) return;
+    setCommentFieldErrors((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     setResponses((prev) => ({ ...prev, [id]: value }));
   };
 
@@ -281,6 +331,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
 
     if (comments.length === 0) {
       setThemeCheck({ checking: false, blocked: false, message: '' });
+      setCommentFieldErrors({});
       return;
     }
 
@@ -302,12 +353,12 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
 
         const violations = Array.isArray(data?.violations) ? data.violations : [];
         const blocked = Boolean(data?.blocked) || violations.length > 0;
-        const message = blocked
-          ? 'Submit is disabled because one or more comments were detected as harsh language, insult, or sexual content.'
-          : '';
+        setCommentFieldErrors(mapViolationsToFieldErrors(violations));
+        const message = blocked ? buildStudentFriendlySecurityMessage(violations) : '';
         setThemeCheck({ checking: false, blocked, message });
       } catch {
         if (cancelled) return;
+        setCommentFieldErrors({});
         setThemeCheck({ checking: false, blocked: false, message: '' });
       }
     }, 450);
@@ -379,7 +430,21 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg = data?.detail || data?.errors || JSON.stringify(data) || 'Failed to submit feedback';
+        const violations = Array.isArray(data?.violations) ? data.violations : [];
+        if (violations.length > 0) {
+          setCommentFieldErrors(mapViolationsToFieldErrors(violations));
+          const technical = violations[0] || {};
+          const readableTheme = toReadable(technical?.theme);
+          const readableReason = toReadable(technical?.reason);
+          const suffix = readableTheme
+            ? ` Detected issue: ${readableTheme}${readableReason ? ` (${readableReason})` : ''}.`
+            : '';
+          setSubmitError(`${buildStudentFriendlySecurityMessage(violations)}${suffix}`);
+          setSubmitting(false);
+          return;
+        }
+
+        const msg = data?.detail || data?.errors || JSON.stringify(data) || 'Unable to submit feedback right now. Please try again.';
         setSubmitError(Array.isArray(msg) ? msg.join('; ') : (typeof msg === 'object' ? JSON.stringify(msg) : msg));
         setSubmitting(false);
         return;
@@ -583,12 +648,21 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
                         )}
 
                         {q.type === 'text' && (
-                            <textarea 
-                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 focus:outline-none focus:ring-2 focus:ring-teal-500/20 min-h-[120px]"
-                                placeholder="Type your feedback here..."
-                                value={responses[q.id] || ""}
-                                onChange={(e) => handleTextResponse(q.id, e.target.value)}
-                            />
+                            <>
+                              <textarea 
+                                  className={`w-full rounded-2xl p-5 focus:outline-none focus:ring-2 min-h-[120px] ${
+                                    commentFieldErrors[q.id]
+                                      ? 'bg-red-50 border border-red-400 focus:ring-red-500/20'
+                                      : 'bg-slate-50 border border-slate-200 focus:ring-teal-500/20'
+                                  }`}
+                                  placeholder="Type your feedback here..."
+                                  value={responses[q.id] || ""}
+                                  onChange={(e) => handleTextResponse(q.id, e.target.value)}
+                              />
+                              {commentFieldErrors[q.id] && (
+                                <p className="mt-2 text-sm text-red-600">{commentFieldErrors[q.id]}</p>
+                              )}
+                            </>
                         )}
                     </div>
                   </div>
