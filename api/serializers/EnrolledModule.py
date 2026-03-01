@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from ..models.EnrolledModule import EnrolledModule
+from ..models.Enrollment import EnrolledModule
 from ..models.Student import Student
 from ..models.ModuleAssignment import ModuleAssignment
 
