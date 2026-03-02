@@ -34,9 +34,7 @@ const ContactPage = () => {
       <main className="container mx-auto px-6 py-16 max-w-6xl">
         {/* Hero Section */}
         <header className="mb-12 text-center">
-          <div className="inline-block mb-4 px-4 py-1 bg-white/10 text-[#ffcc00] rounded-full text-sm font-medium border border-[#ffcc00]/20">
-            Get In Touch
-          </div>
+          
           <h1 className="text-4xl md:text-5xl font-bold text-[#ffcc00] mb-4">
             We're Here to <span className="text-white">Help</span>
           </h1>

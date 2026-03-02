@@ -1,50 +1,100 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Sidebar from '../../components/Sidebar';
-import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Download, TrendingUp } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
-const safeJsonParse = (value) => {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
+const getRatingCategoryFromQuestionId = (questionIdRaw) => {
+  const questionId = String(questionIdRaw || '').trim().toLowerCase();
+  if (!questionId) return null;
+
+  if (questionId.startsWith('inst_')) return 'Instructor Effectiveness';
+  if (questionId.startsWith('content_')) return 'Course Content & Materials';
+  if (questionId.startsWith('assess_')) return 'Assessment & Feedback';
+  if (questionId.startsWith('env_')) return 'Learning Environment';
+  if (questionId === 'overall_rating' || questionId === 'overall_instructor') return 'Overall Rating';
+
+  if (questionId.startsWith('comp_')) return 'Teaching Competence';
+  if (questionId.startsWith('method_')) return 'Teaching Methods & Delivery';
+  if (questionId.startsWith('engage_')) return 'Student Engagement & Interaction';
+  if (questionId.startsWith('feedback_')) return 'Assessment & Feedback';
+  if (questionId.startsWith('prof_')) return 'Professionalism & Availability';
+  if (questionId === 'overall_recommend') return 'Overall Rating';
+
+  return null;
 };
 
-const getTokenFromStorage = () => {
-  const candidates = ['authToken','token','access','accessToken','jwt'];
-  let raw = null;
-  for (const k of candidates) {
-    const v = sessionStorage.getItem(k) || localStorage.getItem(k);
-    if (v) { raw = v; break; }
-  }
-  if (!raw) return null;
-  const maybeObj = safeJsonParse(raw);
-  if (maybeObj) {
-    if (typeof maybeObj === 'string') raw = maybeObj;
-    else if (typeof maybeObj === 'object') raw = maybeObj.token || maybeObj.access || maybeObj.authToken || maybeObj.accessToken || maybeObj.jwt || Object.values(maybeObj)[0] || '';
-  }
-  raw = String(raw).trim().replace(/^"|"$/g, '');
-  if (raw.toLowerCase().startsWith('bearer ')) raw = raw.split(' ').slice(1).join(' ');
-  return raw || null;
-};
+const getTokenFromStorage = () => sessionStorage.getItem('authAccessToken') || sessionStorage.getItem('authToken') || localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || null;
 
 const getAuthHeaders = () => {
   const token = getTokenFromStorage();
   return token ? { 'Authorization': `Bearer ${token}` } : {};
 };
 
+const stripMarkdown = (value) => String(value || '')
+  .replace(/\*\*(.*?)\*\*/g, '$1')
+  .replace(/`(.*?)`/g, '$1')
+  .trim();
+
+const parseAiRecommendationSections = (rawText) => {
+  const text = String(rawText || '').replace(/\r/g, '').trim();
+  if (!text) return [];
+
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const sections = [];
+  let current = null;
+
+  const headerRegex = /^(?:\d+\)\s*)?(Key Findings|Priority Actions(?:\s*\(.*?\))?|Longer-Term Improvements)\s*:?$/i;
+
+  for (const line of lines) {
+    const normalizedLine = stripMarkdown(line).replace(/^[-*•]\s*/, '').trim();
+    const headerMatch = normalizedLine.match(headerRegex);
+
+    if (headerMatch) {
+      current = {
+        title: headerMatch[1],
+        items: [],
+      };
+      sections.push(current);
+      continue;
+    }
+
+    if (!current) continue;
+
+    const bulletText = stripMarkdown(line).replace(/^[-*•]\s*/, '').trim();
+    if (!bulletText) continue;
+    current.items.push(bulletText);
+  }
+
+  if (sections.length > 0) {
+    return sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => item && !/^\d+\)\s*/.test(item)),
+      }))
+      .filter((section) => section.items.length > 0);
+  }
+
+  const fallbackItems = lines
+    .map((line) => stripMarkdown(line).replace(/^[-*•]\s*/, '').trim())
+    .filter((line) => line && !/^here are the recommendations/i.test(line));
+
+  return fallbackItems.length
+    ? [{ title: 'Recommendation', items: fallbackItems }]
+    : [];
+};
+
 const ReportsPage = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const [, setLoadError] = useState('');
   const [completedEvaluationsData, setCompletedEvaluationsData] = useState([]);
   const [stats, setStats] = useState({ totalEvaluations: 0, averageRating: null, responseRate: 0, satisfactoryRate: 0 });
   const [evaluationTrend, setEvaluationTrend] = useState([]);
   const [ratingDistribution, setRatingDistribution] = useState([]);
-  const [feedbackResponses, setFeedbackResponses] = useState([]);
-  const [moduleFormsById, setModuleFormsById] = useState({});
   const [selectedModuleId, setSelectedModuleId] = useState(null);
   const [moduleInsightsById, setModuleInsightsById] = useState({});
   const [aiLoadingModuleId, setAiLoadingModuleId] = useState(null);
@@ -52,7 +102,6 @@ const ReportsPage = () => {
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
-      setLoadError('');
       try {
         const extractList = (payload) => {
           if (Array.isArray(payload)) return payload;
@@ -63,14 +112,12 @@ const ReportsPage = () => {
 
         const formsRes = await fetch(`${API_BASE_URL}/module-evaluation-forms/`, { headers: getAuthHeaders() });
         if (formsRes.status === 401) {
-          setLoadError('Unauthorized: please sign in as department head.');
           setIsLoading(false);
           return;
         }
         const formsPayload = await formsRes.json();
         const forms = extractList(formsPayload);
         if (forms.length === 0 && !Array.isArray(formsPayload)) {
-          setLoadError('Unexpected response from server');
           setIsLoading(false);
           return;
         }
@@ -79,7 +126,6 @@ const ReportsPage = () => {
           acc[String(form.id)] = form;
           return acc;
         }, {});
-        setModuleFormsById(formsById);
 
         const resolveModuleFormIdFromResponse = (resp) => {
           const modelName = String(resp?.form_model || '').toLowerCase();
@@ -119,13 +165,6 @@ const ReportsPage = () => {
           if (allRes.ok) {
             const allData = await allRes.json();
             allResponses = extractList(allData);
-            setFeedbackResponses(
-              allResponses.map((resp) => ({
-                ...resp,
-                resolved_module_form_id: resolveModuleFormIdFromResponse(resp),
-                matched_form: formsById[String(resolveModuleFormIdFromResponse(resp))] || null,
-              }))
-            );
           }
         } catch {
           // continue with empty responses
@@ -155,28 +194,58 @@ const ReportsPage = () => {
           if (responsesByForm.has(key)) responsesByForm.delete(key);
         }
 
-        // Any remaining groups in responsesByForm are forms that were referenced by feedback but not returned in the forms list (e.g., created on feedback submission)
-        for (const [k, group] of responsesByForm.entries()) {
-          // create a synthetic form object
-          const syntheticForm = { id: k, title: `Form ${k}`, subject_code: null, subject_description: null, description: null, created_at: group[0]?.submitted_at || null };
-          ctResponses.push({ form: syntheticForm, responses: group });
-        }
-
         // Aggregate
         let totalResponses = 0;
         let totalRatingSum = 0;
         let totalRatingCount = 0;
         let satisfactoryCount = 0;
+        const overallCategoryAccumulator = new Map();
         const completedList = ctResponses.map(({form, responses}) => {
           // compute average rating for this form
           let sum = 0, cnt = 0;
+          const comments = [];
+          const categoryAccumulator = new Map();
+          const ratingBreakdown = { very_good: 0, good: 0, fair: 0, poor: 0 };
           for (const r of responses) {
             const respList = Array.isArray(r.responses) ? r.responses : [];
             for (const it of respList) {
               const rv = Number(it.rating);
-              if (!isNaN(rv)) { sum += rv; cnt += 1; }
+              if (!isNaN(rv)) {
+                sum += rv;
+                cnt += 1;
+
+                if (rv >= 5) ratingBreakdown.very_good += 1;
+                else if (rv >= 4) ratingBreakdown.good += 1;
+                else if (rv >= 3) ratingBreakdown.fair += 1;
+                else ratingBreakdown.poor += 1;
+
+                const questionId = it?.question || it?.question_code || it?.question_id;
+                const category = getRatingCategoryFromQuestionId(questionId);
+                if (category) {
+                  const prev = categoryAccumulator.get(category) || { sum: 0, count: 0 };
+                  prev.sum += rv;
+                  prev.count += 1;
+                  categoryAccumulator.set(category, prev);
+
+                  const overallPrev = overallCategoryAccumulator.get(category) || { sum: 0, count: 0 };
+                  overallPrev.sum += rv;
+                  overallPrev.count += 1;
+                  overallCategoryAccumulator.set(category, overallPrev);
+                }
+              }
+
+              const commentText = String(it?.comment || '').trim();
+              if (commentText) comments.push(commentText);
             }
           }
+
+          const category_rates = Array.from(categoryAccumulator.entries())
+            .map(([name, v]) => ({
+              name,
+              rating: v.count > 0 ? Number((v.sum / v.count).toFixed(2)) : 0,
+            }))
+            .sort((a, b) => b.rating - a.rating);
+
           const avg = cnt > 0 ? sum / cnt : null;
           totalResponses += responses.length;
           totalRatingSum += sum;
@@ -189,6 +258,9 @@ const ReportsPage = () => {
             created_at: form.created_at,
             responses_count: responses.length,
             average_rating: avg,
+            rating_breakdown: ratingBreakdown,
+            category_rates,
+            comments: comments.slice(0, 8),
           };
         });
 
@@ -228,9 +300,8 @@ const ReportsPage = () => {
         });
         setEvaluationTrend(trend);
         setRatingDistribution(dist);
-
-      } catch {
-        setLoadError('Unable to reach server');
+      } catch (error) {
+        console.error('Failed to load reports data', error);
       } finally {
         setIsLoading(false);
       }
@@ -239,53 +310,23 @@ const ReportsPage = () => {
     fetchData();
   }, []);
   // derive lists for UI from loaded data
-  const departmentData = completedEvaluationsData.slice().sort((a,b) => (b.average_rating || 0) - (a.average_rating || 0)).slice(0,5).map(m => ({ name: m.module, rating: m.average_rating || 0 }));
+  const performanceIssues = useMemo(() => (
+    completedEvaluationsData
+      .slice()
+      .sort((a, b) => (a.average_rating || 0) - (b.average_rating || 0))
+      .filter((m) => m.average_rating !== null)
+      .slice(0, 5)
+      .map((m, idx) => ({ id: idx + 1, name: m.module, department: '', rating: m.average_rating || 0, status: 'attention' }))
+  ), [completedEvaluationsData]);
 
-  const topPerformers = completedEvaluationsData.slice().sort((a,b) => (b.average_rating || 0) - (a.average_rating || 0)).slice(0,5).map((m, idx) => ({ id: idx+1, name: m.module, department: '', rating: m.average_rating || 0, students: `${m.responses_count} responses` }));
-
-  const performanceIssues = completedEvaluationsData.slice().sort((a,b) => (a.average_rating || 0) - (b.average_rating || 0)).filter(m => m.average_rating !== null).slice(0,5).map((m, idx) => ({ id: idx+1, name: m.module, department: '', rating: m.average_rating || 0, status: 'attention' }));
-
-  const recommendations = performanceIssues.map(p => ({ title: `Review ${p.name}`, description: `Consider targeted actions for ${p.name} (average rating ${p.rating}).` }));
-
-  const getModuleAggregate = (moduleId, moduleMeta) => {
-    const moduleKey = String(moduleId);
-    const rows = feedbackResponses.filter((resp) => {
-      const a = resp?.resolved_module_form_id;
-      const b = resp?.form_object_id;
-      const c = resp?.form_id;
-      return String(a ?? '') === moduleKey || String(b ?? '') === moduleKey || String(c ?? '') === moduleKey;
-    });
-
-    let sum = 0;
-    let count = 0;
-    const comments = [];
-    const ratingBreakdown = { very_good: 0, good: 0, fair: 0, poor: 0 };
-
-    for (const row of rows) {
-      const respList = Array.isArray(row.responses) ? row.responses : [];
-      for (const item of respList) {
-        const rv = Number(item?.rating);
-        if (!isNaN(rv)) {
-          sum += rv;
-          count += 1;
-          if (rv >= 5) ratingBreakdown.very_good += 1;
-          else if (rv >= 4) ratingBreakdown.good += 1;
-          else if (rv >= 3) ratingBreakdown.fair += 1;
-          else ratingBreakdown.poor += 1;
-        }
-        const commentText = String(item?.comment || '').trim();
-        if (commentText) comments.push(commentText);
-      }
-    }
-
-    return {
-      module_name: moduleMeta?.module || `Form ${moduleKey}`,
-      average_rating: count > 0 ? Number((sum / count).toFixed(2)) : null,
-      responses_count: rows.length,
-      rating_breakdown: ratingBreakdown,
-      comments: comments.slice(0, 8),
-    };
-  };
+  const recommendations = useMemo(() => (
+    completedEvaluationsData
+      .slice()
+      .sort((a, b) => (a.average_rating || 0) - (b.average_rating || 0))
+      .filter((m) => m.average_rating !== null)
+      .slice(0, 5)
+      .map((p) => ({ title: `Review ${p.module}`, description: `Consider targeted actions for ${p.module} (average rating ${p.average_rating || 0}).` }))
+  ), [completedEvaluationsData]);
 
   const handleShowModuleInsights = async (moduleMeta) => {
     const moduleId = String(moduleMeta.id);
@@ -299,7 +340,14 @@ const ReportsPage = () => {
 
     if (moduleInsightsById[moduleId]) return;
 
-    const aggregate = getModuleAggregate(moduleId, moduleMeta);
+    const aggregate = {
+      module_name: moduleMeta?.module || `Form ${moduleId}`,
+      average_rating: moduleMeta?.average_rating ?? null,
+      responses_count: moduleMeta?.responses_count ?? 0,
+      rating_breakdown: moduleMeta?.rating_breakdown || { very_good: 0, good: 0, fair: 0, poor: 0 },
+      category_rates: Array.isArray(moduleMeta?.category_rates) ? moduleMeta.category_rates : [],
+      comments: Array.isArray(moduleMeta?.comments) ? moduleMeta.comments : [],
+    };
     setAiLoadingModuleId(moduleId);
 
     try {
@@ -522,13 +570,54 @@ const ReportsPage = () => {
                           )}
                         </div>
 
+                        {Array.isArray(aggregate?.category_rates) && aggregate.category_rates.length > 0 && (
+                          <div className="mb-3">
+                            <p className="text-sm font-semibold text-slate-900 mb-2">Category Ratings</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-700">
+                              {aggregate.category_rates.map((item) => (
+                                <p key={item.name}>
+                                  {item.name}: <span className="font-semibold">{item.rating.toFixed(2)}</span>
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         <p className="text-sm font-semibold text-slate-900 mb-2">Gemini AI Recommendation</p>
                         {aiLoadingModuleId === String(ev.id) && <p className="text-xs text-slate-500">Generating recommendation…</p>}
                         {!aiLoadingModuleId && insight?.error_message && (
                           <p className="text-xs text-amber-700 mb-2">{insight.error_message}</p>
                         )}
                         {!aiLoadingModuleId && insight?.recommendation && (
-                          <pre className="whitespace-pre-wrap text-xs text-slate-700 bg-white border border-slate-200 rounded-md p-3">{insight.recommendation}</pre>
+                          (() => {
+                            const sections = parseAiRecommendationSections(insight.recommendation);
+
+                            if (sections.length === 0) {
+                              return (
+                                <div className="text-xs text-slate-700 bg-white border border-slate-200 rounded-md p-3 whitespace-pre-wrap">
+                                  {insight.recommendation}
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div className="space-y-3">
+                                {sections.map((section, sectionIdx) => (
+                                  <div key={`${section.title}-${sectionIdx}`} className="bg-white border border-slate-200 rounded-md p-3">
+                                    <p className="text-xs font-semibold text-slate-900 mb-2">{section.title}</p>
+                                    <ul className="space-y-2">
+                                      {section.items.map((item, itemIdx) => (
+                                        <li key={`${section.title}-${itemIdx}`} className="text-xs text-slate-700 leading-relaxed flex items-start gap-2">
+                                          <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-500" />
+                                          <span>{item}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()
                         )}
                         {!aiLoadingModuleId && !insight?.recommendation && (
                           <p className="text-xs text-rose-600">No recommendation available.</p>
@@ -541,99 +630,8 @@ const ReportsPage = () => {
             </div>
           </div>
 
-          {/* All Feedback Responses (raw) */}
-          <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200 mb-6">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">All Feedback Responses</h3>
-            <p className="text-slate-500 text-sm mb-4">Raw records from feedback_responses table</p>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-slate-500">
-                    <th className="px-3 py-2">ID</th>
-                    <th className="px-3 py-2">Form Obj</th>
-                    <th className="px-3 py-2">Matched Form</th>
-                    <th className="px-3 py-2">Pseudonym / Student</th>
-                    <th className="px-3 py-2">Avg Rating</th>
-                    <th className="px-3 py-2">Sentiment</th>
-                    <th className="px-3 py-2">Submitted At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {feedbackResponses.length === 0 && !isLoading && (
-                    <tr><td colSpan="7" className="px-3 py-2 text-slate-500">No feedback responses found.</td></tr>
-                  )}
-                  {feedbackResponses.map((fr) => {
-                    const respList = Array.isArray(fr.responses) ? fr.responses : [];
-                    let sum = 0, cnt = 0;
-                    for (const it of respList) {
-                      const rv = Number(it.rating);
-                      if (!isNaN(rv)) { sum += rv; cnt += 1; }
-                    }
-                    const avg = cnt > 0 ? (sum / cnt).toFixed(1) : '-';
-                    return (
-                      <tr key={fr.id} className="border-t border-slate-100">
-                        <td className="px-3 py-2 align-top">{fr.id}</td>
-                        <td className="px-3 py-2 align-top">{fr.form_object_id ?? '-'}</td>
-                        <td className="px-3 py-2 align-top">{fr.matched_form?.title || moduleFormsById[String(fr.resolved_module_form_id)]?.title || moduleFormsById[String(fr.form_object_id)]?.title || '-'}</td>
-                        <td className="px-3 py-2 align-top">{fr.pseudonym || (fr.student ? String(fr.student) : '-')}</td>
-                        <td className="px-3 py-2 align-top">{avg}</td>
-                        <td className="px-3 py-2 align-top">{fr.sentiment || '-'}</td>
-                        <td className="px-3 py-2 align-top">{fr.submitted_at ? new Date(fr.submitted_at).toLocaleString() : '-'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Department Performance */}
+          {/* Performance Issues */}
           <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200 mb-8">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">Department Performance</h3>
-            <p className="text-slate-500 text-sm mb-6">Average ratings by department</p>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={departmentData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" stroke="#64748b" />
-                <YAxis stroke="#64748b" />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}
-                  cursor={{ fill: '#e2e8f0' }}
-                />
-                <Bar dataKey="rating" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Two Column Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            {/* Top Performers */}
-            <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Rated Instructors</h3>
-              <p className="text-slate-500 text-sm mb-6">Best performing instructors this semester</p>
-              <div className="space-y-4">
-                {topPerformers.map((instructor) => (
-                  <div key={instructor.id} className="flex items-center justify-between py-3 border-b border-slate-200 last:border-b-0">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-sm font-semibold">
-                        {instructor.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="font-medium text-slate-900">{instructor.name}</p>
-                        <p className="text-xs text-slate-500">{instructor.department}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-slate-900">{instructor.rating}</p>
-                      <p className="text-xs text-slate-500">{instructor.students}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Performance Issues */}
-            <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Performance Review</h3>
               <p className="text-slate-500 text-sm mb-6">Instructors requiring attention</p>
               <div className="space-y-4">
@@ -655,7 +653,6 @@ const ReportsPage = () => {
                   </div>
                 ))}
               </div>
-            </div>
           </div>
 
           {/* Recommendations */}

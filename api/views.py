@@ -1960,6 +1960,7 @@ class ModuleRecommendationView(APIView):
         average_rating = request.data.get("average_rating")
         responses_count = request.data.get("responses_count")
         rating_breakdown = request.data.get("rating_breakdown") or {}
+        category_rates = request.data.get("category_rates") or []
         comments = request.data.get("comments") or []
 
         if not module_name:
@@ -1999,22 +2000,58 @@ class ModuleRecommendationView(APIView):
             "poor": int(rating_breakdown.get("poor", 0) or 0),
         }
 
+        category_lines = []
+        if isinstance(category_rates, list):
+            for item in category_rates:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name") or "").strip()
+                if not name:
+                    continue
+                try:
+                    rating = float(item.get("rating"))
+                    rating_text = f"{rating:.2f}"
+                except Exception:
+                    rating_text = str(item.get("rating") or "N/A")
+                category_lines.append(f"- {name}: {rating_text}")
+
+        category_text_block = "\n".join(category_lines) if category_lines else "- No category rates provided"
+
         def build_fallback(reason=None):
             reason_text = f"\nReason: {reason}" if reason else ""
+            concerns = rb["fair"] + rb["poor"]
+            strengths = rb["very_good"] + rb["good"]
+            if concerns > strengths:
+                trend_line = "- Overall trend indicates more concerns than strengths in current responses."
+            elif concerns == strengths and concerns > 0:
+                trend_line = "- Overall trend is mixed, with strengths and concerns appearing in similar volume."
+            else:
+                trend_line = "- Overall trend is generally positive, with strengths outweighing concerns."
+
             return (
-                f"Module: {module_name}\n"
-                f"Average rating: {avg_text}\n"
-                f"Responses: {count_text}\n"
-                f"Rating breakdown: Very Good={rb['very_good']}, Good={rb['good']}, Fair={rb['fair']}, Poor={rb['poor']}\n"
-                f"Comment sentiment: Positive={sentiment_counts['positive']}, Neutral={sentiment_counts['neutral']}, Negative={sentiment_counts['negative']}, Unknown={sentiment_counts['unknown']}\n"
-                "Recommendations:\n"
-                "- Prioritize action plans for items with Fair/Poor ratings.\n"
-                "- Keep and replicate strategies behind Very Good/Good responses.\n"
-                "- Review student comments and set measurable targets for the next evaluation cycle."
+                "1) Key Findings\n"
+                f"- Module: {module_name}\n"
+                f"- Average Rating: {avg_text} (Responses: {count_text})\n"
+                f"- Rating Breakdown: Very Good={rb['very_good']}, Good={rb['good']}, Fair={rb['fair']}, Poor={rb['poor']}\n"
+                "- Category Rates:\n"
+                f"{category_text_block}\n"
+                f"- Comment Sentiment Summary: Positive={sentiment_counts['positive']}, Neutral={sentiment_counts['neutral']}, Negative={sentiment_counts['negative']}, Unknown={sentiment_counts['unknown']}\n"
+                f"{trend_line}\n\n"
+                "2) Priority Actions (next 30 days)\n"
+                "- Instructor Effectiveness: run targeted coaching on clarity, preparedness, and classroom engagement.\n"
+                "- Course Content & Materials: refine slides/handouts and align tasks with stated learning outcomes.\n"
+                "- Assessment & Feedback: standardize rubrics and speed up feedback turnaround.\n"
+                "- Learning Environment: address classroom/resource pain points raised by negative sentiment trends.\n\n"
+                "3) Longer-Term Improvements\n"
+                "- Track section-level results per cycle (Instructor, Content, Assessment, Environment) and compare trends term-over-term.\n"
+                "- Build a module action plan with measurable targets per section and monthly review checkpoints.\n"
+                "- Replicate strategies from high-performing modules and mentor lower-performing teaching teams."
                 f"{reason_text}"
             )
 
         api_key = os.getenv("GEMINI_API_KEY", "").strip().strip('"').strip("'")
+        if not api_key:
+            api_key = os.getenv("GOOGLE_API_KEY", "").strip().strip('"').strip("'")
         if not api_key:
             fallback = build_fallback(None)
             return Response({"recommendation": fallback, "source": "local"}, status=200)
@@ -2022,16 +2059,29 @@ class ModuleRecommendationView(APIView):
         prompt = (
             "You are an academic quality assistant. "
             "Given the module evaluation summary, provide concise recommendations for department heads. "
-            "Output must have exactly 3 sections with short bullet points: '\n"
-            "1) Key Findings\n2) Priority Actions (next 30 days)\n3) Longer-Term Improvements'.\n\n"
+            "The recommendations MUST align with the module evaluation question sections used by students: "
+            "(A) Instructor Effectiveness, (B) Course Content & Materials, (C) Assessment & Feedback, "
+            "(D) Learning Environment, and (E) Overall Rating & Comments. "
+            "Output rules are strict and must be followed exactly:\n"
+            "- Output must contain ONLY these 3 sections in this order:\n"
+            "1) Key Findings\n"
+            "2) Priority Actions (next 30 days)\n"
+            "3) Longer-Term Improvements\n"
+            "- Under each section, provide 3 to 5 short bullet points.\n"
+            "- Do NOT include any introduction sentence, disclaimer, conclusion, or extra section.\n"
+            "- Do NOT use markdown emphasis like **bold** or code formatting.\n"
+            "- Use plain text only.\n\n"
             "Important privacy rule: Do not request, infer, output, or reference any student-identifying data or raw student comments. "
             "Use only the aggregate statistics provided below.\n\n"
             f"Module: {module_name}\n"
             f"Average Rating: {avg_text}\n"
             f"Total Responses: {count_text}\n"
             f"Rating Breakdown: Very Good={rb['very_good']}, Good={rb['good']}, Fair={rb['fair']}, Poor={rb['poor']}\n"
+            "Category Rates:\n"
+            f"{category_text_block}\n"
             f"Comment Sentiment Summary (from sentiment_service): Positive={sentiment_counts['positive']}, Neutral={sentiment_counts['neutral']}, Negative={sentiment_counts['negative']}, Unknown={sentiment_counts['unknown']}\n"
-            "Use both rating aggregates and sentiment summary when producing recommendations."
+            "Use both rating aggregates and sentiment summary when producing recommendations. "
+            "Do not give generic recommendations that are unrelated to those five evaluation sections."
         )
 
         model_candidates = []
@@ -2043,10 +2093,22 @@ class ModuleRecommendationView(APIView):
             ]
         }
 
+        def _request_with_retry(method, url, **kwargs):
+            last_exc = None
+            for _ in range(2):
+                try:
+                    return requests.request(method=method, url=url, **kwargs)
+                except requests.exceptions.RequestException as exc:
+                    last_exc = exc
+                    continue
+            if last_exc:
+                raise last_exc
+            raise requests.RequestException("Gemini request failed")
+
         try:
             # Discover models available to this API key for generateContent.
             models_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-            models_resp = requests.get(models_url, timeout=20)
+            models_resp = _request_with_retry("GET", models_url, timeout=20)
             if models_resp.ok:
                 models_data = models_resp.json()
                 for model in (models_data.get("models") or []):
@@ -2076,7 +2138,7 @@ class ModuleRecommendationView(APIView):
 
             for model_id in model_candidates:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={api_key}"
-                resp = requests.post(url, json=payload, timeout=20)
+                resp = _request_with_retry("POST", url, json=payload, timeout=20)
 
                 if not resp.ok:
                     last_status = resp.status_code
@@ -2115,14 +2177,17 @@ class ModuleRecommendationView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
-        except requests.RequestException:
-            fallback = build_fallback("Unable to reach Gemini service")
+        except requests.RequestException as exc:
+            error_text = str(exc).strip() or exc.__class__.__name__
+            error_text = error_text.replace("\n", " ")[:240]
+            logger.warning("Gemini request exception: %s", error_text, exc_info=True)
+            fallback = build_fallback(f"Unable to reach Gemini service ({error_text})")
             return Response(
                 {
                     "recommendation": fallback,
                     "source": "fallback",
                     "sentiment_summary": sentiment_counts,
-                    "detail": "Unable to reach Gemini service",
+                    "detail": f"Unable to reach Gemini service: {error_text}",
                 },
                 status=status.HTTP_200_OK,
             )

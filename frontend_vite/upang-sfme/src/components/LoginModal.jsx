@@ -778,11 +778,7 @@ const LoginModal = ({ isOpen, onClose }) => {
                 </button>
               </div>
               
-                {/* Responsive Demo Credentials */}
-                <div className="mt-6 p-4 bg-white/5 rounded-xl border border-white/10 text-[11px] leading-relaxed">
-                  <p className="font-bold text-[#ffcc00] mb-1">Demo Access:</p>
-                  <p className="opacity-80">ID: Any numeric value | Pass: Any (min 6 chars)</p>
-                </div>
+                
               </form>
             ) : (
               <form className="form-content" onSubmit={handleChangePassword}>

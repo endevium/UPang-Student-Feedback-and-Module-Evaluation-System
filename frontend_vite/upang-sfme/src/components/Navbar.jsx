@@ -1,15 +1,39 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import logo from '../assets/navbar-logo.png';
 import LoginModal from './LoginModal';
 
 const Navbar = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
   const isLoggedIn = Boolean(localStorage.getItem('authToken'));
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 8);
+    };
+
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
   return (
     <>
-      <nav className="fixed top-0 left-0 z-[1000] flex items-center w-full h-20">
-        <div className="flex items-center justify-between w-[90%] max-w-[1200px] mx-auto">
+      <nav
+        className={`fixed top-0 z-[1000] flex items-center w-full h-20 overflow-hidden transition-all duration-300 ${
+          isScrolled
+            ? 'bg-white/10 backdrop-blur-md border-b border-white/20 shadow-lg'
+            : 'bg-transparent border-b border-transparent shadow-none'
+        }`}
+      >
+        <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${isScrolled ? 'opacity-100' : 'opacity-0'}`}>
+          <div className="absolute -top-10 -left-8 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
+          <div className="absolute -bottom-10 right-10 h-32 w-32 rounded-full bg-cyan-300/10 blur-3xl" />
+        </div>
+        <div className="relative flex items-center justify-between w-[90%] max-w-[1200px] mx-auto">
           <div className="py-1.25">
             <img src={logo} alt="UPang Logo" className="h-[60px] w-auto" />
           </div>
