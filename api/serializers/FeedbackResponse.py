@@ -50,8 +50,8 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
             'form_type', 'form_id',
             'form_object_id', 'form_content_type_id', 'form_model',
             'student', 'pseudonym',
-            'responses',        # write-only input
-            'responses_out',    # read-only output
+            'responses',        
+            'responses_out',    
             'sentiment', 'is_anonymous', 'ip_address', 'submitted_at'
         ]
         read_only_fields = ['id', 'student', 'ip_address', 'sentiment', 'submitted_at', 'responses_out']

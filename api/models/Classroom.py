@@ -13,7 +13,7 @@ class Classroom(models.Model):
     )
     block = models.CharField(max_length=50)
     subject_code = models.CharField(max_length=20)
-    subject_name = models.CharField(max_length=150)
+    module_name = models.CharField(max_length=150)
     program = models.CharField(max_length=50)
     year_level = models.PositiveSmallIntegerField(
         choices=[(1, "1st Year"),
@@ -30,7 +30,6 @@ class Classroom(models.Model):
 
     class Meta:
         db_table = "classrooms"
-        managed = False
 
     def clean(self):
         if not Module.objects.filter(

@@ -37,10 +37,19 @@ const InstructorsPage = () => {
           setInstructorForms([]);
           return;
         }
-        const modules = meData?.enrolled_modules || meData?.modules || meData?.recent_modules || [];
+        const modules =
+          meData?.classrooms ||
+          meData?.enrolled_modules ||
+          meData?.modules ||
+          meData?.recent_modules ||
+          [];
         setEnrolledModules(Array.isArray(modules) ? modules : []);
 
-        const subjects = meData?.student?.enrolled_subjects || meData?.enrolled_subjects || [];
+        const subjects =
+          (meData?.classrooms && meData.classrooms.map(c => c.subject_code)) ||
+          meData?.student?.enrolled_subjects ||
+          meData?.enrolled_subjects ||
+          [];
         setEnrolledSubjects(Array.isArray(subjects) ? subjects : []);
         // 2) active instructor evaluation forms
         const formsRes = await fetch(`${API_BASE_URL}/instructor-evaluation-forms/`, {

@@ -1,3 +1,4 @@
+import os
 import logging
 import requests
 from django.conf import settings
@@ -10,6 +11,11 @@ def verify_recaptcha_v2(*, token: str | None, remote_ip: str | None = None) -> N
     Validates reCAPTCHA v2 (including Invisible).
     Frontend sends token as: 'g-recaptcha-response' (we accept it as recaptcha_token).
     """
+    if settings.DEBUG or os.getenv("DISABLE_RECAPTCHA") == "1":
+        logger.debug("recaptcha check bypassed (DEBUG=%s, DISABLE_RECAPTCHA=%s)",
+                     settings.DEBUG, os.getenv("DISABLE_RECAPTCHA"))
+        return
+    
     secret = getattr(settings, "RECAPTCHA_SECRET_KEY", "") or ""
     if not secret:
         return

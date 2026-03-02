@@ -47,7 +47,11 @@ const mapViolationsToFieldErrors = (violations = []) => {
   return fieldErrors;
 };
 
-const EvaluationForm = ({ moduleId, instructorFormId }) => {
+const EvaluationForm = ({
+    moduleId: propModuleId,
+    instructorFormId: propInstructorFormId,
+    evalFormId: propEvalFormId,
+  }) => {
   const [currentSection, setCurrentSection] = useState(0);
   const [responses, setResponses] = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -61,6 +65,13 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
   const [inputError, setInputError] = useState('');
   const [themeCheck, setThemeCheck] = useState({ checking: false, blocked: false, message: '' });
   const [commentFieldErrors, setCommentFieldErrors] = useState({});
+
+  const moduleId = propModuleId;
+  const instructorFormId = propInstructorFormId || null;
+
+  const [evalFormId, setEvalFormId] = useState(
+    propEvalFormId || instructorFormId || null
+  );
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   const formType = instructorFormId ? 'Instructor' : 'Module';
@@ -83,15 +94,92 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
           setError(data?.detail || 'Failed to load module data');
           return;
         }
-        const list = data?.enrolled_modules || [];
-        const module = list.find(m => m.id === moduleId);
+        const list =
+          data?.modules ||
+          data?.enrolled_modules ||
+          data?.recent_modules ||
+          data?.classrooms ||
+          [];
+
+        let module = null;
+        let formIdFromApi = evalFormId;
+
+        // normalise supplied identifier, try to match by id or code
+        const normId = String(moduleId || '').trim().toUpperCase();
+        module = list.find(m => {
+          const mid = String(m.id || '').trim().toUpperCase();
+          const mcode = String(
+            m.code || m.subject_code || m.module_code || ''
+          ).trim().toUpperCase();
+          return mid === normId || mcode === normId;
+        });
+
+        if (!module && /^\d+$/.test(normId)) {
+          try {
+            const fres = await fetch(
+              `${API_BASE_URL}/module-evaluation-forms/${normId}/`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            if (fres.ok) {
+              const fdata = await fres.json();
+              formIdFromApi = fdata.id;
+              const code = String(fdata.subject_code || '').trim().toUpperCase();
+              module = list.find(m => {
+                const mcode = String(
+                  m.code || m.subject_code || ''
+                ).trim().toUpperCase();
+                return mcode === code;
+              });
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+
+        if (module && !formIdFromApi) {
+          try {
+            const qres = await fetch(
+              `${API_BASE_URL}/module-evaluation-forms/?subject_code=${encodeURIComponent(
+                module.code || module.subject_code || ''
+              )}`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const arr = await qres.json().catch(() => []);
+            if (qres.ok && Array.isArray(arr) && arr.length > 0) {
+              formIdFromApi = arr[0].id;
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+
         if (module) {
           setModuleData({
-            id: module.id,
-            code: module.code,
-            name: module.name,
-            instructor: module.instructor,
+            id:
+              module.id ||
+              module.classroom ||
+              module.classroom_code ||
+              module.subject_code ||
+              module.code ||
+              '',
+            code:
+              module.code ||
+              module.subject_code ||
+              module.module_code ||
+              module.classroom_code ||
+              '',
+            name:
+              module.name ||
+              module.module_name ||
+              module.title ||
+              '',
+            instructor:
+              module.instructor ||
+              module.instructor_name ||
+              module.lecturer ||
+              '',
           });
+          if (formIdFromApi) setEvalFormId(formIdFromApi);
         } else {
           setError('Module not found');
         }
@@ -405,7 +493,7 @@ const EvaluationForm = ({ moduleId, instructorFormId }) => {
     const formIdentifier =
       formType === 'Instructor'
         ? instructorFormId
-        : (moduleData?.id ?? moduleData?.code ?? moduleId);
+        : (evalFormId || moduleData?.code || moduleId);
 
     const payload = {
       form_type: formType === 'Module' ? 'module' : 'instructor',

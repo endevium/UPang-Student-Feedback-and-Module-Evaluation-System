@@ -98,15 +98,18 @@ def _load_theme_classifier_once():
         _theme_classifier_init_attempted = True
 
         try:
-            # pipeline accepts device: 0 for first CUDA device, -1 for CPU
-            device_arg = 0 if _device.type == "cuda" else -1
+            # if you have a tiny GPU the model will OOM and kill the server,
+            # so run on CPU by default; override with env var only if you
+            # really want to test GPU behaviour.
+            force_cpu = os.getenv("FORCE_THEME_CPU", "1") == "1"
+            device_arg = -1 if force_cpu else (0 if _device.type == "cuda" else -1)
             _theme_classifier = pipeline(
-                "zero-shot-classification",
-                model="facebook/bart-large-mnli",
-                device=device_arg,
-                cache_dir=_HF_CACHE_DIR,
-                local_files_only=_HF_LOCAL_FILES_ONLY,
-            )
+                 "zero-shot-classification",
+                 model="facebook/bart-large-mnli",
+                 device=device_arg,
+                 cache_dir=_HF_CACHE_DIR,
+                 local_files_only=_HF_LOCAL_FILES_ONLY,
+             )
 
             # Warm-up to avoid first-call latency spike
             try:

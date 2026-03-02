@@ -229,9 +229,10 @@ function App() {
       }
         
       if (route.startsWith('/dashboard/evaluate/')) {
-        const moduleId = route.split('/')[3];
-        return <EvaluationForm moduleId={moduleId} />;
-      }
+        const moduleId = route.split('/')[3];               // ← <–– add this
+        const { formId } = window.history.state || {};
+        return <EvaluationForm moduleId={moduleId} evalFormId={formId} />;
+     }
       
       return <StudentDashboard />;
     }

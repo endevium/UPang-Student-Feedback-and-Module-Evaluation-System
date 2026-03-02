@@ -29,15 +29,24 @@ const ModulePage = () => {
           return;
         }
         // API may return recent_modules, modules, or enrolled_modules
-        const list = data?.modules || data?.enrolled_modules || data?.recent_modules || [];
+        const list =
+            data?.modules ||
+            data?.enrolled_modules ||
+            data?.recent_modules ||
+            data?.classrooms ||
+            [];
         // fetch available module evaluation forms and create a set of subject codes
         let availableModuleCodes = new Set();
+        let formByCode = new Map();
         // also build a set of the student's enrolled subject codes and a map of instructor-by-code
         let completedModuleCodes = new Set();
         let enrolledSubjectCodes = new Set();
         let enrolledByCode = new Map();
-        // try to read enrolled subjects from common response shapes
-        const rawEnrolled = data?.enrolled_subjects || data?.student?.enrolled_subjects || null;
+        const rawEnrolled =
+                  data?.enrolled_subjects ||
+                  data?.student?.enrolled_subjects ||
+                  data?.classrooms ||
+                  null;
         if (Array.isArray(rawEnrolled)) {
           rawEnrolled.forEach(s => {
             if (!s) return;
@@ -62,8 +71,11 @@ const ModulePage = () => {
               if (f.status === 'Active') {
                 const raw = (f.title || f.subject_code || '').toString();
                 const code = raw.trim().toUpperCase();
-                if (code) availableModuleCodes.add(code);
-                if (f.is_completed) completedModuleCodes.add(code);
+                if (code) {
+                  availableModuleCodes.add(code);
+                  formByCode.set(code, f);
+                  if (f.is_completed) completedModuleCodes.add(code);
+                }
               }
             });
           }
@@ -73,8 +85,9 @@ const ModulePage = () => {
         // normalize minimal shape expected by this page
         const normalized = Array.isArray(list)
           ? list.map(m => {
-              const code = (m.code || m.module_code || m.id || '').toString();
-                const CODE = code.trim().toUpperCase();
+            const raw = (m.code || m.subject_code || m.module_code || '').toString();
+            const CODE = raw.trim().toUpperCase();
+            const form = formByCode.get(CODE);
 
                 // Only show a form if a form exists for the subject code AND the student is enrolled in that subject
                 let form_available = (
@@ -89,18 +102,24 @@ const ModulePage = () => {
                 if (isCompleted) form_available = false;
 
                 // Prefer instructor info from the module object, otherwise use enrolled subject's instructor (if provided)
-              const instructor = m.instructor || m.instructor_name || m.lecturer || enrolledByCode.get(CODE) || '';
+                const instructor =
+                                  m.instructor ||
+                                  m.instructor_name ||
+                                  m.lecturer ||
+                                  enrolledByCode.get(CODE) ||
+                                  '';
 
               return ({
-                id: m.id || m.code || m.module_id || m.module || m.module_code,
-                code: code,
+                id: CODE,
+                code: CODE,
                 name: m.name || m.title || m.module_name || m.code,
                 instructor: instructor,
                 credits: m.credits ?? 3,
                 enrolled: enrolledSubjectCodes.has(CODE),
                 status: isCompleted ? 'completed' : (form_available ? 'pending' : 'unavailable'),
-                description: m.description || m.summary || '',
+                description: form?.description || m.description || m.summary || '',
                 form_available: form_available,
+                form_id: form?.id,
               })
             })
           : [];
@@ -172,7 +191,10 @@ const ModulePage = () => {
           ) : (
             <button 
               className="w-full bg-[#1f474d] text-white py-2 px-4 rounded-md hover:bg-[#2a5d65] font-bold transition-colors text-sm" 
-              onClick={() => { window.history.pushState({}, '', `/dashboard/evaluate/${module.id}`); window.dispatchEvent(new PopStateEvent('popstate')); }}
+              onClick={() => {
+                window.history.pushState({}, '', `/dashboard/evaluate/${module.id}`);
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }}
             >
               Start Evaluation
             </button>

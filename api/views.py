@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.conf import settings
+from rest_framework.exceptions import ValidationError
 import logging
 import os
 import requests
@@ -30,7 +31,10 @@ from .models.EvaluationForm import EvaluationForm
 from .models.Faculty import Faculty
 from .models.InstructorEvaluationForm import InstructorEvaluationForm
 from .models.Module import Module
-from .models.ModuleAssignment import ModuleAssignment
+from .models.Block import Block
+from .models.Classroom import Classroom
+from .models.ClassroomEnrollment import ClassroomEnrollment
+from .models.Program import Program
 from .models.ModuleEvaluationForm import ModuleEvaluationForm
 from .models.Student import Student
 from .models.FeedbackResponse import FeedbackResponse
@@ -52,6 +56,12 @@ from .serializers.StudentLogin import StudentLoginSerializer
 from .serializers.FeedbackResponse import FeedbackResponseSerializer
 from .serializers.OTP import SendOTPSerializer, VerifyOTPSerializer
 from .serializers.PasswordReset import PasswordResetConfirmSerializer
+from .serializers.Program import ProgramSerializer
+from .serializers.Module import ModuleSerializer
+from .serializers.Block import BlockSerializer
+from .serializers.Classroom import ClassroomSerializer
+from .serializers.ClassroomEnrollment import ClassroomEnrollmentSerializer
+
 
 from .utils import create_and_send_otp, is_password_expired, validate_uploaded_csv, validate_plain_text
 logger = logging.getLogger(__name__)
@@ -64,8 +74,6 @@ _HARSH_RE = re.compile(
     r"\b(fuck|fucking|shit|bitch|asshole|idiot|stupid|moron|bastard|dumb|crap|ugly|shut\s+the\s+fuck\s+up)\b",
     flags=re.IGNORECASE,
 )
-
-
 def _classify_blocked_theme_local(content: str):
     """Deterministic lexical checks to avoid fail-open moderation."""
     if _SEXUAL_RE.search(content):
@@ -715,32 +723,21 @@ class StudentMeView(APIView):
 
         try:
             student = Student.objects.get(id=student_id)
-            # Provide enrolled subjects/modules so frontend can determine available forms
-            enrolled = student.enrolled_subjects or []
-            enrolled_codes = [item.get('code', '').strip().upper() for item in enrolled if isinstance(item, dict) and item.get('code')]
-            # Normalize into a minimal module shape expected by frontend
-            enrolled_modules = []
-            if isinstance(enrolled, list):
-                for item in enrolled:
-                    if isinstance(item, dict) and item.get('code'):
-                        c = item['code'].strip()
-                        instructor_name = ''
-                        try:
-                            module = Module.objects.get(subject_code=c)
-                            assignment = ModuleAssignment.objects.filter(module=module).first()
-                            if assignment:
-                                faculty = assignment.faculty
-                                instructor_name = f"{faculty.firstname} {faculty.lastname}"
-                        except:
-                            pass
-                        enrolled_modules.append({
-                            "id": c,
-                            "code": c,
-                            "name": item.get('description', c),
-                            "instructor": instructor_name,
-                            "description": item.get('description', ''),
-                            "form_available": False,
-                        })
+
+            approved = ClassroomEnrollment.objects.filter(
+                student=student, approved=True
+            ).select_related("classroom")
+            classrooms = [
+                {
+                    "classroom_code": e.classroom.classroom_code,
+                    "subject_code": e.classroom.subject_code,
+                    "module_name": e.classroom.module_name,
+                    "program": e.classroom.program,
+                    "block": e.classroom.block,
+                    "instructor": f"{e.classroom.faculty.firstname} {e.classroom.faculty.lastname}",
+                }
+                for e in approved
+            ]
 
             return Response({
                 "student": {
@@ -751,17 +748,13 @@ class StudentMeView(APIView):
                     "lastname": student.lastname,
                     "program": student.program,
                     "year_level": student.year_level,
-                    "enrolled_subjects": enrolled,
                 },
+                "classrooms": classrooms,
                 "stats": {
-                    "total_modules": len(enrolled_modules),
-                    "instructors": 0,
-                    "completed": 0,
-                    "pending": 0,
+                    "total_classes": len(classrooms),
                 },
-                "enrolled_modules": enrolled_modules,
-                "recent_modules": enrolled_modules[:5],
             }, status=status.HTTP_200_OK)
+
         except Student.DoesNotExist:
             return Response({"detail": "Student not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -792,13 +785,13 @@ class FacultyModulesView(APIView):
         except Faculty.DoesNotExist:
             return Response({"detail": "Faculty not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        assignments = ModuleAssignment.objects.filter(faculty=faculty).select_related('module')
+        classes = Classroom.objects.filter(faculty=faculty).select_related("module")
         results = []
         from django.contrib.contenttypes.models import ContentType
         mef_ct = ContentType.objects.get_for_model(ModuleEvaluationForm)
 
-        for a in assignments:
-            mod = a.module
+        for c in classes:
+            mod = c.module
             # try find a matching module evaluation form by subject code
             mef = ModuleEvaluationForm.objects.filter(subject_code__iexact=getattr(mod, 'subject_code', '')).first()
             responses_count = 0
@@ -824,6 +817,10 @@ class FacultyModulesView(APIView):
                 except Exception:
                     average_rating = None
 
+            student_count = ClassroomEnrollment.objects.filter(
+                classroom=c, approved=True
+            ).count()
+            
             results.append({
                 'module_id': getattr(mod, 'id', None),
                 'subject_code': getattr(mod, 'subject_code', None),
@@ -834,6 +831,8 @@ class FacultyModulesView(APIView):
                 'evaluation_form_id': mef.id if mef else None,
                 'responses_count': responses_count,
                 'average_rating': average_rating,
+                "classroom_code": c.classroom_code,
+                "enrolled_students": student_count,
             })
 
         return Response(results, status=status.HTTP_200_OK)
@@ -969,35 +968,51 @@ class ModuleEvaluationFormListCreateView(generics.ListCreateAPIView):
         qs = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(qs)
         if page is not None:
-            serializer = self.get_serializer(page, many=True, context={'request': request})
+            serializer = self.get_serializer(page, many=True, context={"request": request})
             return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(qs, many=True, context={'request': request})
+        serializer = self.get_serializer(qs, many=True, context={"request": request})
         return Response(serializer.data)
 
     def get_queryset(self):
-        queryset = ModuleEvaluationForm.objects.filter(status='Active')
+        # base restriction – only active forms
+        queryset = ModuleEvaluationForm.objects.filter(status="Active")
         token = _get_bearer_token(self.request)
-        if token:
-            try:
-                decoded_token = AccessToken(token)
-                if decoded_token.get("role") == "student":
-                    student_id = decoded_token.get("legacy_user_id")
-                    if student_id:
+        if not token:
+            return queryset.none()
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return queryset.none()
+
+        role = decoded.get("role")
+        if role == "student":
+            student_id = decoded.get("legacy_user_id")
+            if student_id:
+                student = Student.objects.filter(id=student_id).first()
+                if student:
+                    # use the classroom enrolments rather than the old JSON field
+                    codes = (
+                        ClassroomEnrollment.objects
+                        .filter(student=student, approved=True)
+                        .values_list("classroom__subject_code", flat=True)
+                    )
+                    if codes:
+                        queryset = queryset.filter(subject_code__in=codes)
+                        # make student available to serializers as before
                         try:
-                            student = Student.objects.get(id=student_id)
-                            enrolled = student.enrolled_subjects or []
-                            enrolled_codes = [item.get('code', '').strip().upper() for item in enrolled if isinstance(item, dict) and item.get('code')]
-                            if enrolled_codes:
-                                	# attach a lightweight user wrapper so serializers can access student via request.user.student
-                                    try:
-                                        self.request.user = SimpleNamespace(student=student)
-                                    except Exception:
-                                        pass
-                                    queryset = queryset.filter(title__in=enrolled_codes)
-                        except Student.DoesNotExist:
+                            self.request.user = SimpleNamespace(student=student)
+                        except Exception:
                             pass
-            except:
-                pass
+        elif role == "faculty":
+            fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            if fac_id:
+                queryset = queryset.filter(classroom__faculty_id=fac_id)
+        elif role == "department_head":
+            hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            head = DepartmentHead.objects.filter(id=hid).first()
+            if head:
+                queryset = queryset.filter(classroom__faculty__department=head.department)
+
         return queryset
 
     def create(self, request, *args, **kwargs):
@@ -1005,28 +1020,27 @@ class ModuleEvaluationFormListCreateView(generics.ListCreateAPIView):
         if not token:
             return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
         try:
-            decoded_token = AccessToken(token)
-        except:
+            decoded = AccessToken(token)
+        except Exception:
             return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
-        if decoded_token.get("role") != "department_head":
+        if decoded.get("role") != "faculty":
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
         request.user = None
         response = super().create(request, *args, **kwargs)
         if response.status_code == status.HTTP_201_CREATED:
             form_data = response.data
-            user_name = 'System'
+            user_name = "System"
             AuditLog.objects.create(
                 user=user_name,
-                role='Depthead',
-                action='Created Module Evaluation Form',
-                category='FORM MANAGEMENT',
-                status='Success',
+                role="Depthead",
+                action="Created Module Evaluation Form",
+                category="FORM MANAGEMENT",
+                status="Success",
                 message=f'Created new module form: {form_data.get("title", "Unknown")}',
-                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+                ip=request.META.get("REMOTE_ADDR", "Unknown"),
             )
         return response
-
 
 class ModuleEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
     authentication_classes = []
@@ -1034,50 +1048,90 @@ class ModuleEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = ModuleEvaluationForm.objects.all()
     serializer_class = ModuleEvaluationFormSerializer
 
+    def get_object(self):
+        obj = super().get_object()
+        token = _get_bearer_token(self.request)
+        if not token:
+            raise exceptions.NotAuthenticated()
+
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            raise exceptions.NotAuthenticated()
+
+        role = decoded.get("role")
+        # department head may see any form in their department
+        if role == "department_head":
+            hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            head = DepartmentHead.objects.filter(id=hid).first()
+            if head and obj.classroom.faculty.department == head.department:
+                return obj
+
+        # faculty may see forms for their own classrooms
+        if role == "faculty":
+            fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            if fac_id and obj.classroom.faculty_id == fac_id:
+                return obj
+
+        # students may see forms for classes they are enrolled in
+        if role == "student":
+            sid = decoded.get("legacy_user_id")
+            if sid and ClassroomEnrollment.objects.filter(
+                student_id=sid, classroom=obj.classroom, approved=True
+            ).exists():
+                return obj
+
+        raise exceptions.PermissionDenied()
+
     def perform_update(self, serializer):
+        # same logging code you already have
         token = _get_bearer_token(self.request)
         if token:
             try:
-                decoded_token = AccessToken(token)
-                if decoded_token.get("role") == "department_head":
-                    dept_head_id = decoded_token.get("legacy_user_id")
-                    if dept_head_id:
-                        try:
-                            dept_head = DepartmentHead.objects.get(id=dept_head_id)
-                            self.request.user = dept_head
-                        except DepartmentHead.DoesNotExist:
-                            pass
+                decoded = AccessToken(token)
+                if decoded.get("role") == "department_head":
+                    hid = decoded.get("legacy_user_id")
+                    if hid:
+                        head = DepartmentHead.objects.filter(id=hid).first()
+                        if head:
+                            self.request.user = head
             except:
                 pass
 
-        old_instance = self.get_object()
+        old = self.get_object()
         super().perform_update(serializer)
-        new_instance = serializer.instance
-        user_name = 'System'
-        if hasattr(self.request, 'user') and self.request.user:
-            user_name = f"{self.request.user.firstname} {self.request.user.lastname}".strip() or self.request.user.email or 'Depthead User'
+        new = serializer.instance
+        user_name = "System"
+        if hasattr(self.request, "user") and self.request.user:
+            user_name = (
+                f"{self.request.user.firstname} {self.request.user.lastname}"
+                .strip() or self.request.user.email or "Depthead User"
+            )
         AuditLog.objects.create(
             user=user_name,
-            role='Depthead',
-            action='Updated Module Evaluation Form',
-            category='FORM MANAGEMENT',
-            status='Success',
-            message=f'Updated module form: {getattr(new_instance, "subject_code", "Unknown")}',
-            ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
+            role="Depthead",
+            action="Updated Module Evaluation Form",
+            category="FORM MANAGEMENT",
+            status="Success",
+            message=f"Updated module form: {getattr(new, 'subject_code', 'Unknown')}",
+            ip=self.request.META.get("REMOTE_ADDR", "Unknown"),
         )
 
     def perform_destroy(self, instance):
-        user_name = 'System'
-        if hasattr(self.request, 'user') and self.request.user:
-            user_name = f"{self.request.user.firstname} {self.request.user.lastname}".strip() or self.request.user.email or 'Depthead User'
+        user_name = "System"
+        if hasattr(self.request, "user") and self.request.user:
+            user_name = (
+                f"{self.request.user.firstname} {self.request.user.lastname}"
+                .strip() or self.request.user.email or "Depthead User"
+            )
         AuditLog.objects.create(
             user=user_name,
-            role='Depthead',
-            action='Deleted Module Evaluation Form',
-            category='FORM MANAGEMENT',
-            status='Success',
-            message=f'Deleted module form: {getattr(instance, "subject_code", "Unknown")}',
-            ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
+            role="Depthead",
+            action="Deleted Module Evaluation Form",
+            category="FORM MANAGEMENT",
+            status="Success",
+            message=f"Deleted module form: {getattr(instance, 'subject_code', 'Unknown')}",
+            ip=self.request.META.get("REMOTE_ADDR", "Unknown"),
         )
         super().perform_destroy(instance)
 
@@ -1092,89 +1146,166 @@ class InstructorEvaluationFormListCreateView(generics.ListCreateAPIView):
         qs = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(qs)
         if page is not None:
-            serializer = self.get_serializer(page, many=True, context={'request': request})
+            serializer = self.get_serializer(page, many=True, context={"request": request})
             return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(qs, many=True, context={'request': request})
+        serializer = self.get_serializer(qs, many=True, context={"request": request})
         return Response(serializer.data)
+
+    def get_queryset(self):
+        queryset = InstructorEvaluationForm.objects.all()
+        token = _get_bearer_token(self.request)
+        if not token:
+            return queryset.none()
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return queryset.none()
+
+        role = decoded.get("role")
+        if role == "faculty":
+            fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            if fac_id:
+                queryset = queryset.filter(classroom__faculty_id=fac_id)
+        elif role == "department_head":
+            hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            head = DepartmentHead.objects.filter(id=hid).first()
+            if head:
+                queryset = queryset.filter(classroom__faculty__department=head.department)
+        elif role == "student":
+            student_id = decoded.get("legacy_user_id")
+            if student_id:
+                student = Student.objects.filter(id=student_id).first()
+                if student:
+
+                    codes = (
+                        ClassroomEnrollment.objects
+                        .filter(student=student, approved=True)
+                        .values_list("classroom__subject_code", flat=True)
+                    )
+                    if codes:
+                        queryset = queryset.filter(
+                            classroom__subject_code__in=codes
+                        )
+
+                    try:
+                        self.request.user = SimpleNamespace(student=student)
+                    except Exception:
+                        pass
+
+        return queryset
 
     def create(self, request, *args, **kwargs):
         token = _get_bearer_token(request)
         if not token:
             return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
         try:
-            decoded_token = AccessToken(token)
-        except:
+            decoded = AccessToken(token)
+        except Exception:
             return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
-        if decoded_token.get("role") != "department_head":
+        if decoded.get("role") != "faculty":
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
         request.user = None
         response = super().create(request, *args, **kwargs)
         if response.status_code == status.HTTP_201_CREATED:
             form_data = response.data
-            user_name = 'System'
+            user_name = "System"
             AuditLog.objects.create(
                 user=user_name,
-                role='Depthead',
-                action='Created Instructor Evaluation Form',
-                category='FORM MANAGEMENT',
-                status='Success',
+                role="Depthead",
+                action="Created Instructor Evaluation Form",
+                category="FORM MANAGEMENT",
+                status="Success",
                 message=f'Created new instructor form: {form_data.get("title", "Unknown")}',
-                ip=request.META.get('REMOTE_ADDR', 'Unknown')
+                ip=request.META.get("REMOTE_ADDR", "Unknown"),
             )
         return response
-
-
 class InstructorEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
     authentication_classes = []
     permission_classes = []
     queryset = InstructorEvaluationForm.objects.all()
     serializer_class = InstructorEvaluationFormSerializer
 
+    def get_object(self):
+        obj = super().get_object()
+        token = _get_bearer_token(self.request)
+        if not token:
+            raise exceptions.NotAuthenticated()
+
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            raise exceptions.NotAuthenticated()
+
+        role = decoded.get("role")
+        if role == "department_head":
+            hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            head = DepartmentHead.objects.filter(id=hid).first()
+            if head and obj.classroom.faculty.department == head.department:
+                return obj
+
+        if role == "faculty":
+            fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            if fac_id and obj.classroom.faculty_id == fac_id:
+                return obj
+
+        if role == "student":
+            sid = decoded.get("legacy_user_id")
+            if sid and ClassroomEnrollment.objects.filter(
+                student_id=sid, classroom=obj.classroom, approved=True
+            ).exists():
+                return obj
+
+        raise exceptions.PermissionDenied()
+
     def perform_update(self, serializer):
         token = _get_bearer_token(self.request)
         if token:
             try:
-                decoded_token = AccessToken(token)
-                if decoded_token.get("role") == "department_head":
-                    dept_head_id = decoded_token.get("legacy_user_id")
-                    if dept_head_id:
-                        try:
-                            dept_head = DepartmentHead.objects.get(id=dept_head_id)
-                            self.request.user = dept_head
-                        except DepartmentHead.DoesNotExist:
-                            pass
+                decoded = AccessToken(token)
+                if decoded.get("role") == "department_head":
+                    hid = decoded.get("legacy_user_id")
+                    if hid:
+                        head = DepartmentHead.objects.filter(id=hid).first()
+                        if head:
+                            self.request.user = head
             except:
                 pass
 
-        old_instance = self.get_object()
+        old = self.get_object()
         super().perform_update(serializer)
-        new_instance = serializer.instance
-        user_name = 'System'
-        if hasattr(self.request, 'user') and self.request.user:
-            user_name = f"{self.request.user.firstname} {self.request.user.lastname}".strip() or self.request.user.email or 'Depthead User'
+        new = serializer.instance
+        user_name = "System"
+        if hasattr(self.request, "user") and self.request.user:
+            user_name = (
+                f"{self.request.user.firstname} {self.request.user.lastname}"
+                .strip() or self.request.user.email or "Depthead User"
+            )
         AuditLog.objects.create(
             user=user_name,
-            role='Depthead',
-            action='Updated Instructor Evaluation Form',
-            category='FORM MANAGEMENT',
-            status='Success',
-            message=f'Updated instructor form: {getattr(new_instance, "instructor_name", "Unknown")}',
-            ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
+            role="Depthead",
+            action="Updated Instructor Evaluation Form",
+            category="FORM MANAGEMENT",
+            status="Success",
+            message=f"Updated instructor form: {getattr(new, 'instructor_name', 'Unknown')}",
+            ip=self.request.META.get("REMOTE_ADDR", "Unknown"),
         )
 
     def perform_destroy(self, instance):
-        user_name = 'System'
-        if hasattr(self.request, 'user') and self.request.user:
-            user_name = f"{self.request.user.firstname} {self.request.user.lastname}".strip() or self.request.user.email or 'Depthead User'
+        user_name = "System"
+        if hasattr(self.request, "user") and self.request.user:
+            user_name = (
+                f"{self.request.user.firstname} {self.request.user.lastname}"
+                .strip() or self.request.user.email or "Depthead User"
+            )
         AuditLog.objects.create(
             user=user_name,
-            role='Depthead',
-            action='Deleted Instructor Evaluation Form',
-            category='FORM MANAGEMENT',
-            status='Success',
-            message=f'Deleted instructor form: {getattr(instance, "instructor_name", "Unknown")}',
-            ip=self.request.META.get('REMOTE_ADDR', 'Unknown')
+            role="Depthead",
+            action="Deleted Instructor Evaluation Form",
+            category="FORM MANAGEMENT",
+            status="Success",
+            message=f"Deleted instructor form: {getattr(instance, 'instructor_name', 'Unknown')}",
+            ip=self.request.META.get("REMOTE_ADDR", "Unknown"),
         )
         super().perform_destroy(instance)
 
@@ -1885,8 +2016,8 @@ class ModuleRecommendationView(APIView):
 
         api_key = os.getenv("GEMINI_API_KEY", "").strip().strip('"').strip("'")
         if not api_key:
-            fallback = build_fallback("Gemini API key is not configured")
-            return Response({"recommendation": fallback, "source": "fallback"}, status=status.HTTP_200_OK)
+            fallback = build_fallback(None)
+            return Response({"recommendation": fallback, "source": "local"}, status=200)
 
         prompt = (
             "You are an academic quality assistant. "
@@ -1937,7 +2068,7 @@ class ModuleRecommendationView(APIView):
                 model_candidates = [
                     "gemini-2.0-flash",
                     "gemini-2.0-flash-lite",
-                    "gemini-1.5-flash",
+                    "gemini-2.5-flash",
                 ]
 
             last_status = None
@@ -2281,5 +2412,348 @@ class CSRFCookieView(APIView):
 
     def get(self, request):
         return Response({"detail": "CSRF cookie set"})
-    
+
+class ClassroomListCreateView(generics.ListCreateAPIView):
+    authentication_classes = []
+    permission_classes = []
+    queryset = Classroom.objects.all()
+    serializer_class = ClassroomSerializer
+
+    def get_queryset(self):
+        token = _get_bearer_token(self.request)
+        if not token:
+            return Classroom.objects.none()
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Classroom.objects.none()
+        role = decoded.get("role")
+        if role == "faculty":
+            fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            return Classroom.objects.filter(faculty_id=fac_id)
+        if role == "department_head":
+            # optionally allow heads to see all classes in their department
+            head_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            try:
+                head = DepartmentHead.objects.get(id=head_id)
+                return Classroom.objects.filter(faculty__department=head.department)
+            except DepartmentHead.DoesNotExist:
+                pass
+        return Classroom.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "faculty":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        if not fac_id:
+            return Response({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            faculty = Faculty.objects.get(id=fac_id)
+        except Faculty.DoesNotExist:
+            return Response({"detail": "Faculty not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        request._faculty = faculty
+        request.user = faculty  
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        faculty = getattr(self.request, "_faculty", None)
+        if faculty is None:
+            raise ValidationError("Internal error: faculty missing")
+        serializer.save(faculty=faculty)
+
+class ClassroomJoinView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "student":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        student_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        if not student_id:
+            return DRFValidationError({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
+        code = str(request.data.get("classroom_code") or "").strip()
+        if not code:
+            raise DRFValidationError({"classroom_code": "This field is required."})
+        try:
+            classroom = Classroom.objects.get(classroom_code=code)
+        except Classroom.DoesNotExist:
+            return Response({"detail": "Classroom not found"}, status=status.HTTP_404_NOT_FOUND)
+        enrollment, created = ClassroomEnrollment.objects.get_or_create(
+            student_id=student_id,
+            classroom=classroom,
+            defaults={"approved": False},
+        )
+        if not created:
+            return Response({"detail": "Join request already submitted"}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = ClassroomEnrollmentSerializer(enrollment)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+class StudentLeaveClassroomView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "student":
+            return Response({"detail": "Forbidden"},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        student_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        if not student_id:
+            return Response({"detail": "Invalid token payload"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        enrollment_id = request.data.get("enrollment_id")
+        code = str(request.data.get("classroom_code") or "").strip()
+
+        try:
+            if enrollment_id:
+                enr = ClassroomEnrollment.objects.get(id=enrollment_id, student_id=student_id)
+            elif code:
+                cls = Classroom.objects.get(classroom_code=code)
+                enr = ClassroomEnrollment.objects.get(student_id=student_id, classroom=cls)
+            else:
+                return Response({"detail": "enrollment_id or classroom_code required"},
+                                status=status.HTTP_400_BAD_REQUEST)
+        except (Classroom.DoesNotExist, ClassroomEnrollment.DoesNotExist):
+            return Response({"detail": "Enrollment not found"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        enr.delete()
+        return Response({"detail": "Left classroom"}, status=status.HTTP_200_OK)
+
+class FacultyPendingEnrollmentsView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "faculty":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        enrollments = ClassroomEnrollment.objects.filter(
+            classroom__faculty_id=fac_id, approved=False
+        ).select_related("student", "classroom")
+        serializer = ClassroomEnrollmentSerializer(enrollments, many=True)
+        return Response(serializer.data)
+
+
+class FacultyApproveEnrollmentView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "faculty":
+            return Response({"detail": "Forbidden"},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        enrollment_id = request.data.get("enrollment_id")
+        if not enrollment_id:
+            return Response({"detail": "enrollment_id required"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            enr = ClassroomEnrollment.objects.select_related("classroom").get(id=enrollment_id)
+        except ClassroomEnrollment.DoesNotExist:
+            return Response({"detail": "Enrollment not found"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        if enr.classroom.faculty_id != fac_id:
+            return Response({"detail": "Not your classroom"},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # DECISION ALREADY MADE?
+        if enr.approved and not request.data.get("approve", True):
+            return Response({"detail": "Cannot reject an already‑approved enrollment"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if enr.approved and request.data.get("approve", True):
+            return Response({"detail": "Enrollment already approved"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if not enr.approved and not request.data.get("approve", True):
+            # record is pending and instructor wants to reject it;
+            # delete it and return a message
+            enr.delete()
+            return Response({"detail": "Enrollment rejected"}, status=status.HTTP_200_OK)
+
+        # at this point we know approve==True and enr.approved is False:
+        enr.approved = True
+        enr.approved_at = timezone.now()
+        enr.save(update_fields=["approved", "approved_at"])
+        return Response(ClassroomEnrollmentSerializer(enr).data)
+
+class ProgramListCreateView(generics.ListCreateAPIView):
+    authentication_classes = []
+    permission_classes = []
+    queryset = Program.objects.all()
+    serializer_class = ProgramSerializer
+
+    def get_queryset(self):
+        token = _get_bearer_token(self.request)
+        if not token:
+            return Program.objects.none()
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Program.objects.none()
+        if decoded.get("role") == "department_head":
+            hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            head = DepartmentHead.objects.filter(id=hid).first()
+            if head:
+                return Program.objects.filter(department=head.department)
+        return Program.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        head = DepartmentHead.objects.filter(id=hid).first()
+        if not head:
+            return Response({"detail": "Dept head not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # stash the DepartmentHead for perform_create()
+        request._dept_head = head
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        head = getattr(self.request, "_dept_head", None)
+        if head is None:
+            raise ValidationError("Internal error: department head missing")
+        serializer.save(department_head=head, department=head.department)
+
+    def perform_update(self, serializer):
+        serializer.save()
+
+class ModuleListCreateView(generics.ListCreateAPIView):
+    authentication_classes = []
+    permission_classes = []
+    queryset = Module.objects.all()
+    serializer_class = ModuleSerializer
+
+    def get_queryset(self):
+        token = _get_bearer_token(self.request)
+        if not token:
+            return Module.objects.none()
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Module.objects.none()
+
+        if decoded.get("role") == "department_head":
+            hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            head = DepartmentHead.objects.filter(id=hid).first()
+            if head:
+                return Module.objects.filter(department=head.department)
+        return Module.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        head = DepartmentHead.objects.filter(id=hid).first()
+        if not head:
+            return Response({"detail": "Dept head not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # stash the head for use in perform_create
+        request._dept_head = head
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        head = getattr(self.request, "_dept_head", None)
+        if head is None:
+            raise DRFValidationError("Internal error: department head missing")
+        serializer.save(department_head=head, department=head.department)
+
+class BlockListCreateView(generics.ListCreateAPIView):
+    authentication_classes = []
+    permission_classes = []
+    queryset = Block.objects.all()
+    serializer_class = BlockSerializer
+
+    def get_queryset(self):
+        token = _get_bearer_token(self.request)
+        if not token:
+            return Block.objects.none()
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Block.objects.none()
+        head = None
+        if decoded.get("role") == "department_head":
+            hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+            head = DepartmentHead.objects.filter(id=hid).first()
+        if head:
+            return Block.objects.filter(program__department=head.department)
+        return Block.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        head = DepartmentHead.objects.filter(id=hid).first()
+        if not head:
+            return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
+        request.user = head
+        return super().create(request, *args, **kwargs)
 

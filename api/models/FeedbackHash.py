@@ -13,6 +13,7 @@ class FeedbackHash(models.Model):
 
     class Meta:
         db_table = 'feedback_hashes'
+        managed = False
 
     def __str__(self):
         return f"{self.hash} ({self.tx_hash})"

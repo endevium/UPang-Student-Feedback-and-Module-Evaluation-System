@@ -43,6 +43,16 @@ urlpatterns = [
     path("password-reset/verify/", views.VerifyOTPView.as_view(), name="password-reset-verify"),
     path("password-reset/confirm/", views.PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
 
+    path("classrooms/", views.ClassroomListCreateView.as_view(), name="classroom-list-create"),
+    path("classrooms/join/", views.ClassroomJoinView.as_view(), name="classroom-join"),
+    path("classrooms/leave/", views.StudentLeaveClassroomView.as_view(), name="classroom-leave"),
+    path("classrooms/enrollments/pending/", views.FacultyPendingEnrollmentsView.as_view(), name="classroom-enrollments-pending"),
+    path("classrooms/enrollments/decision/", views.FacultyApproveEnrollmentView.as_view(), name="classroom-enrollment-decision"),
+
+    path("programs/", views.ProgramListCreateView.as_view(), name="program-list-create"),
+    path("modules/", views.ModuleListCreateView.as_view(), name="module-list-create"),
+    path("blocks/", views.BlockListCreateView.as_view(), name="block-list-create"),
+    
     path("auth/csrf/", views.CSRFCookieView.as_view(), name="csrf_cookie"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("auth/token/verify/", TokenVerifyView.as_view(), name="token_verify"),

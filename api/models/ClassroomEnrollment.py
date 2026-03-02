@@ -2,7 +2,7 @@ from django.db import models
 from .Student import Student
 from .Classroom import Classroom
 
-class Enrollment(models.Model):
+class ClassroomEnrollment(models.Model):
     id = models.BigAutoField(primary_key=True)
     student = models.ForeignKey(
         Student,
@@ -21,7 +21,6 @@ class Enrollment(models.Model):
     class Meta:
         db_table = "enrollments"
         unique_together = ("student", "classroom")
-        managed = False
 
     def __str__(self):
         status = "approved" if self.approved else "pending"

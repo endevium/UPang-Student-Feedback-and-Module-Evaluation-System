@@ -1,53 +1,66 @@
 from rest_framework import serializers
-from django.contrib.contenttypes.models import ContentType
-from ..models.InstructorEvaluationForm import InstructorEvaluationForm
-from ..models.FeedbackResponse import FeedbackResponse
+from ..models import InstructorEvaluationForm, Classroom
 
 class InstructorEvaluationFormSerializer(serializers.ModelSerializer):
-    # expose `instructor_name` as `title` for frontend compatibility
-    title = serializers.CharField(source='instructor_name')
-    is_completed = serializers.SerializerMethodField()
-    completed_response_id = serializers.SerializerMethodField()
-
+    classroom_code = serializers.CharField(write_only=True, required=False)
+    title = serializers.CharField(
+        source="instructor_name",
+        read_only=True,
+    )
+    
     class Meta:
         model = InstructorEvaluationForm
         fields = [
-            'id',
-            'title',
-            'description',
-            'status',
-            'created_at',
-            'is_completed',
-            'completed_response_id',
+            "id",
+            "classroom",
+            "instructor_name",  
+            "title",    
+            "description",
+            "status",
+            "created_at",
+            "classroom_code",      
         ]
+        read_only_fields = ["id", "title", "instructor_name", "created_at"]
 
-    def _get_student(self):
-        request = self.context.get('request')
-        user = getattr(request, 'user', None)
-        return getattr(user, 'student', None)
+    def get_instructor_name(self, obj):
+        fac = getattr(obj.classroom, "faculty", None)
+        if fac:
+            return f"{fac.firstname} {fac.lastname}"
+        return ""
+    
+    def validate(self, attrs):
+        code = attrs.pop("classroom_code", None)
+        if code:
+            try:
+                attrs["classroom"] = Classroom.objects.get(
+                    classroom_code=code
+                )
+            except Classroom.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"classroom_code": "Invalid classroom code."}
+                )
 
-    def get_is_completed(self, obj):
-        student = self._get_student()
-        if not student:
-            return False
-        ct = ContentType.objects.get_for_model(InstructorEvaluationForm)
-        return FeedbackResponse.objects.filter(
-        student=student,
-        form_content_type=ct,
-        form_object_id=obj.id,
-        ).exists()
+        classroom = attrs.get("classroom")
+        if not classroom:
+            raise serializers.ValidationError(
+                {"classroom": "This field is required."}
+            )
 
-    def get_completed_response_id(self, obj):
-        student = self._get_student()
-        if not student:
-            return None
-        ct = ContentType.objects.get_for_model(InstructorEvaluationForm)
-        fr = FeedbackResponse.objects.filter(
-        student=student,
-        form_content_type=ct,
-        form_object_id=obj.id,
-        ).order_by('-submitted_at').first()
-        return fr.id if fr else None
+        faculty = classroom.faculty
+        attrs["instructor_name"] = f"{faculty.firstname} {faculty.lastname}"
+
+        request_fac = getattr(self.context.get("request"), "user", None)
+        if request_fac and request_fac != faculty:
+            raise serializers.ValidationError(
+                "You may only create forms for your own classroom."
+            )
+
+        return super().validate(attrs)
 
     def create(self, validated_data):
+        validated_data.pop("classroom_code", None)
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop("classroom_code", None)
+        return super().update(instance, validated_data)
