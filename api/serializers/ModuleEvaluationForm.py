@@ -1,13 +1,16 @@
 from rest_framework import serializers
 from ..models import ModuleEvaluationForm, Classroom
+from ..models.FeedbackResponse import FeedbackResponse
+from django.contrib.contenttypes.models import ContentType
 
 class ModuleEvaluationFormSerializer(serializers.ModelSerializer):
-    # client may send either the PK or the code of the classroom
     classroom_code = serializers.CharField(write_only=True, required=False)
     module_name = serializers.CharField(
         source="subject_description", read_only=True
     )
     instructor_name = serializers.SerializerMethodField()
+    is_completed = serializers.SerializerMethodField(read_only=True)
+    completed_response_id = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = ModuleEvaluationForm
@@ -22,6 +25,8 @@ class ModuleEvaluationFormSerializer(serializers.ModelSerializer):
             "status",
             "created_at",
             "updated_at",
+            "is_completed",
+            "completed_response_id",
         ]
         read_only_fields = [
             "id",
@@ -30,8 +35,40 @@ class ModuleEvaluationFormSerializer(serializers.ModelSerializer):
             "instructor_name",
             "created_at",
             "updated_at",
+            "is_completed",
+            "completed_response_id"
         ]
 
+    def _latest_response(self, obj, student_id):
+        if not student_id:
+            return None
+        return (
+            FeedbackResponse.objects
+            .filter(
+                student_id=student_id,
+                form_content_type=ContentType.objects.get_for_model(obj),
+                form_object_id=obj.id,
+            )
+            .order_by("-id")
+            .first()
+        )
+
+    def get_is_completed(self, obj):
+        req = self.context.get("request")
+        student = getattr(req.user, "student", None) if req else None
+        if not student:
+            return False
+        resp = self._latest_response(obj, student.id)
+        return bool(resp)
+
+    def get_completed_response_id(self, obj):
+        req = self.context.get("request")
+        student = getattr(req.user, "student", None) if req else None
+        if not student:
+            return None
+        resp = self._latest_response(obj, student.id)
+        return resp.id if resp else None
+    
     def get_instructor_name(self, obj):
         fac = getattr(obj.classroom, "faculty", None)
         if fac:

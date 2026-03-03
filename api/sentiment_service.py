@@ -80,6 +80,10 @@ def _load_theme_classifier_once():
     """Load zero-shot classifier once and reuse it. Prefer GPU when available and warm up."""
     global _theme_classifier, _theme_classifier_init_attempted
 
+    if os.getenv("DISABLE_THEME_CHECK", "0") == "1":
+        _theme_classifier = _THEME_UNAVAILABLE
+        return
+
     if _theme_classifier is _THEME_UNAVAILABLE:
         return
     if _theme_classifier is not None:
@@ -126,6 +130,9 @@ def analyze_theme(text: str, meta = None) -> str:
 
     meta: optional dict for security context (e.g. {'caller': 'ip-or-client-id'}).
     """
+    if os.getenv("DISABLE_THEME_CHECK", "0") == "1":
+        return "general feedback"
+    
     if not isinstance(text, str):
         raise TypeError("text must be a string")
 

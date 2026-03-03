@@ -1,24 +1,53 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { BookOpen, Star, BarChart3, Calendar, ListFilter, StarHalf } from 'lucide-react';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 const HistoryPage = () => {
   const [activeTab, setActiveTab] = useState('all');
 
-  // Stats derived from UI design
-  const stats = [
-    { title: "Total Evaluations", value: "10", sub: "All time submissions", icon: BookOpen },
-    { title: "Average Rating", value: "4.8", sub: "Your average score", icon: Star },
-    { title: "Completion Rate", value: "92%", sub: "On-time submissions", icon: BarChart3 },
-    { title: "This Semester", value: "4", sub: "Evaluations complete", icon: Calendar },
-  ];
+  const [historyData, setHistoryData] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Data mapping based on image cards
-  const historyData = [
-    { id: 'ITE 401', type: 'Instructor', name: 'Prof. Kris C. Calputora', dept: 'Professor - CITE Department', overall: 5, instructor: 0, date: '1/24/2026', semester: '2nd Semester 2026' },
-    { id: 'ITE 370', type: 'Instructor', name: 'Prof. Engelbert Cruz', dept: 'Professor - CITE Department', overall: 5, instructor: 0, date: '1/24/2026', semester: '2nd Semester 2026' },
-    { id: 'ITE 401', type: 'Module', name: 'Platform Technologies', dept: 'Professor - Kris C. Calputora', overall: 5, instructor: 3, date: '1/24/2026', semester: '2nd Semester 2026' },
-    { id: 'ITE 401', type: 'Module', name: 'Information Assurance System', dept: 'Professor - Engelbert Cruz', overall: 5, instructor: 4, date: '1/24/2026', semester: '2nd Semester 2026' },
+  useEffect(() => {
+    const token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
+    fetch(`${API_BASE_URL}/feedback/history/`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        setHistoryData(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        setHistoryData([]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const total = historyData.length;
+  const averageRating =
+    total > 0
+      ? (
+          historyData
+            .map((r) =>
+              Array.isArray(r.responses_out)
+                ? r.responses_out
+                    .filter((q) => typeof q.rating === 'number')
+                    .reduce((sum, q) => sum + q.rating, 0)
+                : 0
+            )
+            .reduce((a, b) => a + b, 0) / total
+        ).toFixed(2)
+      : 'N/A';
+
+  const stats = [
+    { title: 'Total Evaluations', value: total, sub: 'All time submissions', icon: BookOpen },
+    { title: 'Average Rating', value: averageRating, sub: 'Your average score', icon: Star },
+    { title: 'Completion Rate', value: total > 0 ? '100%' : '0%', sub: 'On-time submissions', icon: BarChart3 },
+    { title: 'This Semester', value: '-', sub: 'Evaluations complete', icon: Calendar },
   ];
 
   const StarRating = ({ rating }) => (
@@ -84,42 +113,78 @@ const HistoryPage = () => {
 
             {/* History Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {historyData.map((item, idx) => (
-                <div key={idx} className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex items-center gap-3 mb-4">
-                    <span className="font-mono text-[10px] px-2 py-1 bg-slate-50 border border-slate-200 rounded text-slate-500 font-bold uppercase">
-                      {item.id}
-                    </span>
-                    <span className="text-[10px] px-2 py-1 bg-emerald-50 text-emerald-600 rounded border border-emerald-100 font-bold flex items-center gap-1 uppercase">
-                      <CheckCircle size={10} /> Reviewed
-                    </span>
-                  </div>
+              {loading ? (
+                <div>Loading…</div>
+              ) : (
+                historyData
+                  .filter((item) => {
+                    if (activeTab === 'all') return true;
+                    return activeTab === 'modules'
+                      ? item.form_type === 'module'
+                      : item.form_type === 'instructor';
+                  })
+                  .map((item, idx) => {
+                    const date = item.submitted_at
+                      ? new Date(item.submitted_at).toLocaleDateString()
+                      : '';
+                      const respList =
+                        Array.isArray(item.responses_out)
+                          ? item.responses_out
+                          : Array.isArray(item.responses)
+                          ? item.responses
+                          : [];
 
-                  <h3 className="text-xl font-bold text-slate-800">{item.name}</h3>
-                  <p className="text-sm text-slate-500 mb-6">{item.dept}</p>
+                      const overall =
+                        respList.length > 0
+                          ? (
+                              respList
+                                .filter((q) => typeof q.rating === 'number')
+                                .reduce((sum, q) => sum + q.rating, 0) /
+                              respList.filter((q) => typeof q.rating === 'number').length
+                            ).toFixed(1)
+                          : 0;
 
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div>
-                      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Overall Rating</span>
-                      <StarRating rating={item.overall} />
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Instructor Rating</span>
-                      <StarRating rating={item.instructor} />
-                    </div>
-                  </div>
+                    return (
+                      <div
+                        key={idx}
+                        className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow"
+                      >
+                        <div className="flex items-center gap-3 mb-4">
+                          <span className="font-mono text-[10px] px-2 py-1 bg-slate-50 border border-slate-200 rounded text-slate-500 font-bold uppercase">
+                            {item.form_code}
+                          </span>
+                          <span className="text-[10px] px-2 py-1 bg-emerald-50 text-emerald-600 rounded border border-emerald-100 font-bold flex items-center gap-1 uppercase">
+                            <CheckCircle size={10} /> Reviewed
+                          </span>
+                        </div>
 
-                  <div className="flex items-center gap-4 text-xs text-slate-400 mb-6 font-medium">
-                    <span>{item.date}</span>
-                    <span>•</span>
-                    <span>{item.semester}</span>
-                  </div>
+                        <h3 className="text-xl font-bold text-slate-800">
+                          {item.form_label || item.form_model || item.form_id || ''}
+                        </h3>
+                        <p className="text-sm text-slate-500 mb-6">{item.form_description}</p>
 
-                  <button className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-[#1f474d] text-white rounded-lg font-bold hover:bg-[#2a5d65] transition-colors">
-                    <ListFilter size={16} /> View Details
-                  </button>
-                </div>
-              ))}
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                          <div>
+                            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                              Overall Rating
+                            </span>
+                            <StarRating rating={overall} />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 text-xs text-slate-400 mb-6 font-medium">
+                          <span>{date}</span>
+                          <span>•</span>
+                          <span>{/* semester if you have it */}</span>
+                        </div>
+
+                        <button className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-[#1f474d] text-white rounded-lg font-bold hover:bg-[#2a5d65] transition-colors">
+                          <ListFilter size={16} /> View Details
+                        </button>
+                      </div>
+                    );
+                  })
+              )}
             </div>
           </div>
         </main>

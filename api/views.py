@@ -1899,6 +1899,39 @@ class FeedbackResponseListView(generics.ListAPIView):
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
 
+class StudentFeedbackHistoryView(generics.ListAPIView):
+    """
+    GET /api/feedback/history/  – return the logged‑in student's submissions.
+    """
+    authentication_classes = []
+    permission_classes = []
+    serializer_class = FeedbackResponseSerializer
+
+    def get_queryset(self):
+        token = _get_bearer_token(self.request)
+        if not token:
+            return FeedbackResponse.objects.none()
+
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return FeedbackResponse.objects.none()
+
+        if decoded.get("role") != "student":
+            return FeedbackResponse.objects.none()
+
+        student_id = (
+            decoded.get("legacy_user_id")
+            or decoded.get("user_id")
+            or decoded.get("sub")
+        )
+        if not student_id:
+            return FeedbackResponse.objects.none()
+
+        return FeedbackResponse.objects.filter(student_id=student_id).order_by(
+            "-submitted_at"
+        )
+        
 class SentimentTestView(APIView):
     throttle_classes = []
     authentication_classes = []

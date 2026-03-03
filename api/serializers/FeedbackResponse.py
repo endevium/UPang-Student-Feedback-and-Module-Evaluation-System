@@ -38,6 +38,10 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
     form_object_id = serializers.IntegerField(read_only=True)
     form_content_type_id = serializers.IntegerField(read_only=True)
     form_model = serializers.SerializerMethodField(read_only=True)
+    form_label = serializers.SerializerMethodField(read_only=True)
+    form_code = serializers.SerializerMethodField(read_only=True)
+    form_instructor = serializers.SerializerMethodField(read_only=True)
+    form_description = serializers.SerializerMethodField(read_only=True)
 
     # Accept input list, but don't let DRF try to serialize stored JSON using this schema
     responses = serializers.ListField(child=FeedbackResponseItemSerializer(), write_only=True)
@@ -48,13 +52,13 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'form_type', 'form_id',
-            'form_object_id', 'form_content_type_id', 'form_model',
+            'form_object_id', 'form_content_type_id', 'form_model', 'form_code', 'form_label', 'form_instructor', 'form_description',
             'student', 'pseudonym',
-            'responses',        
-            'responses_out',    
+            'responses',
+            'responses_out',
             'sentiment', 'is_anonymous', 'ip_address', 'submitted_at'
         ]
-        read_only_fields = ['id', 'student', 'ip_address', 'sentiment', 'submitted_at', 'responses_out']
+        read_only_fields = ['id', 'student', 'ip_address', 'sentiment', 'submitted_at', 'responses_out', 'form_label', 'form_code', 'form_instructor', 'form_description']
 
     def validate_pseudonym(self, value):
         return sanitize_text(value)
@@ -153,36 +157,55 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
             })
         return normalized
     
-    def get_responses_out(self, instance):
-        expanded = []
+    def get_form_model(self, instance):
+        try:
+            ct = getattr(instance, 'form_content_type', None)
+            return getattr(ct, 'model', None)
+        except Exception:
+            return None
 
-        raw_responses = None
-        if isinstance(instance, dict):
-            raw_responses = instance.get('responses') or instance.get('responses_out') or []
-        else:
-            raw_responses = getattr(instance, 'responses', None) or []
+    def get_form_code(self, obj):
+        form = getattr(obj, 'form', None)
+        if isinstance(form, ModuleEvaluationForm):
+            return form.subject_code
+        if isinstance(form, InstructorEvaluationForm):
+            return form.instructor_name
+        return None
 
-        for r in (raw_responses or []):
-            q_text = None
-            try:
-                qid = r.get('question_id')
-                if qid:
-                    q = EvaluationQuestion.objects.get(pk=qid)
-                    q_text = getattr(q, 'question_text', None)
-            except Exception:
-                q_text = None
+    def get_form_label(self, obj):
+        form = getattr(obj, 'form', None)
+        if isinstance(form, ModuleEvaluationForm):
+            if getattr(form, 'subject_description', None):
+                return form.subject_description
+            return form.subject_code or form.classroom_code or str(form.id)
+        if isinstance(form, InstructorEvaluationForm):
+            return form.instructor_name or getattr(form, 'title', None) or str(form.id)
+        return self.get_form_model(obj)
+    
+    def get_form_instructor(self, obj):
+        form = getattr(obj, "form", None)
+        if not form:
+            return None
 
-            if not q_text:
-                q_text = r.get('question_code') or r.get('question_id')
+        name = getattr(form, "instructor_name", None)
+        if name:
+            return name
 
-            expanded.append({
-                'question_id': r.get('question_id'),
-                'question_code': r.get('question_code'),
-                'question_text': q_text,
-                'rating': r.get('rating'),
-                'comment': r.get('comment'),
-            })
-        return expanded
+        return getattr(form, "description", None) or getattr(form, "title", None)
+
+    def get_form_description(self, obj):
+        form = getattr(obj, "form", None)
+        if not form:
+            return "No description available"
+
+        desc = getattr(form, "description", None) or getattr(form, "title", None)
+        if desc and str(desc).strip():
+            return desc
+
+        return "No description available"
+    
+    def get_responses_out(self, obj):
+        return obj.responses or []
 
     def get_form_model(self, instance):
         try:

@@ -32,6 +32,7 @@ urlpatterns = [
     path("feedback/submit/", views.FeedbackResponseCreateView.as_view(), name="student-submit-feedback"),
     path("feedback/theme-check/", views.FeedbackThemeCheckView.as_view(), name="feedback-theme-check"),
     path("feedback/submissions/", views.FeedbackResponseListView.as_view(), name="student-feedback-detail"),
+    path("feedback/history/", views.StudentFeedbackHistoryView.as_view(), name="student-feedback-history"),
     path("ai/module-recommendation/", views.ModuleRecommendationView.as_view(), name="module-recommendation"),
 
     path("audit-logs/", views.AuditLogListView.as_view(), name="audit-log-list"),
