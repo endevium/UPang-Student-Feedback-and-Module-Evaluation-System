@@ -13,7 +13,6 @@ import ContactPage from './pages/ContactPage.jsx';
 import DeptHeadDashboard from './pages/depthead/DeptHeadDashboard.jsx';
 import AuditLogPage from './pages/depthead/AuditLogPage.jsx';
 import FacultyPages from './pages/depthead/FacultyPages.jsx';
-import Forms from './pages/depthead/Forms.jsx';
 import ReportsPage from './pages/depthead/ReportsPage.jsx';
 import StudentsPage from './pages/depthead/StudentsPage.jsx';
 
@@ -21,6 +20,8 @@ import StudentsPage from './pages/depthead/StudentsPage.jsx';
 import FacultyDashboard from './pages/faculty/FacultyDashboard.jsx';
 import FacultyClassroomPage from './pages/faculty/ClassroomPage.jsx';
 import FacultyEnrollmentsPage from './pages/faculty/EnrollmentsPage.jsx';
+import FacultyClassroomStudentsPage from './pages/faculty/ClassroomStudentsPage.jsx';
+import FacultyFormsPage from './pages/faculty/Forms.jsx';
 
 // Student Pages
 import StudentDashboard from './pages/student/StudentDashboard.jsx';
@@ -60,7 +61,7 @@ function App() {
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/auth/csrf/`, { credentials: 'include' }).catch(() => {});
-  }, []);
+  }, [API_BASE_URL]);
 
   // Show a brief splash screen on full page reloads
   useEffect(() => {
@@ -70,11 +71,14 @@ function App() {
       // navigation.type === 1 indicates reload in legacy API
       const isReload = navType === 'reload' || navType === 1;
       if (isReload) {
-        setShowSplash(true);
-        const t = setTimeout(() => setShowSplash(false), 900);
-        return () => clearTimeout(t);
+        const showTimer = setTimeout(() => setShowSplash(true), 0);
+        const hideTimer = setTimeout(() => setShowSplash(false), 900);
+        return () => {
+          clearTimeout(showTimer);
+          clearTimeout(hideTimer);
+        };
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, []);
@@ -123,7 +127,7 @@ function App() {
 
     if (!isLoggedIn && isProtected) {
       window.history.replaceState({}, '', '/');
-      setRoute('/');
+      setTimeout(() => setRoute('/'), 0);
       return;
     }
 
@@ -138,10 +142,10 @@ function App() {
       const target = homePathMap[resolvedRole] || '/dashboard';
       if (route !== target) {
         window.history.replaceState({}, '', target);
-        setRoute(target);
+        setTimeout(() => setRoute(target), 0);
       }
     }
-  }, [isLoggedIn, route]);
+  }, [isLoggedIn, route, resolvedRole]);
 
   // If user is logged in, prevent landing page access via URL editing
   useEffect(() => {
@@ -164,7 +168,7 @@ function App() {
       const target = homePathMap[resolvedRole] || '/dashboard';
       if (route !== target) {
         window.history.replaceState({}, '', target);
-        setRoute(target);
+        setTimeout(() => setRoute(target), 0);
       }
     }
   }, [isLoggedIn, route]);
@@ -207,7 +211,6 @@ function App() {
 
       if (route === '/depthead-dashboard/audit-log') return <AuditLogPage />;
       if (route === '/depthead-dashboard/faculty') return <FacultyPages />;
-      if (route === '/depthead-dashboard/forms') return <Forms />;
       if (route === '/depthead-dashboard/reports') return <ReportsPage />;
       if (route === '/depthead-dashboard/students') return <StudentsPage />;
       return <DeptHeadDashboard />;
@@ -220,8 +223,10 @@ function App() {
         return <StudentDashboard />;
       }
 
+      if (route.startsWith('/faculty-dashboard/classroom/students')) return <FacultyClassroomStudentsPage />;
       if (route === '/faculty-dashboard/classroom') return <FacultyClassroomPage />;
       if (route === '/faculty-dashboard/enrollments') return <FacultyEnrollmentsPage />;
+      if (route === '/faculty-dashboard/forms') return <FacultyFormsPage />;
       return <FacultyDashboard />;
     }
 
