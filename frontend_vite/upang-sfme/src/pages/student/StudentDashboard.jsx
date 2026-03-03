@@ -28,6 +28,7 @@ const StudentDashboard = () => {
   };
 
   const fetchDashboard = useCallback(async () => {
+    await Promise.resolve();
     setLoadError('');
     const token = getToken();
 
@@ -104,7 +105,11 @@ const StudentDashboard = () => {
   }, [API_BASE_URL]);
 
   useEffect(() => {
-    fetchDashboard();
+    const timer = setTimeout(() => {
+      fetchDashboard();
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [fetchDashboard]);
 
   return (
@@ -118,9 +123,9 @@ const StudentDashboard = () => {
           <div className="container mx-auto max-w-6xl space-y-12">
             
             {/* Welcome Section */}
-            <header>
-              <h1 className="text-4xl font-bold text-slate-900">Welcome back, <span className="text-[#1f474d]">{studentName || 'Student'}!</span></h1>
-              <p className="text-slate-500 mt-2 text-lg">Here's your evaluation overview for this semester</p>
+            <header className="mb-8">
+              <h1 className="text-3xl font-bold text-[#1f474d] tracking-tight">Welcome back, <span className="text-slate-900">{studentName || 'Student'}!</span></h1>
+              <p className="text-slate-500 mt-1">Here's your evaluation overview for this semester</p>
             </header>
 
             {/* Stats Grid */}
@@ -149,7 +154,7 @@ const StudentDashboard = () => {
                   <p className="text-slate-500 text-sm">Your enrolled courses for evaluation</p>
                 </div>
                 <button 
-                  onClick={() => handleNavigation('/dashboard/modules')}
+                  onClick={() => handleNavigation('/dashboard/evaluation/modules')}
                   className="px-4 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm font-semibold text-slate-600"
                 >
                   View All
@@ -201,8 +206,8 @@ const StudentDashboard = () => {
               </div>
               <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
                 {[
-                  { to: "/dashboard/modules", icon: BookOpen, label: "View All Modules", sub: "See your courses" },
-                  { to: "/dashboard/instructors", icon: Users, label: "Evaluate Instructors", sub: "Provide feedback" },
+                  { to: "/dashboard/evaluation/modules", icon: BookOpen, label: "View All Modules", sub: "See your courses" },
+                  { to: "/dashboard/evaluation/instructors", icon: Users, label: "Evaluate Instructors", sub: "Provide feedback" },
                   { to: "/dashboard/history", icon: HistoryIcon, label: "Evaluation History", sub: "Past submissions" }
                 ].map((action, i) => (
                   <button key={i} onClick={() => handleNavigation(action.to)} className="group text-left w-full">

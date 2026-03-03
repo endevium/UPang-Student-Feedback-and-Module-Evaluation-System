@@ -19,13 +19,17 @@ import StudentsPage from './pages/depthead/StudentsPage.jsx';
 
 // Faculty Pages
 import FacultyDashboard from './pages/faculty/FacultyDashboard.jsx';
+import FacultyClassroomPage from './pages/faculty/ClassroomPage.jsx';
+import FacultyEnrollmentsPage from './pages/faculty/EnrollmentsPage.jsx';
 
 // Student Pages
 import StudentDashboard from './pages/student/StudentDashboard.jsx';
 import HistoryPage from './pages/student/HistoryPage.jsx';
+import ClassroomPage from './pages/student/ClassroomPage.jsx';
 import InstructorsPage from './pages/student/InstructorsPage.jsx';
 import ModulePage from './pages/student/ModulePage.jsx';
 import EvaluationForm from './pages/student/EvaluationForm.jsx';
+import EvaluationPage from './pages/student/EvaluationPage.jsx';
 
 function App() {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -210,17 +214,24 @@ function App() {
     }
 
     // Faculty Routes (enforce role)
-    if (route === '/faculty-dashboard') {
+    if (route.startsWith('/faculty-dashboard')) {
       if (resolvedRole !== 'Faculty') {
         if (resolvedRole === 'Department Head') return <DeptHeadDashboard />;
         return <StudentDashboard />;
       }
+
+      if (route === '/faculty-dashboard/classroom') return <FacultyClassroomPage />;
+      if (route === '/faculty-dashboard/enrollments') return <FacultyEnrollmentsPage />;
       return <FacultyDashboard />;
     }
 
     // Student Nested Routes
     if (route.startsWith('/dashboard')) {
+      if (route === '/dashboard/classroom') return <ClassroomPage />;
       if (route === '/dashboard/history') return <HistoryPage />;
+      // New unified evaluation page with tabs
+      if (route.startsWith('/dashboard/evaluation')) return <EvaluationPage />;
+      // Backwards-compatible routes (redirects handled by pages/Sidebar)
       if (route === '/dashboard/instructors') return <InstructorsPage />;
       if (route === '/dashboard/modules') return <ModulePage />;
       if (route.startsWith('/dashboard/evaluate-instructor/')) {

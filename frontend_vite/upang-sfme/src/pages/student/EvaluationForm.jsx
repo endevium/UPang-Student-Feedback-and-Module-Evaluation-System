@@ -549,7 +549,7 @@ const EvaluationForm = ({
     return (
       <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
         <div className="flex flex-1">
-          <Sidebar role="student" activeItem="modules" />
+          <Sidebar role="student" activeItem="evaluation" />
           <main className="flex-1 flex items-center justify-center p-6">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
@@ -565,7 +565,7 @@ const EvaluationForm = ({
     return (
       <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
         <div className="flex flex-1">
-          <Sidebar role="student" activeItem="modules" onLogout={() => {}} />
+          <Sidebar role="student" activeItem="evaluation" onLogout={() => {}} />
           <main className="flex-1 flex items-center justify-center p-6">
             <div className="text-center max-w-md bg-white p-8 rounded-2xl border border-slate-200 shadow">
               <CheckCircle size={48} className="text-emerald-500 mx-auto mb-4" />
@@ -583,7 +583,7 @@ const EvaluationForm = ({
     return (
       <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
         <div className="flex flex-1">
-          <Sidebar role="student" activeItem="modules" />
+          <Sidebar role="student" activeItem="evaluation" />
           <main className="flex-1 flex items-center justify-center p-6">
             <div className="text-center max-w-md">
               <h1 className="text-2xl font-bold text-slate-900 mb-2">Error</h1>
@@ -599,7 +599,7 @@ const EvaluationForm = ({
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
       <div className="flex flex-1">
-        <Sidebar role="student" activeItem="modules" onLogout={() => {}} />
+        <Sidebar role="student" activeItem="evaluation" onLogout={() => {}} />
         
         <main className="flex-1 overflow-y-auto px-6 py-10">
           <div className="max-w-4xl mx-auto space-y-8">

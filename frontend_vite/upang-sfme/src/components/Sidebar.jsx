@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { BookOpen, Users, History as HistoryIcon, GraduationCap, ClipboardList, BarChart3, FileText, LogOut, Menu, X } from 'lucide-react';
+import { clearSession } from '../utils/auth';
 // import logo from '../assets/header-logo.png';
 
 const Sidebar = ({ role, activeItem, onLogout }) => {
@@ -17,13 +18,15 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
       case 'student':
         return [
           { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/dashboard' },
-          { id: 'modules', label: 'My Modules', icon: BookOpen, path: '/dashboard/modules' },
-          { id: 'instructors', label: 'Instructors', icon: Users, path: '/dashboard/instructors' },
+          { id: 'classroom', label: 'Classroom', icon: GraduationCap, path: '/dashboard/classroom' },
+          { id: 'evaluation', label: 'Evaluation Form', icon: BookOpen, path: '/dashboard/evaluation/modules' },
           { id: 'history', label: 'History', icon: HistoryIcon, path: '/dashboard/history' }
         ];
       case 'faculty':
         return [
-          { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/faculty-dashboard' }
+          { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/faculty-dashboard' },
+          { id: 'classroom', label: 'Classroom', icon: GraduationCap, path: '/faculty-dashboard/classroom' },
+          { id: 'enrollments', label: 'Enrollments', icon: ClipboardList, path: '/faculty-dashboard/enrollments' }
         ];
       case 'depthead':
         return [
@@ -47,12 +50,7 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
 
   const handleConfirmLogout = () => {
     try {
-      sessionStorage.removeItem('authToken');
-      sessionStorage.removeItem('authUser');
-    } catch (e) {}
-    try {
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('authUser');
+      clearSession();
     } catch (e) {}
     if (typeof onLogout === 'function') onLogout();
     window.history.pushState({}, '', '/');

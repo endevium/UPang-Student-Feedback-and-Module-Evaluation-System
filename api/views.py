@@ -785,15 +785,19 @@ class FacultyModulesView(APIView):
         except Faculty.DoesNotExist:
             return Response({"detail": "Faculty not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        classes = Classroom.objects.filter(faculty=faculty).select_related("module")
+        classes = Classroom.objects.filter(faculty_id=faculty_id)
         results = []
         from django.contrib.contenttypes.models import ContentType
         mef_ct = ContentType.objects.get_for_model(ModuleEvaluationForm)
 
         for c in classes:
-            mod = c.module
+            subject_code = str(getattr(c, "subject_code", "") or "").strip()
+            mod = Module.objects.filter(
+                subject_code__iexact=subject_code,
+                department=faculty.department,
+            ).first() if subject_code else None
             # try find a matching module evaluation form by subject code
-            mef = ModuleEvaluationForm.objects.filter(subject_code__iexact=getattr(mod, 'subject_code', '')).first()
+            mef = ModuleEvaluationForm.objects.filter(subject_code__iexact=subject_code).first() if subject_code else None
             responses_count = 0
             average_rating = None
             if mef:
@@ -822,15 +826,19 @@ class FacultyModulesView(APIView):
             ).count()
             
             results.append({
+                'classroom_id': c.id,
                 'module_id': getattr(mod, 'id', None),
-                'subject_code': getattr(mod, 'subject_code', None),
-                'module_name': getattr(mod, 'module_name', None),
-                'department': getattr(mod, 'department', None),
-                'semester': getattr(mod, 'semester', None),
+                'subject_code': subject_code or getattr(mod, 'subject_code', None),
+                'module_name': getattr(c, 'module_name', None) or getattr(mod, 'module_name', None),
+                'department': getattr(mod, 'department', getattr(faculty, 'department', None)),
+                'semester': getattr(c, 'semester', None) or getattr(mod, 'semester', None),
                 'academic_year': getattr(mod, 'academic_year', None),
                 'evaluation_form_id': mef.id if mef else None,
                 'responses_count': responses_count,
                 'average_rating': average_rating,
+                'block': getattr(c, 'block', None),
+                'program': getattr(c, 'program', None),
+                'year_level': getattr(c, 'year_level', None),
                 "classroom_code": c.classroom_code,
                 "enrolled_students": student_count,
             })

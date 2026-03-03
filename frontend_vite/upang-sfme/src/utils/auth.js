@@ -12,6 +12,56 @@ export const USER_KEY = 'authUser';
 export const ACCESS_TOKEN_KEY = 'authAccessToken';
 export const REFRESH_TOKEN_KEY = 'authRefreshToken';
 
+const hasWindow = typeof window !== 'undefined';
+
+const readFromStorage = (storage, key) => {
+  try {
+    return storage?.getItem(key) || null;
+  } catch {
+    return null;
+  }
+};
+
+const writeToStorage = (storage, key, value) => {
+  try {
+    if (!storage) return;
+    if (value == null) {
+      storage.removeItem(key);
+      return;
+    }
+    storage.setItem(key, value);
+  } catch {
+    // no-op
+  }
+};
+
+const decodeJwtExp = (token) => {
+  try {
+    const payload = token?.split('.')?.[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4 || 4)) % 4);
+    const decoded = JSON.parse(atob(padded));
+    return Number(decoded?.exp) || null;
+  } catch {
+    return null;
+  }
+};
+
+const chooseBestToken = (...tokens) => {
+  const now = Math.floor(Date.now() / 1000);
+  const candidates = tokens.filter(Boolean).map((token) => ({ token, exp: decodeJwtExp(token) }));
+  const valid = candidates.filter((item) => item.exp && item.exp > now).sort((a, b) => (b.exp || 0) - (a.exp || 0));
+  if (valid.length > 0) return valid[0].token;
+  return candidates[0]?.token || null;
+};
+
+const syncTokenAcrossStorages = (token, key) => {
+  if (!hasWindow || !token) return;
+  writeToStorage(window.sessionStorage, key, token);
+  writeToStorage(window.localStorage, key, token);
+};
+
 /**
  * Save access/refresh tokens.
  * Also sets TOKEN_KEY for backward compatibility (access == token).
@@ -21,9 +71,12 @@ export function saveTokens({ access, refresh }) {
     if (access) {
       sessionStorage.setItem(ACCESS_TOKEN_KEY, access);
       sessionStorage.setItem(TOKEN_KEY, access); // backward compat
+      localStorage.setItem(ACCESS_TOKEN_KEY, access);
+      localStorage.setItem(TOKEN_KEY, access);
     }
     if (refresh) {
       sessionStorage.setItem(REFRESH_TOKEN_KEY, refresh);
+      localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
     }
   } catch (e) {
     console.error('saveTokens error', e);
@@ -38,17 +91,40 @@ export function saveToken(token) {
  try {
    sessionStorage.setItem(TOKEN_KEY, token);
    sessionStorage.setItem(ACCESS_TOKEN_KEY, token); // treat legacy token as access
+   localStorage.setItem(TOKEN_KEY, token);
+   localStorage.setItem(ACCESS_TOKEN_KEY, token);
  } catch (e) {
    console.error('saveToken error', e);
  }
 }
 
 export function getAccessToken() {
- return sessionStorage.getItem(ACCESS_TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
+ if (!hasWindow) return null;
+ const token = chooseBestToken(
+   readFromStorage(window.sessionStorage, ACCESS_TOKEN_KEY),
+   readFromStorage(window.sessionStorage, TOKEN_KEY),
+   readFromStorage(window.localStorage, ACCESS_TOKEN_KEY),
+   readFromStorage(window.localStorage, TOKEN_KEY)
+ );
+
+ if (token) {
+   syncTokenAcrossStorages(token, ACCESS_TOKEN_KEY);
+   syncTokenAcrossStorages(token, TOKEN_KEY);
+ }
+
+ return token;
 }
 
 export function getRefreshToken() {
- return sessionStorage.getItem(REFRESH_TOKEN_KEY);
+ if (!hasWindow) return null;
+ const token = chooseBestToken(
+   readFromStorage(window.sessionStorage, REFRESH_TOKEN_KEY),
+   readFromStorage(window.localStorage, REFRESH_TOKEN_KEY)
+ );
+ if (token) {
+   syncTokenAcrossStorages(token, REFRESH_TOKEN_KEY);
+ }
+ return token;
 }
 
 /**
@@ -67,7 +143,7 @@ export function saveUser(userObj) {
  * Return the token string from sessionStorage, or null if not found.
  */
 export function getToken() {
-  return sessionStorage.getItem(TOKEN_KEY);
+  return getAccessToken();
 }
 
 /**
@@ -93,6 +169,10 @@ export function clearSession() {
     sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     sessionStorage.removeItem(REFRESH_TOKEN_KEY);
     sessionStorage.removeItem(USER_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
   } catch (e) {
     console.error('clearSession error', e);
   }
