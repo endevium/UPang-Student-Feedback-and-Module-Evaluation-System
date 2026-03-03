@@ -26,6 +26,7 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
         return [
           { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/faculty-dashboard' },
           { id: 'classroom', label: 'Classroom', icon: GraduationCap, path: '/faculty-dashboard/classroom' },
+          { id: 'forms', label: 'Forms', icon: BookOpen, path: '/faculty-dashboard/forms' },
           { id: 'enrollments', label: 'Enrollments', icon: ClipboardList, path: '/faculty-dashboard/enrollments' }
         ];
       case 'depthead':
@@ -33,7 +34,6 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
           { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/depthead-dashboard' },
           { id: 'students', label: 'Students', icon: GraduationCap, path: '/depthead-dashboard/students' },
           { id: 'faculty', label: 'Faculty', icon: Users, path: '/depthead-dashboard/faculty' },
-          { id: 'forms', label: 'Forms', icon: BookOpen, path: '/depthead-dashboard/forms' },
           { id: 'reports', label: 'Reports', icon: FileText, path: '/depthead-dashboard/reports' },
           { id: 'audit-log', label: 'Audit Log', icon: ClipboardList, path: '/depthead-dashboard/audit-log' }
         ];

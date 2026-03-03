@@ -349,13 +349,14 @@ const ClassroomPage = () => {
       const code = (item?.subject_code || item?.module_code || item?.code || `CS${400 + index}`).toUpperCase();
       const section = item?.section || item?.block || `BSCS-${(index % 4) + 1}`;
       const title = item?.module_name || item?.name || item?.title || code;
-      const classCode = item?.class_code || `UP-FB2S25-${section}-${code.replace(/\s+/g, '')}-01`;
+      const classCode = item?.classroom_code || item?.class_code || `UP-FB2S25-${section}-${code.replace(/\s+/g, '')}-01`;
       const schedule = item?.schedule || item?.class_schedule || item?.time_slot || 'TTH 1:00 PM - 2:30 PM';
       const room = item?.room || item?.location || 'CS Lab 1';
       const students = Number(item?.students_count ?? item?.student_count ?? 0) || 0;
 
       return {
         id: item?.module_id || item?.id || `${code}-${index}`,
+        classroomId: item?.classroom_id || item?.id || null,
         code,
         section,
         title,
@@ -563,6 +564,10 @@ const ClassroomPage = () => {
 
                     <button
                       type="button"
+                      onClick={() => {
+                        window.history.pushState({ classroom: card }, '', '/faculty-dashboard/classroom/students');
+                        window.dispatchEvent(new PopStateEvent('popstate'));
+                      }}
                       className="w-full mt-5 bg-[#020824] text-white py-2.5 rounded-lg font-semibold hover:bg-[#0b1238] transition-colors"
                     >
                       View Students

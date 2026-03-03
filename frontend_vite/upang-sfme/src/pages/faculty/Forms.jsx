@@ -1,38 +1,36 @@
 import React, { useEffect, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
-import { 
-  Plus, 
-  FileText, 
-  CheckCircle, 
-  FileEdit, 
-  BarChart3, 
-  Search, 
-  Eye, 
-  Edit3, 
-  Copy, 
+import {
+  Plus,
+  FileText,
+  CheckCircle,
+  FileEdit,
+  BarChart3,
+  Search,
+  Eye,
+  Edit3,
+  Copy,
   Trash2,
   HelpCircle
 } from 'lucide-react';
 import { getToken } from '../../utils/auth';
 
-const EvaluationForms = () => {
+const FacultyFormsPage = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
   const getEndpointForType = (type) => {
     return type === 'Module' ? 'module-evaluation-forms' : 'instructor-evaluation-forms';
   };
 
-  // Helper function to get auth headers
   const getAuthHeaders = () => {
-    const token = getToken()
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
+    const token = getToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
   const [formsList, setFormsList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
 
-  // Modal & Form State
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -54,23 +52,23 @@ const EvaluationForms = () => {
       setIsLoading(true);
       setLoadError('');
       try {
-          const [modulesRes, instructorsRes] = await Promise.all([
-            fetch(`${API_BASE_URL}/${getEndpointForType('Module')}/`, { headers: getAuthHeaders() }),
-            fetch(`${API_BASE_URL}/${getEndpointForType('Instructor')}/`, { headers: getAuthHeaders() }),
-          ]);
+        const [modulesRes, instructorsRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/${getEndpointForType('Module')}/`, { headers: getAuthHeaders() }),
+          fetch(`${API_BASE_URL}/${getEndpointForType('Instructor')}/`, { headers: getAuthHeaders() }),
+        ]);
 
-          const modules = await modulesRes.json().catch(() => []);
-          const instructors = await instructorsRes.json().catch(() => []);
+        const modules = await modulesRes.json().catch(() => []);
+        const instructors = await instructorsRes.json().catch(() => []);
 
-          if (!modulesRes.ok && !instructorsRes.ok) {
-            setLoadError('Unable to load forms.');
-            return;
-          }
+        if (!modulesRes.ok && !instructorsRes.ok) {
+          setLoadError('Unable to load forms.');
+          return;
+        }
 
-          const mappedModules = Array.isArray(modules) ? modules.map(m => ({ ...m, form_type: 'Module' })) : [];
-          const mappedInstructors = Array.isArray(instructors) ? instructors.map(i => ({ ...i, form_type: 'Instructor' })) : [];
+        const mappedModules = Array.isArray(modules) ? modules.map((m) => ({ ...m, form_type: 'Module' })) : [];
+        const mappedInstructors = Array.isArray(instructors) ? instructors.map((i) => ({ ...i, form_type: 'Instructor' })) : [];
 
-          setFormsList([...mappedModules, ...mappedInstructors]);
+        setFormsList([...mappedModules, ...mappedInstructors]);
       } catch {
         setLoadError('Unable to reach the server. Please try again.');
       } finally {
@@ -81,7 +79,6 @@ const EvaluationForms = () => {
     fetchForms();
   }, []);
 
-  // Form Handlers
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormValues((prev) => ({ ...prev, [name]: value }));
@@ -112,14 +109,13 @@ const EvaluationForms = () => {
     e.preventDefault();
     setErrorMessage('');
 
-    // Basic Validation
     let required = [];
     if (formValues.form_type === 'Module') {
       required = ['subject_code', 'subject_description'];
     } else {
       required = ['instructor_name'];
     }
-    const missing = required.find(key => !formValues[key].trim());
+    const missing = required.find((key) => !formValues[key].trim());
     if (missing) {
       setErrorMessage('Please fill in all required fields.');
       return;
@@ -136,7 +132,7 @@ const EvaluationForms = () => {
       const endpoint = getEndpointForType(formValues.form_type);
       const response = await fetch(`${API_BASE_URL}/${endpoint}/`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders()
         },
@@ -150,7 +146,6 @@ const EvaluationForms = () => {
         return;
       }
 
-      // Ensure created item has form_type for UI
       const created = { ...data, form_type: formValues.form_type };
       setFormsList((prev) => [created, ...prev]);
       closeModal();
@@ -165,14 +160,13 @@ const EvaluationForms = () => {
     e.preventDefault();
     setErrorMessage('');
 
-    // Basic Validation
     let required = [];
     if (formValues.form_type === 'Module') {
       required = ['subject_code', 'subject_description'];
     } else {
       required = ['instructor_name'];
     }
-    const missing = required.find(key => !formValues[key].trim());
+    const missing = required.find((key) => !formValues[key].trim());
     if (missing) {
       setErrorMessage('Please fill in all required fields.');
       return;
@@ -186,7 +180,6 @@ const EvaluationForms = () => {
 
     try {
       setIsSubmitting(true);
-      // If form type changed during edit, create new record then delete old one
       const originalType = selectedForm.form_type || selectedForm.formType || 'Module';
       const targetType = formValues.form_type;
 
@@ -194,7 +187,7 @@ const EvaluationForms = () => {
         const endpoint = getEndpointForType(targetType);
         const response = await fetch(`${API_BASE_URL}/${endpoint}/${selectedForm.id}/`, {
           method: 'PUT',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             ...getAuthHeaders()
           },
@@ -209,9 +202,8 @@ const EvaluationForms = () => {
         }
 
         const updated = { ...data, form_type: targetType };
-        setFormsList((prev) => prev.map(f => f.id === selectedForm.id ? updated : f));
+        setFormsList((prev) => prev.map((f) => (f.id === selectedForm.id ? updated : f)));
       } else {
-        // create new in target, then delete original
         const targetEndpoint = getEndpointForType(targetType);
         const createRes = await fetch(`${API_BASE_URL}/${targetEndpoint}/`, {
           method: 'POST',
@@ -229,14 +221,13 @@ const EvaluationForms = () => {
         }
 
         const createdWithType = { ...created, form_type: targetType };
-        // delete original
         const origEndpoint = getEndpointForType(originalType);
         await fetch(`${API_BASE_URL}/${origEndpoint}/${selectedForm.id}/`, {
           method: 'DELETE',
           headers: getAuthHeaders(),
         }).catch(() => {});
 
-        setFormsList((prev) => prev.map(f => f.id === selectedForm.id ? createdWithType : f));
+        setFormsList((prev) => prev.map((f) => (f.id === selectedForm.id ? createdWithType : f)));
       }
       closeModal();
     } catch {
@@ -317,7 +308,7 @@ const EvaluationForms = () => {
         return;
       }
 
-      setFormsList((prev) => prev.filter(f => f.id !== selectedForm.id));
+      setFormsList((prev) => prev.filter((f) => f.id !== selectedForm.id));
       closeModal();
     } catch {
       setErrorMessage('Server connection failed.');
@@ -334,16 +325,15 @@ const EvaluationForms = () => {
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
       <div className="flex flex-1 flex-row relative">
-        <Sidebar role="depthead" activeItem="forms" />
-        
+        <Sidebar role="faculty" activeItem="forms" />
+
         <main className="flex-1 p-8 overflow-y-auto">
-          {/* Header Section */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
               <h1 className="text-4xl font-bold text-[#1f2937]">Evaluation Forms</h1>
               <p className="text-slate-500 mt-1">Create and manage evaluation forms for students</p>
             </div>
-            <button 
+            <button
               onClick={() => setIsAddOpen(true)}
               className="flex items-center gap-2 px-5 py-2.5 bg-[#1f474d] text-white rounded-lg font-bold text-sm hover:bg-[#163539] transition-all shadow-md"
             >
@@ -351,13 +341,12 @@ const EvaluationForms = () => {
             </button>
           </div>
 
-          {/* Stat Cards Section */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
             {[
-              { label: "Total Forms", value: totalForms, icon: <FileText className="text-amber-500" />, sub: "All evaluation forms", bg: "bg-amber-50" },
-              { label: "Active Forms", value: activeForms, icon: <CheckCircle className="text-emerald-500" />, sub: "Currently in use", bg: "bg-emerald-50" },
-              { label: "Draft Forms", value: draftForms, icon: <FileEdit className="text-orange-500" />, sub: "Not yet published", bg: "bg-orange-50" },
-              { label: "Total Usage", value: totalUsage, icon: <BarChart3 className="text-slate-700" />, sub: "Times used", bg: "bg-slate-100" }
+              { label: 'Total Forms', value: totalForms, icon: <FileText className="text-amber-500" />, sub: 'All evaluation forms', bg: 'bg-amber-50' },
+              { label: 'Active Forms', value: activeForms, icon: <CheckCircle className="text-emerald-500" />, sub: 'Currently in use', bg: 'bg-emerald-50' },
+              { label: 'Draft Forms', value: draftForms, icon: <FileEdit className="text-orange-500" />, sub: 'Not yet published', bg: 'bg-orange-50' },
+              { label: 'Total Usage', value: totalUsage, icon: <BarChart3 className="text-slate-700" />, sub: 'Times used', bg: 'bg-slate-100' }
             ].map((stat, i) => (
               <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between items-start mb-4">
@@ -374,7 +363,6 @@ const EvaluationForms = () => {
             ))}
           </div>
 
-          {/* Forms List Container */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-8">
             <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
               <div>
@@ -383,9 +371,9 @@ const EvaluationForms = () => {
               </div>
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input 
-                  type="text" 
-                  placeholder="Search forms..." 
+                <input
+                  type="text"
+                  placeholder="Search forms..."
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none"
                 />
               </div>
@@ -411,28 +399,28 @@ const EvaluationForms = () => {
                       <span className="flex items-center gap-1.5"><FileEdit size={14} className="text-purple-400" /> Created {form.created_at ? new Date(form.created_at).toLocaleDateString() : 'N/A'}</span>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center gap-2">
-                    <button 
+                    <button
                       onClick={() => handlePreview(form)}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"
                     >
                       <Eye size={14} /> Preview
                     </button>
-                    <button 
+                    <button
                       onClick={() => handleEdit(form)}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"
                     >
                       <Edit3 size={14} /> Edit
                     </button>
-                    <button 
+                    <button
                       onClick={() => handleDuplicate(form)}
                       className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-blue-500 hover:border-blue-200 transition-all"
                       title="Duplicate"
                     >
                       <Copy size={16} />
                     </button>
-                    <button 
+                    <button
                       onClick={() => handleDelete(form)}
                       className="p-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-red-500 hover:border-red-200 transition-all"
                       title="Delete"
@@ -452,7 +440,6 @@ const EvaluationForms = () => {
             )}
           </div>
 
-          {/* Quick Tips Section */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4">Quick Tips</h3>
             <ul className="space-y-2 text-sm text-slate-600 font-medium">
@@ -473,7 +460,6 @@ const EvaluationForms = () => {
         </main>
       </div>
 
-      {/* INTEGRATED MODAL */}
       {(isAddOpen || isEditOpen) && (
         <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeModal}>
           <div
@@ -588,7 +574,6 @@ const EvaluationForms = () => {
         </div>
       )}
 
-      {/* PREVIEW MODAL */}
       {isPreviewOpen && selectedForm && (
         <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeModal}>
           <div
@@ -644,7 +629,7 @@ const EvaluationForms = () => {
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-                <button 
+                <button
                   onClick={() => { closeModal(); handleEdit(selectedForm); }}
                   className="px-4 py-2 text-sm font-bold bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
                 >
@@ -659,7 +644,6 @@ const EvaluationForms = () => {
         </div>
       )}
 
-      {/* DELETE CONFIRMATION MODAL */}
       {isDeleteConfirmOpen && selectedForm && (
         <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeModal}>
           <div
@@ -683,9 +667,9 @@ const EvaluationForms = () => {
               )}
 
               <div className="flex items-center justify-end gap-3">
-                <button 
-                  type="button" 
-                  className="px-4 py-2 text-sm font-bold text-slate-500" 
+                <button
+                  type="button"
+                  className="px-4 py-2 text-sm font-bold text-slate-500"
                   onClick={closeModal}
                   disabled={isSubmitting}
                 >
@@ -707,4 +691,4 @@ const EvaluationForms = () => {
   );
 };
 
-export default EvaluationForms;
+export default FacultyFormsPage;
