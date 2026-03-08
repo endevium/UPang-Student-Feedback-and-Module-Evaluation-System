@@ -1036,18 +1036,26 @@ class ModuleEvaluationFormListCreateView(generics.ListCreateAPIView):
 
         request.user = None
         response = super().create(request, *args, **kwargs)
+
         if response.status_code == status.HTTP_201_CREATED:
-            form_data = response.data
-            user_name = "System"
+            try:
+                decoded = AccessToken(_get_bearer_token(request))
+                fac_id = decoded.get("legacy_user_id") or decoded.get("user_id")
+                faculty = Faculty.objects.filter(id=fac_id).first()
+                faculty_name = f"{faculty.firstname} {faculty.lastname}".strip() if faculty else "Faculty"
+            except Exception:
+                faculty_name = "Faculty"
+
             AuditLog.objects.create(
-                user=user_name,
-                role="Depthead",
+                user=faculty_name,
+                role="Faculty",
                 action="Created Module Evaluation Form",
                 category="FORM MANAGEMENT",
                 status="Success",
-                message=f'Created new module form: {form_data.get("title", "Unknown")}',
+                message=f"Faculty created module evaluation form: {response.data.get('subject_code')} (classroom: {response.data.get('classroom')})",
                 ip=request.META.get("REMOTE_ADDR", "Unknown"),
             )
+
         return response
 
 class ModuleEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -1830,40 +1838,27 @@ class FeedbackResponseCreateView(generics.CreateAPIView):
 
         obj = serializer.save(
             student=student,
-            ip_address=request.META.get('REMOTE_ADDR', 'Unknown'),
+            ip_address=request.META.get("REMOTE_ADDR", "Unknown"),
         )
 
-        onchain = None
-        logger = logging.getLogger(__name__)
+        # THEN create the audit log
+        student_name = f"{student.firstname} {student.lastname}".strip() if student else "Anonymous"
+        form_type_label = str(request.data.get("form_type") or "").capitalize()
+        form_id_label = str(request.data.get("form_id") or "")
 
-        try:
-            payload = feedback_payload(
-                form_type=data.get("form_type"),
-                form_object_id=obj.form_object_id,
-                student_id=getattr(student, "id", None) if student else None,
-                pseudonym=obj.pseudonym,
-                responses=obj.responses,
-            )
-            hash_hex = compute_feedback_hash_hex(payload)
-            tx_hash = store_hash_onchain(hash_hex)
-            
-            FeedbackHash.objects.create(
-                feedback_response=obj,
-                hash=hash_hex,
-                tx_hash=tx_hash
-            )
+        AuditLog.objects.create(
+            user=student_name,
+            role="Student",
+            action="Submitted Feedback",
+            category="FEEDBACK",
+            status="Success",
+            message=f"Student submitted {form_type_label} evaluation feedback (form_id: {form_id_label})",
+            ip=request.META.get("REMOTE_ADDR", "Unknown"),
+        )
 
-            onchain = {"hash": hash_hex, "tx_hash": tx_hash}
-            logger.info("Feedback onchain stored tx=%s hash=%s", tx_hash, hash_hex)
-        except Exception as e:
-            onchain = {"warning": "Failed to store hash on-chain", "error": str(e)}
-            logger.warning("Feedback onchain store failed: %s", str(e), exc_info=True)
-
-        data = self.get_serializer(obj).data
-        data["onchain"] = onchain
-
-        headers = self.get_success_headers(data)
-        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+        response_data = self.get_serializer(obj).data
+        headers = self.get_success_headers(response_data)
+        return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
     
 class FeedbackResponseListView(generics.ListAPIView):
     authentication_classes = []
@@ -2566,8 +2561,22 @@ class ClassroomListCreateView(generics.ListCreateAPIView):
             return Response({"detail": "Faculty not found"}, status=status.HTTP_404_NOT_FOUND)
 
         request._faculty = faculty
-        request.user = faculty  
-        return super().create(request, *args, **kwargs)
+        request.user = faculty
+        response = super().create(request, *args, **kwargs)
+
+        if response.status_code == status.HTTP_201_CREATED:
+            faculty_name = f"{faculty.firstname} {faculty.lastname}".strip()
+            AuditLog.objects.create(
+                user=faculty_name,
+                role="Faculty",
+                action="Created Classroom",
+                category="CLASSROOM MANAGEMENT",
+                status="Success",
+                message=f"Faculty created classroom: {response.data.get('classroom_code')} ({response.data.get('subject_code')})",
+                ip=request.META.get("REMOTE_ADDR", "Unknown"),
+            )
+
+        return response
 
     def perform_create(self, serializer):
         faculty = getattr(self.request, "_faculty", None)
@@ -2606,6 +2615,20 @@ class ClassroomJoinView(APIView):
         )
         if not created:
             return Response({"detail": "Join request already submitted"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        student = Student.objects.filter(id=student_id).first()
+        student_name = f"{student.firstname} {student.lastname}".strip() if student else str(student_id)
+
+        AuditLog.objects.create(
+            user=student_name,
+            role="Student",
+            action="Joined Classroom",
+            category="ENROLLMENT",
+            status="Success",
+            message=f"Student joined classroom: {classroom.classroom_code} ({classroom.subject_code})",
+            ip=request.META.get("REMOTE_ADDR", "Unknown"),
+        )
+        
         serializer = ClassroomEnrollmentSerializer(enrollment)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -2648,7 +2671,22 @@ class StudentLeaveClassroomView(APIView):
             return Response({"detail": "Enrollment not found"},
                             status=status.HTTP_404_NOT_FOUND)
 
+        student = Student.objects.filter(id=student_id).first()
+        student_name = f"{student.firstname} {student.lastname}".strip() if student else str(student_id)
+        classroom_code = enr.classroom.classroom_code if enr.classroom else "Unknown"
+        subject_code = enr.classroom.subject_code if enr.classroom else "Unknown"
+
         enr.delete()
+
+        AuditLog.objects.create(
+            user=student_name,
+            role="Student",
+            action="Left Classroom",
+            category="ENROLLMENT",
+            status="Success",
+            message=f"Student left classroom: {classroom_code} ({subject_code})",
+            ip=request.META.get("REMOTE_ADDR", "Unknown"),
+        )
         return Response({"detail": "Left classroom"}, status=status.HTTP_200_OK)
 
 class FacultyPendingEnrollmentsView(APIView):
@@ -2715,16 +2753,40 @@ class FacultyApproveEnrollmentView(APIView):
             return Response({"detail": "Enrollment already approved"},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        if not enr.approved and not request.data.get("approve", True):
-            # record is pending and instructor wants to reject it;
-            # delete it and return a message
+        approve = request.data.get("approve", True)
+
+        faculty = Faculty.objects.filter(id=fac_id).first()
+        faculty_name = f"{faculty.firstname} {faculty.lastname}".strip() if faculty else str(fac_id)
+        student_name = f"{enr.student.firstname} {enr.student.lastname}".strip() if enr.student else "Unknown Student"
+        classroom_code = enr.classroom.classroom_code if enr.classroom else "Unknown"
+
+        if not approve:
             enr.delete()
+            AuditLog.objects.create(
+                user=faculty_name,
+                role="Faculty",
+                action="Rejected Enrollment",
+                category="ENROLLMENT",
+                status="Success",
+                message=f"Faculty rejected enrollment of {student_name} from classroom: {classroom_code}",
+                ip=request.META.get("REMOTE_ADDR", "Unknown"),
+            )
             return Response({"detail": "Enrollment rejected"}, status=status.HTTP_200_OK)
 
-        # at this point we know approve==True and enr.approved is False:
         enr.approved = True
         enr.approved_at = timezone.now()
         enr.save(update_fields=["approved", "approved_at"])
+
+        AuditLog.objects.create(
+            user=faculty_name,
+            role="Faculty",
+            action="Approved Enrollment",
+            category="ENROLLMENT",
+            status="Success",
+            message=f"Faculty approved enrollment of {student_name} in classroom: {classroom_code}",
+            ip=request.META.get("REMOTE_ADDR", "Unknown"),
+        )
+
         return Response(ClassroomEnrollmentSerializer(enr).data)
 
 class ProgramListCreateView(generics.ListCreateAPIView):
@@ -2863,3 +2925,231 @@ class BlockListCreateView(generics.ListCreateAPIView):
         request.user = head
         return super().create(request, *args, **kwargs)
 
+class StoreRecommendationHashView(APIView):
+    """
+    POST /api/ai/store-recommendation-hash/
+    Hashes the AI recommendation + aggregate data and stores it on-chain.
+    """
+    throttle_classes = [AIRequestRateThrottle]
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        module_name = str(request.data.get("module_name") or "").strip()
+        recommendation = str(request.data.get("recommendation") or "").strip()
+        average_rating = request.data.get("average_rating")
+        responses_count = request.data.get("responses_count")
+        rating_breakdown = request.data.get("rating_breakdown") or {}
+        sentiment_summary = request.data.get("sentiment_summary") or {}
+
+        if not module_name:
+            return Response({"detail": "module_name is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not recommendation:
+            return Response({"detail": "recommendation is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Build the payload that will be hashed
+        payload = {
+            "module_name": module_name,
+            "recommendation": recommendation,
+            "average_rating": average_rating,
+            "responses_count": responses_count,
+            "rating_breakdown": rating_breakdown,
+            "sentiment_summary": sentiment_summary,
+            "generated_at": timezone.now().isoformat(),
+        }
+
+        hash_hex = compute_feedback_hash_hex(payload)
+
+        # Check if this exact hash was already stored
+        if FeedbackHash.objects.filter(tx_hash=hash_hex).exists():
+            return Response(
+                {
+                    "detail": "This recommendation has already been stored on-chain.",
+                    "hash": hash_hex,
+                    "already_stored": True,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # Store on blockchain
+        try:
+            tx_hash = store_hash_onchain(hash_hex)
+        except Exception as e:
+            logger.exception("Failed to store recommendation hash on-chain")
+            return Response(
+                {"detail": f"Blockchain storage failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        dept_head_id = decoded.get("legacy_user_id") or decoded.get("user_id")
+        dept_head = DepartmentHead.objects.filter(id=dept_head_id).first()
+        user_name = f"{dept_head.firstname} {dept_head.lastname}".strip() if dept_head else "Department Head"
+
+        AuditLog.objects.create(
+            user=user_name,
+            role="Depthead",
+            action="Stored AI Recommendation Hash",
+            category="BLOCKCHAIN",
+            status="Success",
+            message=f"Stored AI recommendation hash for module: {module_name} | tx: {tx_hash}",
+            ip=request.META.get("REMOTE_ADDR", "Unknown"),
+        )
+
+        return Response(
+            {
+                "detail": "Recommendation hash stored on-chain successfully.",
+                "hash": hash_hex,
+                "tx_hash": tx_hash,
+                "already_stored": False,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+        
+class StudentAuditLogListView(generics.ListAPIView):
+    authentication_classes = []
+    permission_classes = []
+    serializer_class = AuditLogSerializer
+
+    def get_queryset(self):
+        token = _get_bearer_token(self.request)
+        if not token:
+            return AuditLog.objects.none()
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return AuditLog.objects.none()
+
+        if decoded.get("role") != "student":
+            return AuditLog.objects.none()
+
+        student_id = decoded.get("legacy_user_id") or decoded.get("user_id")
+        student = Student.objects.filter(id=student_id).first()
+        if not student:
+            return AuditLog.objects.none()
+
+        student_name = f"{student.firstname} {student.lastname}".strip()
+        return AuditLog.objects.filter(
+            role="Student",
+            user=student_name,
+        ).order_by("-created_at")
+
+
+class FacultyAuditLogListView(generics.ListAPIView):
+    authentication_classes = []
+    permission_classes = []
+    serializer_class = AuditLogSerializer
+
+    def get_queryset(self):
+        token = _get_bearer_token(self.request)
+        if not token:
+            return AuditLog.objects.none()
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return AuditLog.objects.none()
+
+        if decoded.get("role") != "faculty":
+            return AuditLog.objects.none()
+
+        fac_id = decoded.get("legacy_user_id") or decoded.get("user_id")
+        faculty = Faculty.objects.filter(id=fac_id).first()
+        if not faculty:
+            return AuditLog.objects.none()
+
+        faculty_name = f"{faculty.firstname} {faculty.lastname}".strip()
+        return AuditLog.objects.filter(
+            role="Faculty",
+            user=faculty_name,
+        ).order_by("-created_at")
+
+class ClassroomStudentsView(APIView):
+    """
+    GET /api/classrooms/<classroom_id>/students/
+    Returns all approved enrolled students for a classroom.
+    Accessible by the faculty who owns the classroom, or a dept head.
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request, classroom_id):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        role = decoded.get("role")
+        user_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+
+        try:
+            classroom = Classroom.objects.get(id=classroom_id)
+        except Classroom.DoesNotExist:
+            return Response({"detail": "Classroom not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Only the faculty who owns the classroom or a dept head can view
+        if role == "faculty":
+            if classroom.faculty_id != user_id:
+                return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        elif role == "department_head":
+            head = DepartmentHead.objects.filter(id=user_id).first()
+            if not head or classroom.faculty.department != head.department:
+                return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        enrollments = ClassroomEnrollment.objects.filter(
+            classroom=classroom,
+            approved=True,
+        ).select_related("student")
+
+        data = [
+            {
+                "enrollment_id": enr.id,
+                "student_id": enr.student.id,
+                "student_number": enr.student.student_number,
+                "firstname": enr.student.firstname,
+                "lastname": enr.student.lastname,
+                "email": enr.student.email,
+                "approved_at": enr.approved_at,
+            }
+            for enr in enrollments
+        ]
+
+        classroom_info = {
+            "id": classroom.id,
+            "classroom_code": classroom.classroom_code,
+            "subject_code": classroom.subject_code,
+            "module_name": classroom.module_name,
+            "program": classroom.program,
+            "block": classroom.block,
+            "year_level": classroom.year_level,
+            "semester": classroom.semester,
+            "academic_year": classroom.academic_year,
+            "schedule": classroom.schedule,
+            "room": classroom.room,
+            "instructor": (
+                f"{classroom.faculty.firstname} {classroom.faculty.lastname}"
+                if classroom.faculty else None
+            ),
+        }
+
+        return Response({
+            **classroom_info,
+            "total_students": len(data),
+            "students": data,
+        })

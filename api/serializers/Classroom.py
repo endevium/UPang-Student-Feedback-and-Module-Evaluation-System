@@ -17,6 +17,8 @@ class ClassroomSerializer(serializers.ModelSerializer):
             "year_level",
             "semester",
             "classroom_code",
+            "schedule",
+            "room"
         ]
         read_only_fields = ["id", "classroom_code", "faculty", "module_name"]
 

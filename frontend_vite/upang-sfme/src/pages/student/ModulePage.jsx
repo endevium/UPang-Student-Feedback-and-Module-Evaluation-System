@@ -191,7 +191,7 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
             <button 
               className="w-full bg-[#1f474d] text-white py-2 px-4 rounded-md hover:bg-[#2a5d65] font-bold transition-colors text-sm" 
               onClick={() => {
-                window.history.pushState({}, '', `/dashboard/evaluate/${module.id}`);
+                window.history.pushState({ formId: module.form_id }, '', `/dashboard/evaluate/${module.id}`);
                 window.dispatchEvent(new PopStateEvent('popstate'));
               }}
             >

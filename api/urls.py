@@ -33,8 +33,9 @@ urlpatterns = [
     path("feedback/theme-check/", views.FeedbackThemeCheckView.as_view(), name="feedback-theme-check"),
     path("feedback/submissions/", views.FeedbackResponseListView.as_view(), name="student-feedback-detail"),
     path("feedback/history/", views.StudentFeedbackHistoryView.as_view(), name="student-feedback-history"),
-    path("ai/module-recommendation/", views.ModuleRecommendationView.as_view(), name="module-recommendation"),
-
+    path("ai/recommendation/", views.ModuleRecommendationView.as_view(), name="module-recommendation"),
+    path("ai/store-recommendation-hash/", views.StoreRecommendationHashView.as_view(), name="store-recommendation-hash"),
+    
     path("audit-logs/", views.AuditLogListView.as_view(), name="audit-log-list"),
 
     path("otp/send/", views.SendOTPView.as_view(), name="otp-send"),
@@ -49,7 +50,8 @@ urlpatterns = [
     path("classrooms/leave/", views.StudentLeaveClassroomView.as_view(), name="classroom-leave"),
     path("classrooms/enrollments/pending/", views.FacultyPendingEnrollmentsView.as_view(), name="classroom-enrollments-pending"),
     path("classrooms/enrollments/decision/", views.FacultyApproveEnrollmentView.as_view(), name="classroom-enrollment-decision"),
-
+    path("classrooms/<int:classroom_id>/students/", views.ClassroomStudentsView.as_view(), name="classroom-students",),
+    
     path("programs/", views.ProgramListCreateView.as_view(), name="program-list-create"),
     path("modules/", views.ModuleListCreateView.as_view(), name="module-list-create"),
     path("blocks/", views.BlockListCreateView.as_view(), name="block-list-create"),

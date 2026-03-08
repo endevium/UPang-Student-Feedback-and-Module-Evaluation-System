@@ -98,6 +98,8 @@ const ReportsPage = () => {
   const [selectedModuleId, setSelectedModuleId] = useState(null);
   const [moduleInsightsById, setModuleInsightsById] = useState({});
   const [aiLoadingModuleId, setAiLoadingModuleId] = useState(null);
+  const [blockchainStatusById, setBlockchainStatusById] = useState({});
+  const [blockchainLoadingId, setBlockchainLoadingId] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -351,7 +353,7 @@ const ReportsPage = () => {
     setAiLoadingModuleId(moduleId);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/ai/module-recommendation/`, {
+      const res = await fetch(`${API_BASE_URL}/ai/recommendation/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -416,6 +418,66 @@ const ReportsPage = () => {
       </div>
     </div>
   );
+
+  const handleStoreOnBlockchain = async (moduleMeta) => {
+    const moduleId = String(moduleMeta.id);
+    const insight = moduleInsightsById[moduleId];
+
+    if (!insight?.recommendation) {
+      alert('Please generate the AI recommendation first before storing it on the blockchain.');
+      return;
+    }
+
+    setBlockchainLoadingId(moduleId);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/ai/store-recommendation-hash/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          module_name: moduleMeta.module,
+          recommendation: insight.recommendation,
+          average_rating: insight.aggregate?.average_rating ?? null,
+          responses_count: insight.aggregate?.responses_count ?? 0,
+          rating_breakdown: insight.aggregate?.rating_breakdown || {},
+          sentiment_summary: insight.sentiment_summary || {},
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setBlockchainStatusById((prev) => ({
+          ...prev,
+          [moduleId]: { success: false, message: data?.detail || 'Failed to store on blockchain.' },
+        }));
+        return;
+      }
+
+      setBlockchainStatusById((prev) => ({
+        ...prev,
+        [moduleId]: {
+          success: true,
+          already_stored: data.already_stored,
+          tx_hash: data.tx_hash,
+          hash: data.hash,
+          message: data.already_stored
+            ? 'Already stored on blockchain.'
+            : 'Successfully stored on blockchain.',
+        },
+      }));
+    } catch (err) {
+      setBlockchainStatusById((prev) => ({
+        ...prev,
+        [moduleId]: { success: false, message: err.message || 'Network error.' },
+      }));
+    } finally {
+      setBlockchainLoadingId(null);
+    }
+  };
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 overflow-x-hidden flex flex-col lg:flex-row">
@@ -515,8 +577,8 @@ const ReportsPage = () => {
 
           {/* Completed Module Evaluations */}
           <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200 mb-6">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4"> Module Evaluations</h3>
-            <p className="text-slate-500 text-sm mb-6">List of module evaluations and average ratings</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-4"> Evaluations</h3>
+            <p className="text-slate-500 text-sm mb-6">List of evaluations and average ratings</p>
             <div className="space-y-3">
               {isLoading && <p className="text-slate-500 text-sm">Loading evaluations…</p>}
               {!isLoading && completedEvaluationsData.length === 0 && <p className="text-slate-500 text-sm">No completed evaluations found.</p>}
@@ -531,18 +593,59 @@ const ReportsPage = () => {
                       <p className="font-semibold text-slate-900">{ev.average_rating !== null && ev.average_rating !== undefined ? ev.average_rating.toFixed(1) : '-'}</p>
                       <p className="text-xs text-slate-500">{ev.responses_count} responses</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleShowModuleInsights(ev)}
-                      className="px-3 py-2 text-xs font-medium rounded-md bg-slate-800 text-white hover:bg-slate-700 transition"
-                    >
-                      {aiLoadingModuleId === String(ev.id)
-                        ? 'Generating…'
-                        : selectedModuleId === String(ev.id)
-                          ? 'Hide Recommendation'
-                          : 'View AI Recommendation'}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleShowModuleInsights(ev)}
+                        className="px-3 py-2 text-xs font-medium rounded-md bg-slate-800 text-white hover:bg-slate-700 transition"
+                      >
+                        {aiLoadingModuleId === String(ev.id)
+                          ? 'Generating…'
+                          : selectedModuleId === String(ev.id)
+                            ? 'Hide Recommendation'
+                            : 'View AI Recommendation'}
+                      </button>
+
+                      {/* Show blockchain button only when recommendation is available */}
+                      {moduleInsightsById[String(ev.id)]?.recommendation && (
+                        <button
+                          type="button"
+                          onClick={() => handleStoreOnBlockchain(ev)}
+                          disabled={blockchainLoadingId === String(ev.id)}
+                          className="px-3 py-2 text-xs font-medium rounded-md bg-emerald-700 text-white hover:bg-emerald-800 transition disabled:opacity-50"
+                        >
+                          {blockchainLoadingId === String(ev.id)
+                            ? 'Storing…'
+                            : blockchainStatusById[String(ev.id)]?.success
+                              ? '✓ Stored on Chain'
+                              : 'Store on Blockchain'}
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Blockchain status message */}
+                  {blockchainStatusById[String(ev.id)] && (
+                    <div className={`mt-2 text-xs px-3 py-2 rounded-md ${
+                      blockchainStatusById[String(ev.id)].success
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-red-50 text-red-700 border border-red-200'
+                    }`}>
+                      <span className="font-semibold">
+                        {blockchainStatusById[String(ev.id)].message}
+                      </span>
+                      {blockchainStatusById[String(ev.id)].tx_hash && (
+                        <p className="mt-1 font-mono break-all">
+                          TX: {blockchainStatusById[String(ev.id)].tx_hash}
+                        </p>
+                      )}
+                      {blockchainStatusById[String(ev.id)].hash && (
+                        <p className="mt-1 font-mono break-all">
+                          Hash: {blockchainStatusById[String(ev.id)].hash}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {selectedModuleId === String(ev.id) && (() => {
                     const insight = moduleInsightsById[String(ev.id)];

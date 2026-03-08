@@ -24,9 +24,9 @@ class Classroom(models.Model):
         default=1
     )
     semester = models.CharField(max_length=10)
-    classroom_code = models.CharField(
-        max_length=12, unique=True, editable=False
-    )
+    classroom_code = models.CharField(max_length=12, unique=True, editable=False)
+    schedule = models.CharField(max_length=100, blank=True, null=True)
+    room = models.CharField(max_length=50, blank=True, null=True)
 
     class Meta:
         db_table = "classrooms"

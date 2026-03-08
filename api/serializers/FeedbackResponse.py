@@ -18,7 +18,7 @@ except re.error:
 
 class FeedbackResponseItemSerializer(serializers.Serializer):
     question = serializers.CharField()
-    rating = serializers.IntegerField(min_value=1, max_value=5, required=False)
+    rating = serializers.IntegerField(min_value=1, max_value=10, required=False)
     comment = serializers.CharField(required=False, allow_blank=True)
 
     def validate_comment(self, value):
@@ -104,7 +104,6 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
         if not isinstance(value, list) or not value:
             raise serializers.ValidationError('responses must be a non-empty list')
         
-        # If validate() already resolved the form, use its question set for validation
         form_type = (self.initial_data.get('form_type') or '').strip().lower()
         form_obj = getattr(self, '_resolved_form_obj', None)
         allowed_codes = set()
@@ -124,7 +123,6 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
             if allowed_codes:
                 if str(q_ident).strip() not in allowed_codes:
                     raise serializers.ValidationError(f"unknown question '{q_ident}'")
-                # Still try to resolve to EvaluationQuestion for storage (optional)
                 q = self._find_question(q_ident)
             else:
                 q = self._find_question(q_ident)
@@ -145,13 +143,17 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
             if rating is not None:
                 try:
                     r = int(rating)
-                    if r < 1 or r > 5:
+                    # Allow 1-10 for rating type (NPS), 1-5 for scale type
+                    max_rating = 10 if (q_type and str(q_type).lower() == 'rating') else 5
+                    if r < 1 or r > max_rating:
                         raise Exception()
                 except Exception:
-                    raise serializers.ValidationError("rating must be integer between 1 and 5")
+                    max_rating = 10 if (q_type and str(q_type).lower() == 'rating') else 5
+                    raise serializers.ValidationError(f"rating must be integer between 1 and {max_rating}")
             normalized.append({
                 'question_id': q.id if q else None,
                 'question_code': getattr(q, 'code', None) if q else str(q_ident).strip(),
+                'question_text': getattr(q, 'question_text', None) if q else None,
                 'rating': rating,
                 'comment': comment,
             })
