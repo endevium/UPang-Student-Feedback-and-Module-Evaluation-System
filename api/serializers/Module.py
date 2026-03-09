@@ -8,6 +8,7 @@ class ModuleSerializer(serializers.ModelSerializer):
             "id",
             "subject_code",
             "module_name",
+            "year_level",
             "department",
             "semester",
             "academic_year",

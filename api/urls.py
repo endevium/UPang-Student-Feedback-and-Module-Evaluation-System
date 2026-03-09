@@ -49,6 +49,7 @@ urlpatterns = [
     path("classrooms/join/", views.ClassroomJoinView.as_view(), name="classroom-join"),
     path("classrooms/leave/", views.StudentLeaveClassroomView.as_view(), name="classroom-leave"),
     path("classrooms/enrollments/pending/", views.FacultyPendingEnrollmentsView.as_view(), name="classroom-enrollments-pending"),
+    path("classrooms/enrollments/history/", views.FacultyEnrollmentHistoryView.as_view(), name="classroom-enrollments-history"),
     path("classrooms/enrollments/decision/", views.FacultyApproveEnrollmentView.as_view(), name="classroom-enrollment-decision"),
     path("classrooms/<int:classroom_id>/students/", views.ClassroomStudentsView.as_view(), name="classroom-students",),
     

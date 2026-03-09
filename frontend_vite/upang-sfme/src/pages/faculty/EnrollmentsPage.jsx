@@ -1,99 +1,154 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { Search, Clock3, CheckCircle2, X, CalendarDays, Check } from 'lucide-react';
+import { getAccessToken } from '../../utils/auth';
 
-const MOCK_PENDING = [
-  {
-    id: 1,
-    name: 'John Paner',
-    studentId: '2021-00234-MN-0',
-    email: 'john.paner@student.upang.edu.ph',
-    subjectCode: 'ITE 293',
-    subjectName: 'Platform Technologies',
-    date: '2/24/26',
-  },
-  {
-    id: 2,
-    name: 'Maria Santos',
-    studentId: '2021-00235-MN-0',
-    email: 'maria.santos@student.upang.edu.ph',
-    subjectCode: 'ITE 384',
-    subjectName: 'Computer Security',
-    date: '2/23/26',
-  },
-  {
-    id: 3,
-    name: 'Alden Cruz',
-    studentId: '2021-00236-MN-0',
-    email: 'alden.cruz@student.upang.edu.ph',
-    subjectCode: 'ITE 302',
-    subjectName: 'Information Assurance and Security 1',
-    date: '2/22/26',
-  },
-];
-
-const MOCK_HISTORY = [
-  {
-    id: 101,
-    name: 'Angela Reyes',
-    studentId: '2021-00240-MN-0',
-    email: 'angela.reyes@student.upang.edu.ph',
-    subjectCode: 'ITE 383',
-    subjectName: 'Network Security',
-    date: '2/21/26',
-    status: 'Approved',
-  },
-  {
-    id: 102,
-    name: 'Mark Dela Cruz',
-    studentId: '2021-00241-MN-0',
-    email: 'mark.delacruz@student.upang.edu.ph',
-    subjectCode: 'ITE 401',
-    subjectName: 'Platform Technologies',
-    date: '2/20/26',
-    status: 'Rejected',
-  },
-  {
-    id: 103,
-    name: 'Sofia Lim',
-    studentId: '2021-00242-MN-0',
-    email: 'sofia.lim@student.upang.edu.ph',
-    subjectCode: 'ITE 309',
-    subjectName: 'Capstone Project and Research 1',
-    date: '2/19/26',
-    status: 'Approved',
-  },
-];
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
 const EnrollmentsPage = () => {
   const [activeTab, setActiveTab] = useState('pending');
   const [search, setSearch] = useState('');
+  const [pendingRows, setPendingRows] = useState([]);
+  const [historyRows, setHistoryRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [submittingId, setSubmittingId] = useState(null);
 
-  const pendingCount = MOCK_PENDING.length;
-  const approvedCount = MOCK_HISTORY.filter((item) => item.status === 'Approved').length;
-  const rejectedCount = MOCK_HISTORY.filter((item) => item.status === 'Rejected').length;
+  const toDisplayDate = (value) => {
+    if (!value) return 'N/A';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleDateString();
+  };
+
+  const parseError = async (response, fallback) => {
+    const data = await response.json().catch(() => null);
+    if (!data) return fallback;
+    if (typeof data.detail === 'string') return data.detail;
+    if (typeof data.message === 'string') return data.message;
+    if (typeof data.error === 'string') return data.error;
+    return fallback;
+  };
+
+  const mapEnrollmentRow = (item) => {
+    return {
+      id: item?.id,
+      name: item?.student_name || 'Unknown Student',
+      studentId: item?.student_number || String(item?.student || ''),
+      email: item?.student_email || 'No email',
+      subjectCode: item?.subject_code || 'N/A',
+      subjectName: item?.subject_name || 'N/A',
+      date: toDisplayDate(item?.requested_at),
+      status: item?.approved ? 'Approved' : 'Pending',
+      classroomCode: item?.classroom_code || '',
+    };
+  };
+
+  const loadEnrollments = async () => {
+    const token = getAccessToken();
+    if (!token) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      const [pendingRes, historyRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/classrooms/enrollments/pending/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${API_BASE_URL}/classrooms/enrollments/history/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      if (!pendingRes.ok) {
+        setError(await parseError(pendingRes, 'Unable to load enrollments'));
+        setPendingRows([]);
+      } else {
+        const pendingData = await pendingRes.json().catch(() => []);
+        const pendingList = Array.isArray(pendingData) ? pendingData : pendingData?.results || [];
+        setPendingRows(pendingList.map(mapEnrollmentRow));
+      }
+
+      if (!historyRes.ok) {
+        setError((prev) => prev || 'Unable to load enrollment history');
+        setHistoryRows([]);
+      } else {
+        const historyData = await historyRes.json().catch(() => []);
+        const historyList = Array.isArray(historyData) ? historyData : historyData?.results || [];
+        setHistoryRows(historyList.map((item) => ({ ...mapEnrollmentRow(item), status: 'Approved' })));
+      }
+    } catch {
+      setError('Unable to reach server');
+      setPendingRows([]);
+      setHistoryRows([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadEnrollments();
+  }, []);
+
+  const handleDecision = async (enrollmentId, approve) => {
+    const token = getAccessToken();
+    if (!token || !enrollmentId) return;
+
+    setSubmittingId(enrollmentId);
+    try {
+      const res = await fetch(`${API_BASE_URL}/classrooms/enrollments/decision/`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ enrollment_id: enrollmentId, approve }),
+      });
+
+      if (!res.ok) {
+        setError(await parseError(res, 'Unable to update enrollment'));
+        return;
+      }
+
+      const acted = pendingRows.find((row) => row.id === enrollmentId);
+      if (acted) {
+        const nextStatus = approve ? 'Approved' : 'Rejected';
+        setHistoryRows((prev) => [{ ...acted, status: nextStatus }, ...prev]);
+      }
+
+      setPendingRows((prev) => prev.filter((row) => row.id !== enrollmentId));
+    } catch {
+      setError('Unable to update enrollment right now');
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
+  const pendingCount = pendingRows.length;
+  const approvedCount = historyRows.filter((item) => item.status === 'Approved').length;
+  const rejectedCount = historyRows.filter((item) => item.status === 'Rejected').length;
 
   const filteredPending = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return MOCK_PENDING;
-    return MOCK_PENDING.filter((item) =>
+    if (!query) return pendingRows;
+    return pendingRows.filter((item) =>
       [item.name, item.studentId, item.email, item.subjectCode, item.subjectName]
         .join(' ')
         .toLowerCase()
         .includes(query)
     );
-  }, [search]);
+  }, [search, pendingRows]);
 
   const filteredHistory = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return MOCK_HISTORY;
-    return MOCK_HISTORY.filter((item) =>
+    if (!query) return historyRows;
+    return historyRows.filter((item) =>
       [item.name, item.studentId, item.email, item.subjectCode, item.subjectName, item.status]
         .join(' ')
         .toLowerCase()
         .includes(query)
     );
-  }, [search]);
+  }, [search, historyRows]);
 
   const rows = activeTab === 'pending' ? filteredPending : filteredHistory;
 
@@ -169,10 +224,16 @@ const EnrollmentsPage = () => {
                     activeTab === 'history' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-600'
                   }`}
                 >
-                  History ({MOCK_HISTORY.length})
+                  History ({historyRows.length})
                 </button>
               </div>
             </div>
+
+            {error && (
+              <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
+                {error}
+              </div>
+            )}
 
             <div className="bg-white border border-slate-200 rounded-2xl p-6">
               <h2 className="text-3xl font-semibold text-slate-900">
@@ -191,7 +252,9 @@ const EnrollmentsPage = () => {
                 <div className="text-right">Actions</div>
               </div>
 
-              {rows.length === 0 ? (
+              {loading ? (
+                <div className="p-10 text-center text-slate-500 text-xl">Loading enrollments...</div>
+              ) : rows.length === 0 ? (
                 <div className="p-10 text-center text-slate-500 text-xl">No records found.</div>
               ) : (
                 rows.map((row) => (
@@ -217,10 +280,20 @@ const EnrollmentsPage = () => {
                     <div className="flex items-center justify-end gap-2">
                       {activeTab === 'pending' ? (
                         <>
-                          <button type="button" className="w-12 h-12 rounded-xl border border-emerald-300 text-emerald-600 flex items-center justify-center hover:bg-emerald-50">
+                          <button
+                            type="button"
+                            disabled={submittingId === row.id}
+                            onClick={() => handleDecision(row.id, true)}
+                            className="w-12 h-12 rounded-xl border border-emerald-300 text-emerald-600 flex items-center justify-center hover:bg-emerald-50 disabled:opacity-60"
+                          >
                             <Check size={20} />
                           </button>
-                          <button type="button" className="w-12 h-12 rounded-xl border border-rose-300 text-rose-600 flex items-center justify-center hover:bg-rose-50">
+                          <button
+                            type="button"
+                            disabled={submittingId === row.id}
+                            onClick={() => handleDecision(row.id, false)}
+                            className="w-12 h-12 rounded-xl border border-rose-300 text-rose-600 flex items-center justify-center hover:bg-rose-50 disabled:opacity-60"
+                          >
                             <X size={20} />
                           </button>
                         </>

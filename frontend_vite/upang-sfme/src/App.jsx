@@ -15,6 +15,8 @@ import AuditLogPage from './pages/depthead/AuditLogPage.jsx';
 import FacultyPages from './pages/depthead/FacultyPages.jsx';
 import ReportsPage from './pages/depthead/ReportsPage.jsx';
 import StudentsPage from './pages/depthead/StudentsPage.jsx';
+import CoursesPage from './pages/depthead/CoursesPage.jsx';
+import BlockSectionsPage from './pages/depthead/BlockSectionsPage.jsx';
 
 // Faculty Pages
 import FacultyDashboard from './pages/faculty/FacultyDashboard.jsx';
@@ -213,6 +215,8 @@ function App() {
       if (route === '/depthead-dashboard/faculty') return <FacultyPages />;
       if (route === '/depthead-dashboard/reports') return <ReportsPage />;
       if (route === '/depthead-dashboard/students') return <StudentsPage />;
+      if (route === '/depthead-dashboard/courses') return <CoursesPage />;
+      if (route === '/depthead-dashboard/block-sections') return <BlockSectionsPage />;
       return <DeptHeadDashboard />;
     }
 

@@ -12,6 +12,7 @@ class Module(models.Model):
     )
     subject_code = models.CharField(max_length=20, unique=True)
     module_name = models.CharField(max_length=150)
+    year_level = models.CharField(max_length=20, blank=True, null=True)
     department = models.CharField(max_length=50)
     semester = models.CharField(max_length=20)
     academic_year = models.CharField(max_length=20)

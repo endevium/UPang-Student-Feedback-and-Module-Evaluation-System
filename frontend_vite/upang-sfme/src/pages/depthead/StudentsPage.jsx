@@ -49,9 +49,6 @@ const StudentsManagement = () => {
     year_level: '',
     birthdate: '',
     enrolled_subjects: [],
-    subject_code_input: '',
-    subject_description_input: '',
-    subject_instructor_input: '',
     block_section: '',
   });
 
@@ -80,9 +77,6 @@ const StudentsManagement = () => {
       year_level: '',
       birthdate: '',
       enrolled_subjects: [],
-      subject_code_input: '',
-      subject_description_input: '',
-      subject_instructor_input: '',
       block_section: '',
     });
     setErrorMessage('');
@@ -110,9 +104,6 @@ const StudentsManagement = () => {
       if (!value) error = 'Year level is required.';
     } else if (name === 'block_section') {
       if (!value) error = 'Block / Section is required.';
-    } else if (name === 'enrolled_subjects') {
-      const list = Array.isArray(formValues.enrolled_subjects) ? formValues.enrolled_subjects : [];
-      if (list.length === 0) error = 'Please add at least one enrolled subject.';
     }
 
     setFormErrors((prev) => ({ ...prev, [name]: error }));
@@ -150,43 +141,8 @@ const StudentsManagement = () => {
     // block / section
     if (!String(formValues.block_section || '').trim()) errors.block_section = 'Block / Section is required.';
 
-    // enrolled subjects
-    if (!Array.isArray(formValues.enrolled_subjects) || formValues.enrolled_subjects.length === 0) {
-      errors.enrolled_subjects = 'Please add at least one enrolled subject.';
-    }
-
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
-  };
-
-  const addSubject = () => {
-    const code = String(formValues.subject_code_input || '').trim();
-    const desc = String(formValues.subject_description_input || '').trim();
-    const inst = String(formValues.subject_instructor_input || '').trim();
-    if (!code || !desc || !inst) return;
-    setFormValues((prev) => ({
-      ...prev,
-      enrolled_subjects: [...(prev.enrolled_subjects || []), { code, description: desc, instructor_name: inst }],
-      subject_code_input: '',
-      subject_description_input: '',
-      subject_instructor_input: '',
-    }));
-    // clear enrolled_subjects error when a subject is added
-    setFormErrors((prev) => ({ ...prev, enrolled_subjects: undefined }));
-  };
-
-  const removeSubject = (index) => {
-    setFormValues((prev) => ({
-      ...prev,
-      enrolled_subjects: prev.enrolled_subjects.filter((_, i) => i !== index),
-    }));
-    // if removing leaves no subjects, set an error
-    setTimeout(() => {
-      setFormErrors((prev) => {
-        const remaining = (formValues.enrolled_subjects || []).filter((_, i) => i !== index);
-        return { ...prev, enrolled_subjects: remaining.length === 0 ? 'Please add at least one enrolled subject.' : undefined };
-      });
-    }, 0);
   };
 
   const closeModal = () => {
@@ -295,7 +251,7 @@ const StudentsManagement = () => {
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setArchivedStudents(list.map(mapStudent));
-    } catch (e) {
+    } catch {
       setArchiveError('Unable to reach the server.');
       setArchivedStudents([]);
     } finally {
@@ -328,13 +284,15 @@ const StudentsManagement = () => {
       // refresh lists
       fetchStudents();
       fetchArchivedStudents();
-    } catch (e) {
+    } catch {
       setArchiveError('Unable to reach the server.');
     }
   };
 
   useEffect(() => {
     fetchStudents();
+    // Intentionally load once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleAddStudent = async (e) => {
@@ -577,7 +535,7 @@ const StudentsManagement = () => {
       );
 
       setStudentData((prev) => prev.filter((s) => s.pk !== studentId));
-    } catch (e) {
+    } catch {
       setErrorMessage('Unable to reach the server.');
     }
   };
@@ -853,48 +811,6 @@ const StudentsManagement = () => {
                     className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-100"
                     disabled
                   />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Enrolled Subjects</label>
-                  <div className="flex gap-2 mt-2">
-                    <input
-                      name="subject_code_input"
-                      value={formValues.subject_code_input}
-                      onChange={handleInputChange}
-                      placeholder="Subject Code (e.g., COMP101)"
-                      className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                    />
-                    <input
-                      name="subject_description_input"
-                      value={formValues.subject_description_input}
-                      onChange={handleInputChange}
-                      placeholder="Subject Description"
-                      className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                    />
-                    <input
-                     name="subject_instructor_input"
-                     value={formValues.subject_instructor_input}
-                     onChange={handleInputChange}
-                     placeholder="Instructor Name"
-                     className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                   />
-                    <button
-                      type="button"
-                      onClick={addSubject}
-                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700"
-                    >
-                      +
-                    </button>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {(formValues.enrolled_subjects || []).map((s, i) => (
-                      <div key={i} className="px-3 py-1 bg-slate-100 rounded-full flex items-center gap-2 text-sm">
-                        <span>{s.code} - {s.description}</span>
-                        <button type="button" onClick={() => removeSubject(i)} className="text-rose-600 font-bold">×</button>
-                      </div>
-                    ))}
-                  </div>
-                  {formErrors.enrolled_subjects && <div className="text-rose-600 text-sm mt-2">{formErrors.enrolled_subjects}</div>}
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Block / Section</label>

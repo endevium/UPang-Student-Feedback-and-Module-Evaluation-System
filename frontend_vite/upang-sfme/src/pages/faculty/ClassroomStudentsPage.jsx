@@ -5,15 +5,6 @@ import { getAccessToken } from '../../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
-const MOCK_STUDENTS = [
-  { id: 1, name: 'Juan Dela Cruz', studentNumber: '2021-00001-MN-0', email: 'juan.delacruz@student.upang.edu.ph' },
-  { id: 2, name: 'Maria Santos', studentNumber: '2021-00002-MN-0', email: 'maria.santos@student.upang.edu.ph' },
-  { id: 3, name: 'Pedro Garcia', studentNumber: '2021-00003-MN-0', email: 'pedro.garcia@student.upang.edu.ph' },
-  { id: 4, name: 'Ana Reyes', studentNumber: '2021-00004-MN-0', email: 'ana.reyes@student.upang.edu.ph' },
-  { id: 5, name: 'Carlos Ramos', studentNumber: '2021-00005-MN-0', email: 'carlos.ramos@student.upang.edu.ph' },
-  { id: 6, name: 'Student 6', studentNumber: '2021-00006-MN-0', email: 'student6@student.upang.edu.ph' },
-];
-
 const initialsFromName = (name) =>
   String(name || '')
     .split(' ')
@@ -25,6 +16,7 @@ const initialsFromName = (name) =>
 const ClassroomStudentsPage = () => {
   const [search, setSearch] = useState('');
   const [dbClassroom, setDbClassroom] = useState(null);
+  const [students, setStudents] = useState([]);
   const [loadingClassroom, setLoadingClassroom] = useState(true);
   const [classroomError, setClassroomError] = useState('');
   const classroom = useMemo(() => window.history.state?.classroom || {}, []);
@@ -37,22 +29,38 @@ const ClassroomStudentsPage = () => {
       return;
     }
 
+    const fetchClassroomStudents = async (classroomId) => {
+      const res = await fetch(`${API_BASE_URL}/classrooms/${classroomId}/students/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.detail || 'Unable to load classroom details.');
+      }
+
+      setDbClassroom(data || null);
+      setStudents(Array.isArray(data?.students) ? data.students : []);
+    };
+
     const fetchClassroomFromDb = async () => {
       setLoadingClassroom(true);
       setClassroomError('');
       try {
+        const fromQuery = Number(new URLSearchParams(window.location.search).get('classroom_id') || 0);
+        const directId = Number(classroom?.classroomId || fromQuery || 0);
+        if (directId) {
+          await fetchClassroomStudents(directId);
+          return;
+        }
+
         const res = await fetch(`${API_BASE_URL}/classrooms/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json().catch(() => []);
-        if (!res.ok) {
-          setClassroomError(data?.detail || 'Unable to load classroom details.');
-          setDbClassroom(null);
-          return;
-        }
+        if (!res.ok) throw new Error(data?.detail || 'Unable to load classroom details.');
 
         const list = Array.isArray(data) ? data : data?.results || [];
-        const byId = list.find((item) => Number(item?.id) === Number(classroom?.classroomId));
         const byCode = list.find(
           (item) => String(item?.classroom_code || '').toUpperCase() === String(classroom?.classCode || '').toUpperCase()
         );
@@ -62,10 +70,16 @@ const ClassroomStudentsPage = () => {
             String(item?.block || '').toUpperCase() === String(classroom?.section || '').toUpperCase()
         );
 
-        setDbClassroom(byId || byCode || bySubjectAndBlock || list[0] || null);
-      } catch {
-        setClassroomError('Unable to reach server.');
+        const target = byCode || bySubjectAndBlock || null;
+        if (!target?.id) {
+          throw new Error('Classroom ID is missing. Please open this page from the selected classroom card.');
+        }
+
+        await fetchClassroomStudents(target.id);
+      } catch (err) {
+        setClassroomError(err?.message || 'Unable to reach server.');
         setDbClassroom(null);
+        setStudents([]);
       } finally {
         setLoadingClassroom(false);
       }
@@ -97,20 +111,27 @@ const ClassroomStudentsPage = () => {
         dbSemester && dbYearLevel
           ? `${dbSemester} • ${yearLabelMap[dbYearLevel] || `${dbYearLevel}th Year`}`
           : dbSemester || classroom.semester || '2nd Semester 2025-2026',
-      schedule: classroom.schedule || 'MWF 10:00 AM - 11:30 AM',
-      room: classroom.room || 'IT Lab 3',
+      schedule: dbClassroom?.schedule || classroom.schedule || 'MWF 10:00 AM - 11:30 AM',
+      room: dbClassroom?.room || classroom.room || 'IT Lab 3',
       classCode: dbClassCode || classroom.classCode || 'UP-FB2S25-BSIT3-COMSEC-01',
-      students: Number(classroom.students ?? MOCK_STUDENTS.length) || MOCK_STUDENTS.length,
+      students: Number(dbClassroom?.total_students ?? classroom.students ?? students.length) || students.length,
     };
-  }, [classroom, dbClassroom]);
+  }, [classroom, dbClassroom, students.length]);
 
   const filteredStudents = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return MOCK_STUDENTS;
-    return MOCK_STUDENTS.filter((student) =>
+    const normalized = students.map((student) => ({
+      id: student?.student_id || student?.id,
+      name: `${student?.firstname || ''} ${student?.lastname || ''}`.trim() || 'Unknown Student',
+      studentNumber: student?.student_number || 'N/A',
+      email: student?.email || 'No email',
+    }));
+
+    if (!query) return normalized;
+    return normalized.filter((student) =>
       [student.name, student.studentNumber, student.email].join(' ').toLowerCase().includes(query)
     );
-  }, [search]);
+  }, [search, students]);
 
   const goBack = () => {
     window.history.pushState({}, '', '/faculty-dashboard/classroom');

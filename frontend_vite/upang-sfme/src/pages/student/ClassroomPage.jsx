@@ -6,8 +6,10 @@ const ClassroomPage = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
   const [classrooms, setClassrooms] = useState([]);
+  const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [activeView, setActiveView] = useState('active');
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joinError, setJoinError] = useState('');
@@ -40,10 +42,13 @@ const ClassroomPage = () => {
       }
 
       const list = data?.classrooms || data?.modules || data?.enrolled_modules || [];
+      const pendingApplications = data?.applications || [];
       setClassrooms(Array.isArray(list) ? list : []);
+      setApplications(Array.isArray(pendingApplications) ? pendingApplications : []);
     } catch {
       setLoadError('Unable to reach server');
       setClassrooms([]);
+      setApplications([]);
     } finally {
       setLoading(false);
     }
@@ -127,6 +132,25 @@ const ClassroomPage = () => {
     });
   }, [classrooms]);
 
+  const normalizedApplications = useMemo(() => {
+    return applications.map((item, index) => {
+      const requestedDate = item?.requested_at ? new Date(item.requested_at) : null;
+      const requestedAt = requestedDate && !Number.isNaN(requestedDate.getTime())
+        ? requestedDate.toLocaleDateString()
+        : 'N/A';
+
+      return {
+        id: item?.enrollment_id || `${item?.classroom_code || 'APP'}-${index}`,
+        code: item?.subject_code || 'N/A',
+        title: item?.module_name || 'Unknown Module',
+        classroomCode: item?.classroom_code || 'N/A',
+        instructor: item?.instructor || 'Instructor TBA',
+        requestedAt,
+        status: item?.status || 'Pending',
+      };
+    });
+  }, [applications]);
+
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
       <div className="flex flex-1 flex-row relative">
@@ -154,7 +178,36 @@ const ClassroomPage = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-              {loading ? (
+              <button
+                type="button"
+                onClick={() => setActiveView('active')}
+                className={`text-left rounded-2xl p-5 border transition-colors ${
+                  activeView === 'active'
+                    ? 'bg-[#020824] border-[#020824] text-white'
+                    : 'bg-white border-slate-200 text-slate-900 hover:border-slate-300'
+                }`}
+              >
+                <p className={`text-sm ${activeView === 'active' ? 'text-slate-200' : 'text-slate-500'}`}>Active Classrooms</p>
+                <p className="text-4xl font-bold mt-1">{normalizedClassrooms.length}</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveView('applied')}
+                className={`text-left rounded-2xl p-5 border transition-colors ${
+                  activeView === 'applied'
+                    ? 'bg-[#7a4a06] border-[#7a4a06] text-white'
+                    : 'bg-white border-slate-200 text-slate-900 hover:border-slate-300'
+                }`}
+              >
+                <p className={`text-sm ${activeView === 'applied' ? 'text-amber-100' : 'text-slate-500'}`}>Applied Classrooms</p>
+                <p className="text-4xl font-bold mt-1">{normalizedApplications.length}</p>
+              </button>
+            </div>
+
+            {activeView === 'active' ? (
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                {loading ? (
                 <div className="col-span-full bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-500 shadow-sm">
                   Loading classrooms...
                 </div>
@@ -210,7 +263,33 @@ const ClassroomPage = () => {
                   <p className="text-slate-500 mt-2">Join a classroom to get started.</p>
                 </div>
               )}
-            </div>
+              </div>
+            ) : (
+              <div className="mt-6 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                <h2 className="text-3xl font-semibold text-slate-900">Applied Classrooms</h2>
+                <p className="text-slate-500 mt-1 text-base">Track classrooms you are applying to and their status</p>
+
+                {normalizedApplications.length === 0 ? (
+                  <div className="mt-4 text-slate-500">No pending applications.</div>
+                ) : (
+                  <div className="mt-4 divide-y divide-slate-200">
+                    {normalizedApplications.map((application) => (
+                      <div key={application.id} className="py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                        <div>
+                          <p className="text-lg font-semibold text-slate-900">{application.code} - {application.title}</p>
+                          <p className="text-slate-600 text-sm">Class Code: {application.classroomCode}</p>
+                          <p className="text-slate-600 text-sm">Instructor: {application.instructor}</p>
+                          <p className="text-slate-500 text-sm">Requested: {application.requestedAt}</p>
+                        </div>
+                        <span className="inline-flex items-center self-start md:self-auto px-3 py-1 rounded-full text-sm font-semibold bg-amber-100 text-amber-700">
+                          {application.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
         </main>

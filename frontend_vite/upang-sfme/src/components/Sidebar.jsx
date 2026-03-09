@@ -33,6 +33,8 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
         return [
           { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/depthead-dashboard' },
           { id: 'students', label: 'Students', icon: GraduationCap, path: '/depthead-dashboard/students' },
+          { id: 'courses', label: 'Courses', icon: BookOpen, path: '/depthead-dashboard/courses' },
+          { id: 'block-sections', label: 'Block/Sections', icon: ClipboardList, path: '/depthead-dashboard/block-sections' },
           { id: 'faculty', label: 'Faculty', icon: Users, path: '/depthead-dashboard/faculty' },
           { id: 'reports', label: 'Reports', icon: FileText, path: '/depthead-dashboard/reports' },
           { id: 'audit-log', label: 'Audit Log', icon: ClipboardList, path: '/depthead-dashboard/audit-log' }

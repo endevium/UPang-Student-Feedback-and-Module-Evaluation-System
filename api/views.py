@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.conf import settings
+from django.db.models import Q
 from rest_framework.exceptions import ValidationError
 import logging
 import os
@@ -726,7 +727,12 @@ class StudentMeView(APIView):
 
             approved = ClassroomEnrollment.objects.filter(
                 student=student, approved=True
-            ).select_related("classroom")
+            ).select_related("classroom", "classroom__faculty")
+
+            pending = ClassroomEnrollment.objects.filter(
+                student=student, approved=False
+            ).select_related("classroom", "classroom__faculty")
+
             classrooms = [
                 {
                     "classroom_code": e.classroom.classroom_code,
@@ -737,6 +743,21 @@ class StudentMeView(APIView):
                     "instructor": f"{e.classroom.faculty.firstname} {e.classroom.faculty.lastname}",
                 }
                 for e in approved
+            ]
+
+            applications = [
+                {
+                    "enrollment_id": e.id,
+                    "classroom_code": e.classroom.classroom_code,
+                    "subject_code": e.classroom.subject_code,
+                    "module_name": e.classroom.module_name,
+                    "program": e.classroom.program,
+                    "block": e.classroom.block,
+                    "instructor": f"{e.classroom.faculty.firstname} {e.classroom.faculty.lastname}",
+                    "requested_at": e.requested_at,
+                    "status": "Pending",
+                }
+                for e in pending
             ]
 
             return Response({
@@ -750,8 +771,10 @@ class StudentMeView(APIView):
                     "year_level": student.year_level,
                 },
                 "classrooms": classrooms,
+                "applications": applications,
                 "stats": {
                     "total_classes": len(classrooms),
+                    "pending_applications": len(applications),
                 },
             }, status=status.HTTP_200_OK)
 
@@ -2711,6 +2734,31 @@ class FacultyPendingEnrollmentsView(APIView):
         return Response(serializer.data)
 
 
+class FacultyEnrollmentHistoryView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "faculty":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        enrollments = ClassroomEnrollment.objects.filter(
+            classroom__faculty_id=fac_id,
+            approved=True,
+        ).select_related("student", "classroom").order_by("-approved_at", "-requested_at")
+
+        serializer = ClassroomEnrollmentSerializer(enrollments, many=True)
+        return Response(serializer.data)
+
+
 class FacultyApproveEnrollmentView(APIView):
     authentication_classes = []
     permission_classes = []
@@ -2853,12 +2901,51 @@ class ModuleListCreateView(generics.ListCreateAPIView):
         except Exception:
             return Module.objects.none()
 
-        if decoded.get("role") == "department_head":
-            hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
-            head = DepartmentHead.objects.filter(id=hid).first()
+        role = decoded.get("role")
+        uid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        queryset = Module.objects.none()
+
+        if role == "department_head":
+            head = DepartmentHead.objects.filter(id=uid).first()
             if head:
-                return Module.objects.filter(department=head.department)
-        return Module.objects.none()
+                queryset = Module.objects.filter(department=head.department)
+
+        elif role == "faculty":
+            faculty = Faculty.objects.filter(id=uid).first()
+            if faculty and faculty.department:
+                queryset = Module.objects.filter(department=faculty.department)
+
+        if not queryset.exists():
+            return queryset
+
+        year_level = str(self.request.query_params.get("year_level", "") or "").strip()
+        semester = str(self.request.query_params.get("semester", "") or "").strip()
+
+        if year_level:
+            queryset = queryset.filter(year_level__icontains=year_level)
+
+        if semester:
+            sem_key = semester.strip().lower()
+            if sem_key in {"1st sem", "1st semester", "first sem", "first semester"}:
+                queryset = queryset.filter(
+                    Q(semester__iexact="1st Sem") |
+                    Q(semester__iexact="1st Semester") |
+                    Q(semester__iexact="First Sem") |
+                    Q(semester__iexact="First Semester")
+                )
+            elif sem_key in {"2nd sem", "2nd semester", "second sem", "second semester"}:
+                queryset = queryset.filter(
+                    Q(semester__iexact="2nd Sem") |
+                    Q(semester__iexact="2nd Semester") |
+                    Q(semester__iexact="Second Sem") |
+                    Q(semester__iexact="Second Semester")
+                )
+            elif sem_key == "summer":
+                queryset = queryset.filter(semester__iexact="Summer")
+            else:
+                queryset = queryset.filter(semester__icontains=semester)
+
+        return queryset
 
     def create(self, request, *args, **kwargs):
         token = _get_bearer_token(request)
@@ -2900,13 +2987,29 @@ class BlockListCreateView(generics.ListCreateAPIView):
             decoded = AccessToken(token)
         except Exception:
             return Block.objects.none()
-        head = None
-        if decoded.get("role") == "department_head":
-            hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
-            head = DepartmentHead.objects.filter(id=hid).first()
-        if head:
-            return Block.objects.filter(program__department=head.department)
-        return Block.objects.none()
+
+        role = decoded.get("role")
+        uid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        queryset = Block.objects.none()
+
+        if role == "department_head":
+            head = DepartmentHead.objects.filter(id=uid).first()
+            if head:
+                queryset = Block.objects.filter(program__department=head.department)
+
+        elif role == "faculty":
+            faculty = Faculty.objects.filter(id=uid).first()
+            if faculty and faculty.department:
+                queryset = Block.objects.filter(program__department=faculty.department)
+
+        if not queryset.exists():
+            return queryset
+
+        year_level = str(self.request.query_params.get("year_level", "") or "").strip()
+        if year_level:
+            queryset = queryset.filter(year_level__icontains=year_level)
+
+        return queryset
 
     def create(self, request, *args, **kwargs):
         token = _get_bearer_token(request)
@@ -3094,7 +3197,13 @@ class ClassroomStudentsView(APIView):
             return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
 
         role = decoded.get("role")
-        user_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        raw_user_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        try:
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            user_id = None
+        if not user_id:
+            return Response({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
             classroom = Classroom.objects.get(id=classroom_id)
@@ -3139,7 +3248,7 @@ class ClassroomStudentsView(APIView):
             "block": classroom.block,
             "year_level": classroom.year_level,
             "semester": classroom.semester,
-            "academic_year": classroom.academic_year,
+            "academic_year": getattr(classroom, "academic_year", None),
             "schedule": classroom.schedule,
             "room": classroom.room,
             "instructor": (
