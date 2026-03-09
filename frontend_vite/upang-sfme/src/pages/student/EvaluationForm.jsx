@@ -468,7 +468,8 @@ const EvaluationForm = ({
               </button>
               <div>
                 {formType === 'Module' && <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded text-xs font-mono font-bold">{moduleData.code}</span>}
-                <h1 className="text-4xl font-black …">
+                <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Unified Module and Instructor Evaluation</p>
+                <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
                   {formType === 'Module' ? moduleData.title : (instructorData?.name || 'Instructor')}
                 </h1>
 

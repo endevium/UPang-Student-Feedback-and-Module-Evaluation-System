@@ -89,6 +89,12 @@ const parseAiRecommendationSections = (rawText) => {
     : [];
 };
 
+// Some text/comment responses are stored with rating=0; treat only >=1 as real scored answers.
+const toValidRating = (rawRating) => {
+  const rating = Number(rawRating);
+  return Number.isFinite(rating) && rating >= 1 ? rating : null;
+};
+
 const ReportsPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [completedEvaluationsData, setCompletedEvaluationsData] = useState([]);
@@ -211,8 +217,8 @@ const ReportsPage = () => {
           for (const r of responses) {
             const respList = Array.isArray(r.responses) ? r.responses : [];
             for (const it of respList) {
-              const rv = Number(it.rating);
-              if (!isNaN(rv)) {
+              const rv = toValidRating(it.rating);
+              if (rv !== null) {
                 sum += rv;
                 cnt += 1;
 
@@ -272,8 +278,8 @@ const ReportsPage = () => {
           for (const r of responses) {
             const respList = Array.isArray(r.responses) ? r.responses : [];
             for (const it of respList) {
-              const rv = Number(it.rating);
-              if (isNaN(rv)) continue;
+              const rv = toValidRating(it.rating);
+              if (rv === null) continue;
               if (rv >= 5) ratingBuckets.very_good += 1;
               else if (rv >= 4) ratingBuckets.good += 1;
               else if (rv >= 3) ratingBuckets.fair += 1;

@@ -141,7 +141,7 @@ const StudentAuditLogPage = () => {
         <main className="flex-1 overflow-y-auto px-6 py-10">
           <div className="container mx-auto max-w-7xl">
             <div className="mb-6">
-              <h1 className="text-4xl font-bold text-[#0f2f57] tracking-tight">Audit Log</h1>
+              <h1 className="text-3xl font-bold text-[#0f2f57] tracking-tight">Audit Log</h1>
               <p className="text-slate-600 mt-2 text-lg">Welcome back, Student</p>
             </div>
 

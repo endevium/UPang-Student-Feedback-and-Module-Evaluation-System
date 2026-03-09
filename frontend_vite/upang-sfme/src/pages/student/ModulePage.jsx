@@ -205,9 +205,9 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
 
   if (!showSidebar) {
     return (
-      <div className="font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 px-4 py-4">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex justify-center mb-6">
+      <div className="font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 px-0 py-0">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex justify-start mb-8">
             <div className="inline-flex items-center p-1.5 bg-slate-200/50 rounded-full border border-slate-200">
               {['all', 'pending', 'completed'].map((tab) => (
                 <button

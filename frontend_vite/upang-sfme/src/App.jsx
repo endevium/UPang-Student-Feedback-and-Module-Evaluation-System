@@ -30,7 +30,6 @@ import FacultyAuditLogPage from './pages/faculty/AuditLogPage.jsx';
 import StudentDashboard from './pages/student/StudentDashboard.jsx';
 import HistoryPage from './pages/student/HistoryPage.jsx';
 import ClassroomPage from './pages/student/ClassroomPage.jsx';
-import InstructorsPage from './pages/student/InstructorsPage.jsx';
 import ModulePage from './pages/student/ModulePage.jsx';
 import EvaluationForm from './pages/student/EvaluationForm.jsx';
 import EvaluationPage from './pages/student/EvaluationPage.jsx';
@@ -244,13 +243,10 @@ function App() {
       if (route === '/dashboard/audit-log') return <StudentAuditLogPage />;
       // New unified evaluation page with tabs
       if (route.startsWith('/dashboard/evaluation')) return <EvaluationPage />;
-      // Backwards-compatible routes (redirects handled by pages/Sidebar)
-      if (route === '/dashboard/instructors') return <InstructorsPage />;
+      // Backwards-compatible route: direct modules page still works.
       if (route === '/dashboard/modules') return <ModulePage />;
-      if (route.startsWith('/dashboard/evaluate-instructor/')) {
-        const instructorFormId = route.split('/')[3];
-        return <EvaluationForm instructorFormId={instructorFormId} />;
-      }
+      // Legacy instructor-only URL now points to unified module-based evaluations.
+      if (route.startsWith('/dashboard/evaluate-instructor/')) return <EvaluationPage />;
         
       if (route.startsWith('/dashboard/evaluate/')) {
         const moduleId = route.split('/')[3];               // ← <–– add this

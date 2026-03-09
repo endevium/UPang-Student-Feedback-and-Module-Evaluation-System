@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
 import {
   Plus,
@@ -17,17 +17,17 @@ import { getToken } from '../../utils/auth';
 
 const FacultyFormsPage = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
-
-  const getEndpointForType = (type) => {
-    return type === 'Module' ? 'module-evaluation-forms' : 'instructor-evaluation-forms';
-  };
+  const MODULE_ENDPOINT = 'module-evaluation-forms';
 
   const getAuthHeaders = () => {
     const token = getToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
+  const isBlank = (value) => String(value ?? '').trim() === '';
+
   const [formsList, setFormsList] = useState([]);
+  const [facultyModules, setFacultyModules] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
 
@@ -41,10 +41,8 @@ const FacultyFormsPage = () => {
   const [formValues, setFormValues] = useState({
     subject_code: '',
     subject_description: '',
-    instructor_name: '',
-    form_type: 'Module',
-    description: '',
     status: 'Draft',
+    classroom_id: '',
   });
 
   useEffect(() => {
@@ -52,23 +50,43 @@ const FacultyFormsPage = () => {
       setIsLoading(true);
       setLoadError('');
       try {
-        const [modulesRes, instructorsRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/${getEndpointForType('Module')}/`, { headers: getAuthHeaders() }),
-          fetch(`${API_BASE_URL}/${getEndpointForType('Instructor')}/`, { headers: getAuthHeaders() }),
+        const [modulesRes, facultyModulesRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/${MODULE_ENDPOINT}/`, { headers: getAuthHeaders() }),
+          fetch(`${API_BASE_URL}/faculty/modules/`, { headers: getAuthHeaders() }),
         ]);
 
         const modules = await modulesRes.json().catch(() => []);
-        const instructors = await instructorsRes.json().catch(() => []);
+        const facultyModulesRaw = await facultyModulesRes.json().catch(() => []);
 
-        if (!modulesRes.ok && !instructorsRes.ok) {
+        if (!modulesRes.ok) {
           setLoadError('Unable to load forms.');
           return;
         }
 
         const mappedModules = Array.isArray(modules) ? modules.map((m) => ({ ...m, form_type: 'Module' })) : [];
-        const mappedInstructors = Array.isArray(instructors) ? instructors.map((i) => ({ ...i, form_type: 'Instructor' })) : [];
+        setFormsList(mappedModules);
 
-        setFormsList([...mappedModules, ...mappedInstructors]);
+        const moduleSource = Array.isArray(facultyModulesRaw) ? facultyModulesRaw : facultyModulesRaw?.results || [];
+        const codeMap = new Map();
+        moduleSource.forEach((item) => {
+          const code = String(item?.subject_code || '').trim().toUpperCase();
+          if (!code) return;
+
+          const classroomId = item?.classroom_id || '';
+          const classroomCode = item?.classroom_code || '';
+          const description = String(
+            item?.module_name || item?.subject_description || item?.description || ''
+          ).trim();
+
+          const existing = codeMap.get(code) || {};
+          codeMap.set(code, {
+            code,
+            description: existing.description || description,
+            classroomId: existing.classroomId || classroomId,
+            classroomCode: existing.classroomCode || classroomCode,
+          });
+        });
+        setFacultyModules(Array.from(codeMap.values()));
       } catch {
         setLoadError('Unable to reach the server. Please try again.');
       } finally {
@@ -77,20 +95,45 @@ const FacultyFormsPage = () => {
     };
 
     fetchForms();
-  }, []);
+  }, [API_BASE_URL]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'subject_code') {
+      const normalizedCode = String(value || '').trim().toUpperCase();
+      const selected = facultyModules.find((m) => m.code === normalizedCode);
+      setFormValues((prev) => ({
+        ...prev,
+        classroom_id: String(selected?.classroomId ?? ''),
+        subject_code: normalizedCode,
+        subject_description: selected?.description || '',
+      }));
+      return;
+    }
+
     setFormValues((prev) => ({ ...prev, [name]: value }));
   };
 
+  const subjectCodeOptions = useMemo(() => {
+    const options = [...facultyModules];
+    const currentCode = String(formValues.subject_code || '').trim().toUpperCase();
+
+    if (currentCode && !options.some((item) => item.code === currentCode)) {
+      options.unshift({
+        code: currentCode,
+        description: formValues.subject_description || 'Subject from existing form',
+        classroomId: formValues.classroom_id || '',
+      });
+    }
+
+    return options;
+  }, [facultyModules, formValues.subject_code, formValues.subject_description, formValues.classroom_id]);
+
   const resetForm = () => {
     setFormValues({
+      classroom_id: '',
       subject_code: '',
       subject_description: '',
-      instructor_name: '',
-      form_type: 'Module',
-      description: '',
       status: 'Draft',
     });
     setErrorMessage('');
@@ -109,28 +152,22 @@ const FacultyFormsPage = () => {
     e.preventDefault();
     setErrorMessage('');
 
-    let required = [];
-    if (formValues.form_type === 'Module') {
-      required = ['subject_code', 'subject_description'];
-    } else {
-      required = ['instructor_name'];
-    }
-    const missing = required.find((key) => !formValues[key].trim());
+    const required = ['subject_code', 'classroom_id'];
+    const missing = required.find((key) => isBlank(formValues[key]));
     if (missing) {
       setErrorMessage('Please fill in all required fields.');
       return;
     }
 
     const dataToSend = {
-      title: formValues.form_type === 'Module' ? formValues.subject_code : formValues.instructor_name,
-      description: formValues.form_type === 'Module' ? formValues.subject_description : formValues.description,
+      classroom: Number(formValues.classroom_id),
+      description: formValues.subject_description,
       status: formValues.status,
     };
 
     try {
       setIsSubmitting(true);
-      const endpoint = getEndpointForType(formValues.form_type);
-      const response = await fetch(`${API_BASE_URL}/${endpoint}/`, {
+      const response = await fetch(`${API_BASE_URL}/${MODULE_ENDPOINT}/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -146,7 +183,7 @@ const FacultyFormsPage = () => {
         return;
       }
 
-      const created = { ...data, form_type: formValues.form_type };
+      const created = { ...data, form_type: 'Module' };
       setFormsList((prev) => [created, ...prev]);
       closeModal();
     } catch {
@@ -160,75 +197,39 @@ const FacultyFormsPage = () => {
     e.preventDefault();
     setErrorMessage('');
 
-    let required = [];
-    if (formValues.form_type === 'Module') {
-      required = ['subject_code', 'subject_description'];
-    } else {
-      required = ['instructor_name'];
-    }
-    const missing = required.find((key) => !formValues[key].trim());
+    const required = ['subject_code', 'classroom_id'];
+    const missing = required.find((key) => isBlank(formValues[key]));
     if (missing) {
       setErrorMessage('Please fill in all required fields.');
       return;
     }
 
     const dataToSend = {
-      title: formValues.form_type === 'Module' ? formValues.subject_code : formValues.instructor_name,
-      description: formValues.form_type === 'Module' ? formValues.subject_description : formValues.description,
+      classroom: Number(formValues.classroom_id),
+      description: formValues.subject_description,
       status: formValues.status,
     };
 
     try {
       setIsSubmitting(true);
-      const originalType = selectedForm.form_type || selectedForm.formType || 'Module';
-      const targetType = formValues.form_type;
+      const response = await fetch(`${API_BASE_URL}/${MODULE_ENDPOINT}/${selectedForm.id}/`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify(dataToSend),
+      });
 
-      if (originalType === targetType) {
-        const endpoint = getEndpointForType(targetType);
-        const response = await fetch(`${API_BASE_URL}/${endpoint}/${selectedForm.id}/`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders()
-          },
-          body: JSON.stringify(dataToSend),
-        });
+      const data = await response.json().catch(() => ({}));
 
-        const data = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          setErrorMessage(data?.detail || 'Unable to update form. Please check details.');
-          return;
-        }
-
-        const updated = { ...data, form_type: targetType };
-        setFormsList((prev) => prev.map((f) => (f.id === selectedForm.id ? updated : f)));
-      } else {
-        const targetEndpoint = getEndpointForType(targetType);
-        const createRes = await fetch(`${API_BASE_URL}/${targetEndpoint}/`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(),
-          },
-          body: JSON.stringify(dataToSend),
-        });
-
-        const created = await createRes.json().catch(() => ({}));
-        if (!createRes.ok) {
-          setErrorMessage(created?.detail || 'Unable to move form to new type.');
-          return;
-        }
-
-        const createdWithType = { ...created, form_type: targetType };
-        const origEndpoint = getEndpointForType(originalType);
-        await fetch(`${API_BASE_URL}/${origEndpoint}/${selectedForm.id}/`, {
-          method: 'DELETE',
-          headers: getAuthHeaders(),
-        }).catch(() => {});
-
-        setFormsList((prev) => prev.map((f) => (f.id === selectedForm.id ? createdWithType : f)));
+      if (!response.ok) {
+        setErrorMessage(data?.detail || 'Unable to update form. Please check details.');
+        return;
       }
+
+      const updated = { ...data, form_type: 'Module' };
+      setFormsList((prev) => prev.map((f) => (f.id === selectedForm.id ? updated : f)));
       closeModal();
     } catch {
       setErrorMessage('Server connection failed.');
@@ -244,48 +245,26 @@ const FacultyFormsPage = () => {
 
   const handleEdit = (form) => {
     setSelectedForm(form);
-    if (form.form_type === 'Module') {
-      setFormValues({
-        subject_code: form.title,
-        subject_description: form.description || '',
-        instructor_name: '',
-        form_type: form.form_type,
-        description: '',
-        status: form.status,
-      });
-    } else {
-      setFormValues({
-        subject_code: '',
-        subject_description: '',
-        instructor_name: form.title,
-        form_type: form.form_type,
-        description: form.description || '',
-        status: form.status,
-      });
-    }
+    const code = String(form?.subject_code || form?.title || '').trim().toUpperCase();
+    const selected = facultyModules.find((m) => m.code === code);
+    setFormValues({
+      classroom_id: String(selected?.classroomId || form?.classroom || ''),
+      subject_code: code,
+      subject_description: String(form?.module_name || form?.subject_description || form?.description || selected?.description || ''),
+      status: form.status,
+    });
     setIsEditOpen(true);
   };
 
   const handleDuplicate = (form) => {
-    if (form.form_type === 'Module') {
-      setFormValues({
-        subject_code: `${form.title} (Copy)`,
-        subject_description: form.description || '',
-        instructor_name: '',
-        form_type: form.form_type,
-        description: '',
-        status: 'Draft',
-      });
-    } else {
-      setFormValues({
-        subject_code: '',
-        subject_description: '',
-        instructor_name: `${form.title} (Copy)`,
-        form_type: form.form_type,
-        description: form.description || '',
-        status: 'Draft',
-      });
-    }
+    const code = String(form?.subject_code || form?.title || '').trim().toUpperCase();
+    const matched = facultyModules.find((item) => item.code === code);
+    setFormValues({
+      classroom_id: String(matched?.classroomId || form?.classroom || ''),
+      subject_code: code,
+      subject_description: matched?.description || form?.module_name || form?.subject_description || form?.description || '',
+      status: 'Draft',
+    });
     setIsAddOpen(true);
   };
 
@@ -297,8 +276,7 @@ const FacultyFormsPage = () => {
   const confirmDelete = async () => {
     try {
       setIsSubmitting(true);
-      const endpoint = getEndpointForType(selectedForm.form_type);
-      const response = await fetch(`${API_BASE_URL}/${endpoint}/${selectedForm.id}/`, {
+      const response = await fetch(`${API_BASE_URL}/${MODULE_ENDPOINT}/${selectedForm.id}/`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
@@ -317,6 +295,8 @@ const FacultyFormsPage = () => {
     }
   };
 
+  const getFormCode = (form) => String(form?.subject_code || form?.title || 'N/A').trim().toUpperCase();
+  const getFormDescription = (form) => String(form?.module_name || form?.subject_description || form?.description || '').trim();
   const totalForms = formsList.length;
   const activeForms = formsList.filter((f) => f.status === 'Active').length;
   const draftForms = formsList.filter((f) => f.status === 'Draft').length;
@@ -384,15 +364,13 @@ const FacultyFormsPage = () => {
                 <div key={idx} className="group p-5 border border-slate-100 rounded-xl hover:border-teal-100 hover:bg-teal-50/20 transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-1">
-                      <h3 className="text-lg font-black text-slate-800">{form.title}</h3>
+                      <h3 className="text-lg font-black text-slate-800">{getFormCode(form)}</h3>
                       <span className={`px-2 py-0.5 text-[10px] font-black uppercase rounded ${form.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                         {form.status}
                       </span>
-                      <span className="px-2 py-0.5 text-[10px] font-black uppercase rounded bg-slate-100 text-slate-600">
-                        {form.form_type}
-                      </span>
+                      <span className="px-2 py-0.5 text-[10px] font-black uppercase rounded bg-slate-100 text-slate-600">Module</span>
                     </div>
-                    <p className="text-sm text-slate-500 mb-3">{form.description}</p>
+                    <p className="text-sm text-slate-500 mb-3">{getFormDescription(form) || 'No description provided.'}</p>
                     <div className="flex flex-wrap gap-4 text-[11px] font-bold text-slate-400 uppercase tracking-tight">
                       <span className="flex items-center gap-1.5"><HelpCircle size={14} className="text-orange-400" /> {form.questions_count || 0} questions</span>
                       <span className="flex items-center gap-1.5"><BarChart3 size={14} className="text-blue-400" /> Used {form.usage_count || 0} times</span>
@@ -478,53 +456,34 @@ const FacultyFormsPage = () => {
 
             <form className="p-6 space-y-4" onSubmit={isEditOpen ? handleEditForm : handleAddForm}>
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Form Type</label>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Subject Code</label>
                 <select
-                  name="form_type"
-                  value={formValues.form_type}
+                  name="subject_code"
+                  value={formValues.subject_code}
                   onChange={handleInputChange}
                   className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
                 >
-                  <option value="Module">Module</option>
-                  <option value="Instructor">Instructor</option>
+                  <option value="">Select subject code</option>
+                  {subjectCodeOptions.map((module) => (
+                    <option key={module.code} value={module.code}>
+                      {module.code}
+                    </option>
+                  ))}
                 </select>
+                {subjectCodeOptions.length === 0 && (
+                  <p className="mt-2 text-xs text-amber-600">No handled modules found for your account.</p>
+                )}
               </div>
-
-              {formValues.form_type === 'Module' ? (
-                <>
-                  <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Subject Code</label>
-                    <input
-                      name="subject_code"
-                      value={formValues.subject_code}
-                      onChange={handleInputChange}
-                      placeholder="e.g., CS101"
-                      className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Subject Description</label>
-                    <input
-                      name="subject_description"
-                      value={formValues.subject_description}
-                      onChange={handleInputChange}
-                      placeholder="e.g., Introduction to Computer Science"
-                      className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                    />
-                  </div>
-                </>
-              ) : (
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Name of the Instructor</label>
-                  <input
-                    name="instructor_name"
-                    value={formValues.instructor_name}
-                    onChange={handleInputChange}
-                    placeholder="e.g., John Doe"
-                    className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Subject Description</label>
+                <input
+                  name="subject_description"
+                  value={formValues.subject_description}
+                  readOnly
+                  placeholder="Auto-filled from selected subject code"
+                  className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-700"
+                />
+              </div>
 
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</label>
@@ -538,19 +497,6 @@ const FacultyFormsPage = () => {
                   <option value="Active">Active</option>
                 </select>
               </div>
-
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Description</label>
-                <textarea
-                  name="description"
-                  value={formValues.description}
-                  onChange={handleInputChange}
-                  placeholder="Brief description..."
-                  rows={3}
-                  className="w-full mt-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                />
-              </div>
-
               {errorMessage && (
                 <div className="text-sm text-rose-600 font-semibold" role="alert">
                   {errorMessage}
@@ -582,7 +528,7 @@ const FacultyFormsPage = () => {
           >
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-black text-slate-800">Preview: {selectedForm.title}</h3>
+                <h3 className="text-lg font-black text-slate-800">Preview: {getFormCode(selectedForm)}</h3>
                 <p className="text-sm text-slate-400">Form details and configuration</p>
               </div>
               <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={closeModal}>
@@ -593,14 +539,12 @@ const FacultyFormsPage = () => {
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    {selectedForm.form_type === 'Module' ? 'Subject Code' : 'Name of the Instructor'}
-                  </label>
-                  <p className="mt-2 text-sm text-slate-800">{selectedForm.title}</p>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Subject Code</label>
+                  <p className="mt-2 text-sm text-slate-800">{getFormCode(selectedForm)}</p>
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Form Type</label>
-                  <p className="mt-2 text-sm text-slate-800">{selectedForm.form_type}</p>
+                  <p className="mt-2 text-sm text-slate-800">Module</p>
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</label>
@@ -613,10 +557,8 @@ const FacultyFormsPage = () => {
                   <p className="mt-2 text-sm text-slate-800">{selectedForm.created_at ? new Date(selectedForm.created_at).toLocaleDateString() : 'N/A'}</p>
                 </div>
                 <div className="md:col-span-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    {selectedForm.form_type === 'Module' ? 'Subject Description' : 'Description'}
-                  </label>
-                  <p className="mt-2 text-sm text-slate-800">{selectedForm.description || 'No description provided'}</p>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Subject Description</label>
+                  <p className="mt-2 text-sm text-slate-800">{getFormDescription(selectedForm) || 'No description provided'}</p>
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Questions</label>
@@ -657,7 +599,7 @@ const FacultyFormsPage = () => {
 
             <div className="p-6">
               <p className="text-sm text-slate-600 mb-6">
-                Are you sure you want to delete <strong>"{selectedForm.title}"</strong>? This will permanently remove the form and cannot be undone.
+                Are you sure you want to delete <strong>"{getFormCode(selectedForm)}"</strong>? This will permanently remove the form and cannot be undone.
               </p>
 
               {errorMessage && (

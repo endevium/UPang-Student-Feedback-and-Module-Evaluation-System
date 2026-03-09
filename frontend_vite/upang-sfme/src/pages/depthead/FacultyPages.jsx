@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
-import Header from '../../components/Header'; // Added Header to match Student page
 import {
   Users,
   TrendingUp,
@@ -13,6 +12,41 @@ import {
 } from 'lucide-react';
 import { getToken } from '../../utils/auth';
 
+const toValidRating = (rawRating) => {
+  const rating = Number(rawRating);
+  return Number.isFinite(rating) && rating >= 1 ? rating : null;
+};
+
+const extractList = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.results)) return payload.results;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  return [];
+};
+
+const resolveModuleFormIdFromResponse = (responseItem) => {
+  const modelName = String(responseItem?.form_model || '').toLowerCase();
+  if (modelName && modelName !== 'moduleevaluationform') return null;
+
+  const primary = responseItem?.form_object_id;
+  if (primary !== null && primary !== undefined) return String(primary);
+
+  const secondary = responseItem?.form_id;
+  if (secondary !== null && secondary !== undefined) return String(secondary);
+
+  const legacy = responseItem?.form;
+  if (legacy !== null && legacy !== undefined) {
+    if (typeof legacy === 'object') {
+      const legacyId = legacy.id ?? legacy.pk;
+      if (legacyId !== null && legacyId !== undefined) return String(legacyId);
+    } else {
+      return String(legacy);
+    }
+  }
+
+  return null;
+};
+
 const FacultyPages = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   const MAX_CSV_SIZE = 2 * 1024 * 1024; // 2MB
@@ -21,6 +55,7 @@ const FacultyPages = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [facultyInsightsById, setFacultyInsightsById] = useState({});
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,15 +82,15 @@ const FacultyPages = () => {
     birthdate: '',
   });
 
-  const mapFaculty = (f) => ({
+  const mapFaculty = (f, metrics = {}) => ({
     id: f?.faculty_id || f?.id || f?.email || 'N/A',
     name: `${f?.firstname || f?.name || ''} ${f?.lastname || ''}`.trim() || 'Unnamed',
     title: f?.title || 'Faculty',
     dept: f?.department || f?.dept || 'N/A',
-    modules: Number(f?.modules) || 0,
-    students: Number(f?.students) || 0,
-    evaluations: Number(f?.evaluations) || 0,
-    rating: Number(f?.rating) || 0,
+    modules: Number(metrics?.modules ?? f?.modules) || 0,
+    students: Number(metrics?.students ?? f?.students) || 0,
+    evaluations: Number(metrics?.evaluations ?? f?.evaluations) || 0,
+    rating: Number(metrics?.rating ?? f?.rating) || 0,
     status: typeof f?.status === 'boolean' ? (f.status ? 'Active' : 'Inactive') : (f?.status || 'Active'),
   });
 
@@ -88,34 +123,180 @@ const FacultyPages = () => {
     }
   };
 
-  const fetchFaculty = async () => {
+  const fetchFaculty = useCallback(async () => {
     setIsLoading(true);
     setLoadError('');
     try {
       const token = getToken();
-      const res = await fetch(`${API_BASE_URL}/faculty/`, {
-        headers: {
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
-      });
+      const headers = {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      };
 
-      const data = await res.json().catch(() => []);
-      if (!res.ok) {
-        setLoadError(data?.detail || 'Unable to load faculty.');
+      const [facultyRes, classroomsRes, formsRes, submissionsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/faculty/`, { headers }),
+        fetch(`${API_BASE_URL}/classrooms/`, { headers }),
+        fetch(`${API_BASE_URL}/module-evaluation-forms/`, { headers }),
+        fetch(`${API_BASE_URL}/feedback/submissions/`, { headers }),
+      ]);
+
+      const facultyPayload = await facultyRes.json().catch(() => []);
+      if (!facultyRes.ok) {
+        setLoadError(facultyPayload?.detail || 'Unable to load faculty.');
         return;
       }
-      const list = Array.isArray(data) ? data : [];
-      setFacultyData(list.map(mapFaculty));
+
+      const facultyList = extractList(facultyPayload);
+
+      const classroomsPayload = await classroomsRes.json().catch(() => []);
+      const classrooms = classroomsRes.ok ? extractList(classroomsPayload) : [];
+
+      const formsPayload = await formsRes.json().catch(() => []);
+      const moduleForms = formsRes.ok ? extractList(formsPayload) : [];
+
+      const submissionsPayload = await submissionsRes.json().catch(() => []);
+      const submissions = submissionsRes.ok ? extractList(submissionsPayload) : [];
+
+      const classroomsById = new Map();
+      const facultyClassroomMap = new Map();
+      for (const classroom of classrooms) {
+        const classroomId = String(classroom?.id || '');
+        const facultyId = String(classroom?.faculty || '');
+        if (!classroomId || !facultyId) continue;
+
+        classroomsById.set(classroomId, classroom);
+        if (!facultyClassroomMap.has(facultyId)) {
+          facultyClassroomMap.set(facultyId, { subjectCodes: new Set(), classroomIds: new Set() });
+        }
+
+        const bucket = facultyClassroomMap.get(facultyId);
+        bucket.classroomIds.add(classroomId);
+
+        const subjectCode = String(classroom?.subject_code || '').trim();
+        if (subjectCode) bucket.subjectCodes.add(subjectCode);
+      }
+
+      const formToFacultyId = new Map();
+      for (const form of moduleForms) {
+        const formId = String(form?.id || '');
+        const classroomId = String(form?.classroom || '');
+        if (!formId || !classroomId) continue;
+
+        const classroom = classroomsById.get(classroomId);
+        if (!classroom) continue;
+
+        const facultyId = String(classroom?.faculty || '');
+        if (!facultyId) continue;
+        formToFacultyId.set(formId, facultyId);
+      }
+
+      const facultySubmissionStats = new Map();
+      for (const submission of submissions) {
+        const formId = resolveModuleFormIdFromResponse(submission);
+        if (!formId) continue;
+
+        const facultyId = formToFacultyId.get(formId);
+        if (!facultyId) continue;
+
+        if (!facultySubmissionStats.has(facultyId)) {
+          facultySubmissionStats.set(facultyId, {
+            evaluations: 0,
+            ratingSum: 0,
+            ratingCount: 0,
+            studentIds: new Set(),
+          });
+        }
+
+        const statsBucket = facultySubmissionStats.get(facultyId);
+        statsBucket.evaluations += 1;
+
+        const studentId = submission?.student;
+        if (studentId !== null && studentId !== undefined && String(studentId).trim()) {
+          statsBucket.studentIds.add(String(studentId));
+        }
+
+        const respList = Array.isArray(submission?.responses) ? submission.responses : [];
+        for (const item of respList) {
+          const rv = toValidRating(item?.rating);
+          if (rv === null) continue;
+          statsBucket.ratingSum += rv;
+          statsBucket.ratingCount += 1;
+        }
+      }
+
+      const nextInsightsById = {};
+      const mapped = facultyList.map((faculty) => {
+        const facultyId = String(faculty?.id || faculty?.faculty_id || '');
+        const classStats = facultyClassroomMap.get(facultyId);
+        const subStats = facultySubmissionStats.get(facultyId);
+
+        const ratingBreakdown = { very_good: 0, good: 0, fair: 0, poor: 0 };
+
+        if (subStats) {
+          for (const submission of submissions) {
+            const formId = resolveModuleFormIdFromResponse(submission);
+            if (!formId) continue;
+            const submissionFacultyId = formToFacultyId.get(formId);
+            if (submissionFacultyId !== facultyId) continue;
+
+            const respList = Array.isArray(submission?.responses) ? submission.responses : [];
+            for (const item of respList) {
+              const rv = toValidRating(item?.rating);
+              if (rv === null) continue;
+
+              if (rv >= 5) ratingBreakdown.very_good += 1;
+              else if (rv >= 4) ratingBreakdown.good += 1;
+              else if (rv >= 3) ratingBreakdown.fair += 1;
+              else ratingBreakdown.poor += 1;
+            }
+          }
+        }
+
+        const ratingTotal = ratingBreakdown.very_good + ratingBreakdown.good + ratingBreakdown.fair + ratingBreakdown.poor;
+        const distribution = [
+          { key: 'very_good', label: 'Very Good (5)', color: 'bg-emerald-500' },
+          { key: 'good', label: 'Good (4)', color: 'bg-blue-500' },
+          { key: 'fair', label: 'Fair (3)', color: 'bg-amber-500' },
+          { key: 'poor', label: 'Poor (1-2)', color: 'bg-red-500' },
+        ].map((item) => ({
+          ...item,
+          count: ratingBreakdown[item.key],
+          percent: ratingTotal > 0 ? Math.round((ratingBreakdown[item.key] / ratingTotal) * 100) : 0,
+        }));
+
+        const averageRating = subStats && subStats.ratingCount > 0
+          ? Number((subStats.ratingSum / subStats.ratingCount).toFixed(1))
+          : 0;
+
+        const metrics = {
+          modules: classStats ? classStats.subjectCodes.size : 0,
+          students: subStats ? subStats.studentIds.size : 0,
+          evaluations: subStats ? subStats.evaluations : 0,
+          rating: averageRating,
+        };
+
+        if (facultyId) {
+          nextInsightsById[facultyId] = {
+            ...metrics,
+            ratingBreakdown,
+            ratingDistribution: distribution,
+          };
+        }
+
+        return mapFaculty(faculty, metrics);
+      });
+
+      setFacultyData(mapped);
+      setFacultyInsightsById(nextInsightsById);
     } catch {
       setLoadError('Unable to reach the server. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [API_BASE_URL]);
 
   useEffect(() => {
     fetchFaculty();
-  }, []);
+  }, [fetchFaculty]);
 
   const showFacultyDetails = async (facultyId) => {
     try {
@@ -130,8 +311,26 @@ const FacultyPages = () => {
         return;
       }
       const data = await res.json();
+      const idKey = String(data.id || data.pk || facultyId);
+      const localRow = facultyData.find((f) => String(f.id) === String(facultyId));
+      const insight = facultyInsightsById[idKey] || {};
       // include pk for consistency
-      setSelectedFaculty({ ...data, pk: data.id || data.pk || facultyId });
+      setSelectedFaculty({
+        ...data,
+        pk: data.id || data.pk || facultyId,
+        metrics: {
+          modules: insight.modules ?? localRow?.modules ?? 0,
+          students: insight.students ?? localRow?.students ?? 0,
+          evaluations: insight.evaluations ?? localRow?.evaluations ?? 0,
+          rating: insight.rating ?? localRow?.rating ?? 0,
+          ratingDistribution: insight.ratingDistribution || [
+            { key: 'very_good', label: 'Very Good (5)', color: 'bg-emerald-500', count: 0, percent: 0 },
+            { key: 'good', label: 'Good (4)', color: 'bg-blue-500', count: 0, percent: 0 },
+            { key: 'fair', label: 'Fair (3)', color: 'bg-amber-500', count: 0, percent: 0 },
+            { key: 'poor', label: 'Poor (1-2)', color: 'bg-red-500', count: 0, percent: 0 },
+          ],
+        },
+      });
     } catch {
       setErrorMessage('Unable to reach the server.');
     }
@@ -193,7 +392,7 @@ const FacultyPages = () => {
         `Archived faculty member: ${facultyData.firstname || ''} ${facultyData.lastname || ''} (${facultyData.email || facultyId})`
       );
       setFacultyData((prev) => prev.filter((f) => f.id !== facultyId));
-    } catch (e) {
+    } catch {
       setErrorMessage('Unable to reach the server.');
     }
   };
@@ -216,7 +415,7 @@ const FacultyPages = () => {
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setArchivedFaculty(list.map(mapFaculty));
-    } catch (e) {
+    } catch {
       setArchiveFacultyError('Unable to reach the server.');
       setArchivedFaculty([]);
     } finally {
@@ -245,7 +444,7 @@ const FacultyPages = () => {
       await createAuditLog('Restored Faculty', `Restored faculty: ${data.firstname || ''} ${data.lastname || ''} (${data.email || facultyId})`);
       fetchFaculty();
       fetchArchivedFaculty();
-    } catch (e) {
+    } catch {
       setArchiveFacultyError('Unable to reach the server.');
     }
   };
@@ -931,21 +1130,87 @@ const FacultyPages = () => {
 
       {selectedFaculty && (
         <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelectedFaculty(null)}>
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden max-h-[88vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-black text-slate-800">Faculty Details</h3>
-                <p className="text-sm text-slate-400">Details for {selectedFaculty.firstname} {selectedFaculty.lastname}</p>
+                <p className="text-sm text-slate-400">Complete information and evaluation metrics</p>
               </div>
               <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={() => setSelectedFaculty(null)}>&times;</button>
             </div>
-            <div className="p-6 space-y-3">
-              <div><strong>Email:</strong> {selectedFaculty.email}</div>
-              <div><strong>Name:</strong> {selectedFaculty.firstname} {selectedFaculty.middlename} {selectedFaculty.lastname}</div>
-              <div><strong>Department:</strong> {selectedFaculty.department}</div>
-              <div><strong>Contact Number:</strong> {selectedFaculty.contact_number}</div>
-              <div><strong>Birthdate:</strong> {selectedFaculty.birthdate}</div>
-              <div className="flex justify-end pt-4">
+            <div className="p-5 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Faculty ID</p>
+                  <p className="text-xl font-bold text-slate-900">{selectedFaculty.faculty_id || selectedFaculty.id || selectedFaculty.pk || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Name</p>
+                  <p className="text-xl font-bold text-slate-900">{[selectedFaculty.title, selectedFaculty.firstname, selectedFaculty.lastname].filter(Boolean).join(' ')}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Title</p>
+                  <p className="text-lg font-semibold text-slate-900">{selectedFaculty.title || 'Professor'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Department</p>
+                  <p className="text-lg font-semibold text-slate-900">{selectedFaculty.department || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Specialization</p>
+                  <p className="text-lg font-semibold text-slate-900">{selectedFaculty.specialization || selectedFaculty.department || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide">Email</p>
+                  <p className="text-lg font-semibold text-slate-900 break-all">{selectedFaculty.email || 'N/A'}</p>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xl font-bold text-slate-900 mb-3">Teaching Statistics</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="rounded-2xl border border-slate-200 px-4 py-4 text-center">
+                    <p className="text-3xl font-black text-slate-900">{selectedFaculty.metrics?.modules ?? 0}</p>
+                    <p className="text-slate-500 text-sm mt-1">Modules</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 px-4 py-4 text-center">
+                    <p className="text-3xl font-black text-blue-600">{selectedFaculty.metrics?.students ?? 0}</p>
+                    <p className="text-slate-500 text-sm mt-1">Students</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 px-4 py-4 text-center">
+                    <p className="text-3xl font-black text-emerald-600">{selectedFaculty.metrics?.evaluations ?? 0}</p>
+                    <p className="text-slate-500 text-sm mt-1">Evaluations</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xl font-bold text-slate-900 mb-3">Overall Rating</h4>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 flex items-center justify-between">
+                  <p className="text-sm text-slate-500">Calculated from all rated items</p>
+                  <div className="text-right">
+                    <p className="text-3xl font-black text-slate-900">{Number(selectedFaculty.metrics?.rating || 0).toFixed(1)}</p>
+                    <p className="text-sm text-slate-500">average rating</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xl font-bold text-slate-900 mb-3">Rating Distribution</h4>
+                <div className="space-y-3">
+                  {(selectedFaculty.metrics?.ratingDistribution || []).map((item) => (
+                    <div key={item.key} className="grid grid-cols-[115px_1fr_44px] gap-3 items-center">
+                      <span className="text-xs font-semibold text-slate-700">{item.label}</span>
+                      <div className="w-full h-3 rounded-full bg-slate-200 overflow-hidden">
+                        <div className={`h-full rounded-full ${item.color}`} style={{ width: `${item.percent}%` }} />
+                      </div>
+                      <span className="text-sm text-slate-500 text-right">{item.percent}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
                 <button className="px-4 py-2 bg-[#1f474d] text-white rounded-lg" onClick={() => { setSelectedFaculty(null); }}>Close</button>
               </div>
             </div>

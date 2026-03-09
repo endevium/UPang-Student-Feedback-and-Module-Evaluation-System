@@ -3,16 +3,16 @@ import Sidebar from '../../components/Sidebar';
 import { getToken, clearSession } from '../../utils/auth';
 
 import { 
-  BookOpen, 
+  BookOpen,
   CheckCircle, 
   AlertCircle, 
   History as HistoryIcon, 
   Users,
 } from "lucide-react";
 
-const StudentDashboard = () => {
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
+const StudentDashboard = () => {
   const [studentName, setStudentName] = useState('Student');
   const [stats, setStats] = useState([
     { title: "Total Modules", value: "0", description: "Enrolled this semester", icon: BookOpen, color: "bg-blue-100 text-blue-600" },
@@ -102,7 +102,7 @@ const StudentDashboard = () => {
     } catch {
       setLoadError('Unable to reach the server. Please try again.');
     }
-  }, [API_BASE_URL]);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {

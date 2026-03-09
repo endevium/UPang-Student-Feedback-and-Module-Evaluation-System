@@ -160,7 +160,7 @@ const ClassroomPage = () => {
           <div className="container mx-auto max-w-6xl">
             <div className="flex items-start justify-between gap-4 mb-8">
               <div>
-                <h1 className="text-5xl font-bold text-[#0f2f57] tracking-tight">Classrooms</h1>
+                <h1 className="text-3xl font-bold text-[#0f2f57] tracking-tight">Classrooms</h1>
                 <p className="text-slate-500 mt-1 text-lg">Manage your enrolled classrooms</p>
               </div>
               <button
