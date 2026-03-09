@@ -24,6 +24,7 @@ import FacultyClassroomPage from './pages/faculty/ClassroomPage.jsx';
 import FacultyEnrollmentsPage from './pages/faculty/EnrollmentsPage.jsx';
 import FacultyClassroomStudentsPage from './pages/faculty/ClassroomStudentsPage.jsx';
 import FacultyFormsPage from './pages/faculty/Forms.jsx';
+import FacultyAuditLogPage from './pages/faculty/AuditLogPage.jsx';
 
 // Student Pages
 import StudentDashboard from './pages/student/StudentDashboard.jsx';
@@ -33,6 +34,7 @@ import InstructorsPage from './pages/student/InstructorsPage.jsx';
 import ModulePage from './pages/student/ModulePage.jsx';
 import EvaluationForm from './pages/student/EvaluationForm.jsx';
 import EvaluationPage from './pages/student/EvaluationPage.jsx';
+import StudentAuditLogPage from './pages/student/AuditLogPage.jsx';
 
 function App() {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -231,6 +233,7 @@ function App() {
       if (route === '/faculty-dashboard/classroom') return <FacultyClassroomPage />;
       if (route === '/faculty-dashboard/enrollments') return <FacultyEnrollmentsPage />;
       if (route === '/faculty-dashboard/forms') return <FacultyFormsPage />;
+      if (route === '/faculty-dashboard/audit-log') return <FacultyAuditLogPage />;
       return <FacultyDashboard />;
     }
 
@@ -238,6 +241,7 @@ function App() {
     if (route.startsWith('/dashboard')) {
       if (route === '/dashboard/classroom') return <ClassroomPage />;
       if (route === '/dashboard/history') return <HistoryPage />;
+      if (route === '/dashboard/audit-log') return <StudentAuditLogPage />;
       // New unified evaluation page with tabs
       if (route.startsWith('/dashboard/evaluation')) return <EvaluationPage />;
       // Backwards-compatible routes (redirects handled by pages/Sidebar)

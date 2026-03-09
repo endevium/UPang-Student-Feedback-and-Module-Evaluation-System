@@ -37,6 +37,8 @@ urlpatterns = [
     path("ai/store-recommendation-hash/", views.StoreRecommendationHashView.as_view(), name="store-recommendation-hash"),
     
     path("audit-logs/", views.AuditLogListView.as_view(), name="audit-log-list"),
+    path("audit-logs/faculty/", views.FacultyAuditLogListView.as_view(), name="faculty-audit-log-list"),
+    path("audit-logs/students/", views.StudentAuditLogListView.as_view(), name="student-audit-log-list"),
 
     path("otp/send/", views.SendOTPView.as_view(), name="otp-send"),
     path("otp/verify/", views.VerifyOTPView.as_view(), name="otp-verify"),

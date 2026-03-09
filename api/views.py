@@ -3138,7 +3138,7 @@ class StudentAuditLogListView(generics.ListAPIView):
         if decoded.get("role") != "student":
             return AuditLog.objects.none()
 
-        student_id = decoded.get("legacy_user_id") or decoded.get("user_id")
+        student_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
         student = Student.objects.filter(id=student_id).first()
         if not student:
             return AuditLog.objects.none()
@@ -3147,7 +3147,7 @@ class StudentAuditLogListView(generics.ListAPIView):
         return AuditLog.objects.filter(
             role="Student",
             user=student_name,
-        ).order_by("-created_at")
+        ).order_by("-timestamp")
 
 
 class FacultyAuditLogListView(generics.ListAPIView):
@@ -3167,7 +3167,7 @@ class FacultyAuditLogListView(generics.ListAPIView):
         if decoded.get("role") != "faculty":
             return AuditLog.objects.none()
 
-        fac_id = decoded.get("legacy_user_id") or decoded.get("user_id")
+        fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
         faculty = Faculty.objects.filter(id=fac_id).first()
         if not faculty:
             return AuditLog.objects.none()
@@ -3176,7 +3176,7 @@ class FacultyAuditLogListView(generics.ListAPIView):
         return AuditLog.objects.filter(
             role="Faculty",
             user=faculty_name,
-        ).order_by("-created_at")
+        ).order_by("-timestamp")
 
 class ClassroomStudentsView(APIView):
     """

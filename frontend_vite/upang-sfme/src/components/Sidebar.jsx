@@ -20,14 +20,16 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
           { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/dashboard' },
           { id: 'classroom', label: 'Classroom', icon: GraduationCap, path: '/dashboard/classroom' },
           { id: 'evaluation', label: 'Evaluation Form', icon: BookOpen, path: '/dashboard/evaluation/modules' },
-          { id: 'history', label: 'History', icon: HistoryIcon, path: '/dashboard/history' }
+          { id: 'history', label: 'History', icon: HistoryIcon, path: '/dashboard/history' },
+          { id: 'audit-log', label: 'Audit Log', icon: ClipboardList, path: '/dashboard/audit-log' }
         ];
       case 'faculty':
         return [
           { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/faculty-dashboard' },
           { id: 'classroom', label: 'Classroom', icon: GraduationCap, path: '/faculty-dashboard/classroom' },
           { id: 'forms', label: 'Forms', icon: BookOpen, path: '/faculty-dashboard/forms' },
-          { id: 'enrollments', label: 'Enrollments', icon: ClipboardList, path: '/faculty-dashboard/enrollments' }
+          { id: 'enrollments', label: 'Enrollments', icon: ClipboardList, path: '/faculty-dashboard/enrollments' },
+          { id: 'audit-log', label: 'Audit Log', icon: ClipboardList, path: '/faculty-dashboard/audit-log' }
         ];
       case 'depthead':
         return [
@@ -53,7 +55,9 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
   const handleConfirmLogout = () => {
     try {
       clearSession();
-    } catch (e) {}
+    } catch {
+      // noop: continue logout navigation even if storage cleanup fails
+    }
     if (typeof onLogout === 'function') onLogout();
     window.history.pushState({}, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
