@@ -97,7 +97,7 @@ SPECTACULAR_SETTINGS = {
 
 SIMPLE_JWT = {
     # short-lived access token
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
 
     # refresh token lifetime
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),

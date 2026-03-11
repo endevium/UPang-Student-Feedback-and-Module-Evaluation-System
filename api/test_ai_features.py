@@ -3,6 +3,7 @@ import sys
 import logging
 import warnings
 import hashlib
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -246,18 +247,22 @@ def _sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _next_merkle_level(level: list[str]) -> list[str]:
+    next_level = []
+    for i in range(0, len(level), 2):
+        left = level[i]
+        right = level[i + 1] if i + 1 < len(level) else left
+        next_level.append(_sha256_hex(left + right))
+    return next_level
+
+
 def _merkle_root_hex(leaf_hashes: list[str]) -> str:
     if not leaf_hashes:
         raise ValueError("leaf_hashes cannot be empty")
 
     level = list(leaf_hashes)
     while len(level) > 1:
-        next_level = []
-        for i in range(0, len(level), 2):
-            left = level[i]
-            right = level[i + 1] if i + 1 < len(level) else left
-            next_level.append(_sha256_hex(left + right))
-        level = next_level
+        level = _next_merkle_level(level)
     return level[0]
 
 
@@ -277,12 +282,7 @@ def _build_merkle_proof(leaf_hashes: list[str], index: int) -> list[tuple[str, s
             sibling_idx = idx - 1
             proof.append(("left", level[sibling_idx]))
 
-        next_level = []
-        for i in range(0, len(level), 2):
-            left = level[i]
-            right = level[i + 1] if i + 1 < len(level) else left
-            next_level.append(_sha256_hex(left + right))
-        level = next_level
+        level = _next_merkle_level(level)
         idx //= 2
 
     return proof
@@ -303,10 +303,11 @@ def _aggregate_sentiment(labels: list[str]) -> dict[str, float]:
     if total == 0:
         return {"positive": 0.0, "negative": 0.0, "neutral": 0.0}
 
+    counts = Counter(labels)
     return {
-        "positive": labels.count("positive") / total,
-        "negative": labels.count("negative") / total,
-        "neutral": labels.count("neutral") / total,
+        "positive": counts.get("positive", 0) / total,
+        "negative": counts.get("negative", 0) / total,
+        "neutral": counts.get("neutral", 0) / total,
     }
 
 
@@ -490,25 +491,22 @@ class SentimentAnalysisTrendTests(SimpleTestCase):
             logits[0, idx] = 0.95
             return SimpleNamespace(logits=logits)
 
-    def test_sent_01_detect_positive_sentiment(self):
+    def _predict_with_keyword_model(self, text: str) -> str:
         with patch.object(sentiment_service, "_tokenizer", self._KeywordTokenizer()), patch.object(
             sentiment_service, "_model", self._KeywordModel()
         ), patch.object(sentiment_service, "_load_model_once", return_value=None):
-            pred = sentiment_service.predict_sentiment("The instructor was very helpful and engaging.")
+            return sentiment_service.predict_sentiment(text)
+
+    def test_sent_01_detect_positive_sentiment(self):
+        pred = self._predict_with_keyword_model("The instructor was very helpful and engaging.")
         self.assertEqual(pred, "positive")
 
     def test_sent_02_detect_negative_sentiment(self):
-        with patch.object(sentiment_service, "_tokenizer", self._KeywordTokenizer()), patch.object(
-            sentiment_service, "_model", self._KeywordModel()
-        ), patch.object(sentiment_service, "_load_model_once", return_value=None):
-            pred = sentiment_service.predict_sentiment("The lessons were confusing and poorly explained.")
+        pred = self._predict_with_keyword_model("The lessons were confusing and poorly explained.")
         self.assertEqual(pred, "negative")
 
     def test_sent_03_detect_neutral_sentiment(self):
-        with patch.object(sentiment_service, "_tokenizer", self._KeywordTokenizer()), patch.object(
-            sentiment_service, "_model", self._KeywordModel()
-        ), patch.object(sentiment_service, "_load_model_once", return_value=None):
-            pred = sentiment_service.predict_sentiment("The course covered basic programming topics.")
+        pred = self._predict_with_keyword_model("The course covered basic programming topics.")
         self.assertEqual(pred, "neutral")
 
     def test_sent_04_trend_aggregation(self):
@@ -539,16 +537,13 @@ class SentimentAnalysisTrendTests(SimpleTestCase):
             ("Average workload", "neutral"),
         ]
 
-        with patch.object(sentiment_service, "_tokenizer", self._KeywordTokenizer()), patch.object(
-            sentiment_service, "_model", self._KeywordModel()
-        ), patch.object(sentiment_service, "_load_model_once", return_value=None):
-            correct = 0
-            predictions = []
-            for text, expected in samples:
-                pred = sentiment_service.predict_sentiment(text)
-                predictions.append(pred)
-                if pred == expected:
-                    correct += 1
+        correct = 0
+        predictions = []
+        for text, expected in samples:
+            pred = self._predict_with_keyword_model(text)
+            predictions.append(pred)
+            if pred == expected:
+                correct += 1
 
         accuracy = correct / len(samples)
         self.assertGreaterEqual(
@@ -557,7 +552,8 @@ class SentimentAnalysisTrendTests(SimpleTestCase):
             f"Sentiment classification accuracy below target: {accuracy:.2%}",
         )
 
-        trend = max({k: predictions.count(k) for k in set(predictions)}, key=predictions.count)
+        prediction_counts = Counter(predictions)
+        trend = prediction_counts.most_common(1)[0][0]
         self.assertIn(trend, {"positive", "neutral", "negative"})
 
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
-import { BookOpen, Star, BarChart3, Calendar, ListFilter, X } from 'lucide-react';
+import { BookOpen, Star, BarChart3, Calendar, ListFilter, X, User } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
@@ -59,8 +59,6 @@ const getRatingMax = (resp) => {
 };
 
 const HistoryPage = () => {
-  const [activeTab, setActiveTab] = useState('all');
-
   const [historyData, setHistoryData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -107,12 +105,7 @@ const HistoryPage = () => {
     { title: 'This Semester', value: '-', sub: 'Evaluations complete', icon: Calendar },
   ];
 
-  const filteredHistory = historyData.filter((item) => {
-    if (activeTab === 'all') return true;
-    return activeTab === 'modules'
-      ? item.form_type === 'module'
-      : item.form_type === 'instructor';
-  });
+  const filteredHistory = historyData;
 
   const openDetails = (item) => {
     setSelectedItem(item);
@@ -145,69 +138,55 @@ const HistoryPage = () => {
     ? new Date(selectedItem.submitted_at).toLocaleDateString()
     : 'N/A';
 
-  const StarRating = ({ rating }) => (
+  const StarRating = ({ rating }) => {
+    const safeRating = Number(rating) || 0;
+    const display = Number.isInteger(safeRating) ? `${safeRating}` : safeRating.toFixed(1);
+
+    return (
     <div className="flex gap-0.5 mt-1">
       {[...Array(5)].map((_, i) => (
         <Star 
           key={i} 
           size={16} 
-          fill={i < Math.floor(rating) ? "#fbbf24" : "none"} 
-          className={i < Math.floor(rating) ? "text-yellow-400" : "text-gray-300"} 
+          fill={i < Math.floor(safeRating) ? '#fbbf24' : 'none'} 
+          className={i < Math.floor(safeRating) ? 'text-yellow-400' : 'text-gray-300'} 
         />
       ))}
-      <span className="text-xs text-gray-500 ml-1 font-medium">{rating}/5</span>
+      <span className="text-sm font-semibold text-slate-700 ml-2">{display}/5</span>
     </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
       <div className="flex flex-1 flex-row relative">
         <Sidebar role="student" activeItem="history" onLogout={() => {}} />
 
-        <main className="flex-1 overflow-y-auto px-8 py-10">
-          <div className="container mx-auto max-w-6xl">
+        <main className="flex-1 overflow-y-auto px-6 py-10">
+          <div className="container mx-auto max-w-7xl">
             <header className="mb-8">
-              <h1 className="text-3xl font-bold text-[#1f474d] tracking-tight">Evaluation History</h1>
-              <p className="text-slate-500 mt-1">View your submitted evaluations and feedback</p>
+              <h1 className="text-3xl font-bold text-[#0f2f57] tracking-tight">Evaluation History</h1>
+              <p className="text-slate-600 mt-2 text-lg">View your submitted evaluations and feedback</p>
             </header>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-10">
               {stats.map((stat, idx) => (
-                <div key={idx} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-slate-600 font-medium text-sm">{stat.title}</h3>
-                    <div className="p-1.5 bg-slate-100 rounded-lg text-[#1f474d]">
-                      <stat.icon size={18} />
-                    </div>
+                <div key={idx} className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300">
+                    <div className="w-12 h-12 rounded-xl bg-slate-100 text-[#0f2f57] flex items-center justify-center">
+                      <stat.icon size={20} />
                   </div>
-                  <div className="text-2xl font-bold text-slate-800">{stat.value}</div>
-                  <p className="text-xs text-slate-400 mt-1">{stat.sub}</p>
+                  <div>
+                    <p className="text-slate-600 text-sm">{stat.title}</p>
+                    <p className="text-4xl leading-none font-bold text-slate-900 mt-1">{stat.value}</p>
+                    <p className="text-xs text-slate-400 mt-2">{stat.sub}</p>
+                  </div>
                 </div>
               ))}
             </div>
 
-            {/* Tab Navigation (Based on Image 1) */}
-            <div className="mb-8">
-              <div className="inline-flex items-center p-1 bg-slate-200/60 rounded-full border border-slate-200 shadow-inner">
-                {['all', 'modules', 'instructors'].map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`px-8 py-2 rounded-full text-sm font-bold transition-all capitalize ${
-                      activeTab === tab 
-                        ? "bg-white text-[#1f474d] shadow-sm ring-1 ring-slate-200" 
-                        : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    {tab} {tab === 'all' ? `(${historyData.length})` : ''}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* History Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
               {loading ? (
                 <div>Loading…</div>
               ) : (
@@ -223,20 +202,34 @@ const HistoryPage = () => {
                           ? item.responses
                           : [];
 
+                      const ratingValues = respList
+                        .filter((q) => typeof q?.rating === 'number')
+                        .map((q) => {
+                          const code = getResponseCode(q);
+                          const value = Number(q.rating) || 0;
+                          const max = code.startsWith('learn_') ? 4 : (code === 'overall_instructor' || code === 'overall_modules' ? 10 : 5);
+                          return max > 0 ? (value / max) * 5 : 0;
+                        })
+                        .filter((v) => Number.isFinite(v) && v > 0);
+
                       const overall =
-                        respList.length > 0
-                          ? (
-                              respList
-                                .filter((q) => typeof q.rating === 'number')
-                                .reduce((sum, q) => sum + q.rating, 0) /
-                              respList.filter((q) => typeof q.rating === 'number').length
-                            ).toFixed(1)
+                        ratingValues.length > 0
+                          ? Number((ratingValues.reduce((sum, v) => sum + v, 0) / ratingValues.length).toFixed(1))
                           : 0;
+
+                      const semesterLabel =
+                        item.semester ||
+                        item.term ||
+                        item.academic_term ||
+                        item.semester_label ||
+                        item.school_year ||
+                        item.academic_year ||
+                        'N/A';
 
                     return (
                       <div
                         key={idx}
-                        className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow"
+                        className="h-full bg-white rounded-2xl border border-slate-200 p-6 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300 flex flex-col"
                       >
                         <div className="flex items-center gap-3 mb-4">
                           <span className="font-mono text-[10px] px-2 py-1 bg-slate-50 border border-slate-200 rounded text-slate-500 font-bold uppercase">
@@ -247,30 +240,31 @@ const HistoryPage = () => {
                           </span>
                         </div>
 
-                        <h3 className="text-xl font-bold text-slate-800">
+                        <h3 className="text-xl leading-tight font-bold text-slate-900 tracking-tight">
                           {item.form_label || item.form_model || item.form_id || ''}
                         </h3>
-                        <p className="text-sm text-slate-500 mb-6">{item.form_description}</p>
+                        <p className="text-sm text-slate-500 mt-1 mb-6">{item.form_instructor || 'Instructor TBA'}</p>
 
-                        <div className="grid grid-cols-2 gap-4 mb-6">
-                          <div>
-                            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                              Overall Rating
-                            </span>
-                            <StarRating rating={overall} />
-                          </div>
+                        <div className="mb-6">
+                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Overall Rating</span>
+                          <StarRating rating={overall} />
                         </div>
 
                         <div className="flex items-center gap-4 text-xs text-slate-400 mb-6 font-medium">
-                          <span>{date}</span>
-                          <span>•</span>
-                          <span>{/* semester if you have it */}</span>
+                          <span className="inline-flex items-center gap-2">
+                            <Calendar size={14} className="text-slate-400" />
+                            {date || 'N/A'}
+                          </span>
+                          <span className="inline-flex items-center gap-2">
+                            <User size={14} className="text-slate-400" />
+                            {semesterLabel}
+                          </span>
                         </div>
 
                         <button
                           type="button"
                           onClick={() => openDetails(item)}
-                          className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-[#1f474d] text-white rounded-lg font-bold hover:bg-[#2a5d65] transition-colors"
+                          className="w-full mt-auto h-11 inline-flex items-center justify-center gap-2 px-4 rounded-xl bg-[#1f474d] text-white text-sm font-semibold hover:bg-[#2a5d65] transition-colors"
                         >
                           <ListFilter size={16} />
                           View Details

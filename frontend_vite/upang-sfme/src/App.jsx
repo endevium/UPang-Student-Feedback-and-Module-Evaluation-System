@@ -30,6 +30,7 @@ import FacultyAuditLogPage from './pages/faculty/AuditLogPage.jsx';
 import StudentDashboard from './pages/student/StudentDashboard.jsx';
 import HistoryPage from './pages/student/HistoryPage.jsx';
 import ClassroomPage from './pages/student/ClassroomPage.jsx';
+import StudentClassroomStudentsPage from './pages/student/ClassroomStudentsPage.jsx';
 import ModulePage from './pages/student/ModulePage.jsx';
 import EvaluationForm from './pages/student/EvaluationForm.jsx';
 import EvaluationPage from './pages/student/EvaluationPage.jsx';
@@ -238,6 +239,7 @@ function App() {
 
     // Student Nested Routes
     if (route.startsWith('/dashboard')) {
+      if (route.startsWith('/dashboard/classroom/students')) return <StudentClassroomStudentsPage />;
       if (route === '/dashboard/classroom') return <ClassroomPage />;
       if (route === '/dashboard/history') return <HistoryPage />;
       if (route === '/dashboard/audit-log') return <StudentAuditLogPage />;

@@ -130,9 +130,10 @@ const InstructorsPage = ({ showSidebar = true, searchQuery = '' }) => {
   const InstructorCard = ({ instructor }) => {
     const isActive = String(instructor.status || '').toLowerCase() === 'active';
     const isCompleted = !!instructor.isCompleted;
+    const isDisabled = !isActive || isCompleted;
 
     return (
-      <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
+      <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm h-full flex flex-col">
         <div className="w-14 h-14 bg-slate-50 rounded-full mb-4 flex items-center justify-center border border-slate-100">
           <Users className="h-6 w-6 text-slate-400" />
         </div>
@@ -155,10 +156,14 @@ const InstructorsPage = ({ showSidebar = true, searchQuery = '' }) => {
           <p className="text-slate-400 text-sm mt-1">Instructor evaluation form is available.</p>
         )}
   
-        <div className="pt-5">
+        <div className="pt-5 mt-auto">
           <button
-            disabled={!isActive || isCompleted}
-            className="w-full bg-[#1f474d] text-white py-2 px-4 rounded-md hover:bg-[#2a5d65] font-bold transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#1f474d]"
+            disabled={isDisabled}
+            className={`w-full h-11 inline-flex items-center justify-center px-4 rounded-xl text-sm font-semibold transition-colors ${
+              isDisabled
+                ? 'border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                : 'bg-[#1f474d] text-white hover:bg-[#2a5d65]'
+            }`}
             onClick={() => {
               if (!isActive || isCompleted) return;
               const id = instructor.instructorFormId;

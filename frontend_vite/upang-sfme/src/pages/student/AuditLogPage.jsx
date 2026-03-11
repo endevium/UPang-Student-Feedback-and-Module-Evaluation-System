@@ -134,7 +134,7 @@ const StudentAuditLogPage = () => {
   ]), [stats]);
 
   return (
-    <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-100 flex flex-col">
+    <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
       <div className="flex flex-1 flex-row relative">
         <Sidebar role="student" activeItem="audit-log" />
 
@@ -146,43 +146,47 @@ const StudentAuditLogPage = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-fuchsia-100 text-fuchsia-600 flex items-center justify-center">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300">
+                <div className="w-12 h-12 rounded-xl bg-slate-100 text-[#0f2f57] flex items-center justify-center">
                   <BookOpenText size={20} />
                 </div>
                 <div>
                   <p className="text-slate-600 text-sm">Evaluations</p>
                   <p className="text-4xl leading-none font-bold text-slate-900 mt-1">{stats.evaluationCount}</p>
+                  <p className="text-xs text-slate-400 mt-2">Evaluation-related events</p>
                 </div>
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300">
+                <div className="w-12 h-12 rounded-xl bg-slate-100 text-[#0f2f57] flex items-center justify-center">
                   <LogIn size={20} />
                 </div>
                 <div>
                   <p className="text-slate-600 text-sm">Logins</p>
                   <p className="text-4xl leading-none font-bold text-slate-900 mt-1">{stats.authCount}</p>
+                  <p className="text-xs text-slate-400 mt-2">Authentication activities</p>
                 </div>
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300">
+                <div className="w-12 h-12 rounded-xl bg-slate-100 text-[#0f2f57] flex items-center justify-center">
                   <Users size={20} />
                 </div>
                 <div>
                   <p className="text-slate-600 text-sm">Classroom</p>
                   <p className="text-4xl leading-none font-bold text-slate-900 mt-1">{stats.classroomCount}</p>
+                  <p className="text-xs text-slate-400 mt-2">Classroom actions logged</p>
                 </div>
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300">
+                <div className="w-12 h-12 rounded-xl bg-slate-100 text-[#0f2f57] flex items-center justify-center">
                   <Activity size={20} />
                 </div>
                 <div>
                   <p className="text-slate-600 text-sm">Total Activities</p>
                   <p className="text-4xl leading-none font-bold text-slate-900 mt-1">{stats.totalCount}</p>
+                  <p className="text-xs text-slate-400 mt-2">All captured audit entries</p>
                 </div>
               </div>
             </div>
@@ -197,7 +201,8 @@ const StudentAuditLogPage = () => {
               />
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-2 mb-6 flex items-center gap-2 overflow-x-auto">
+            <div className="mb-6 overflow-x-auto">
+              <div className="inline-flex items-center gap-1 p-1 bg-slate-200/60 rounded-full border border-slate-200 shadow-inner min-w-max">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const active = activeTab === tab.key;
@@ -206,15 +211,16 @@ const StudentAuditLogPage = () => {
                     key={tab.key}
                     type="button"
                     onClick={() => setActiveTab(tab.key)}
-                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors ${
-                      active ? 'bg-[#020824] text-white' : 'text-slate-700 hover:bg-slate-100'
+                    className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${
+                      active ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <Icon size={14} />
+                    <Icon size={15} />
                     {tab.label} ({tab.count})
                   </button>
                 );
               })}
+              </div>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-6">
@@ -234,7 +240,7 @@ const StudentAuditLogPage = () => {
               ) : (
                 <div className="space-y-4">
                   {filteredLogs.map((log) => (
-                    <div key={log.id} className="border border-slate-200 rounded-xl p-4">
+                    <div key={log.id} className="border border-slate-200 rounded-xl p-4 transition-all duration-200 hover:shadow-md hover:border-slate-300">
                       <div className="flex items-center justify-between gap-3">
                         <div className="inline-flex items-center gap-2">
                           <ClipboardList size={16} className="text-slate-500" />

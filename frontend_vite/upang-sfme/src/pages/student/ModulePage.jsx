@@ -154,7 +154,7 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
 
   const ModuleCard = ({ module }) => (
     // Card: White background, soft border, and slate text
-    <div className="bg-white border border-slate-200 rounded-xl p-6 hover:shadow-md transition-all">
+    <div className="h-full bg-white border border-slate-200 rounded-xl p-6 hover:shadow-md transition-all flex flex-col">
       <div className="flex justify-between items-start mb-4">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
@@ -173,23 +173,23 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
           <p className="mt-2 text-sm text-slate-500 line-clamp-2">{module.description}</p>
         </div>
       </div>
-      <div className="space-y-4">
+      <div className="space-y-4 flex-1 flex flex-col">
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="flex items-center gap-2 text-slate-600"><User className="h-4 w-4" /><span>{module.instructor || 'TBA'}</span></div>
           <div className="flex items-center gap-2 text-slate-600"><BookOpen className="h-4 w-4" /><span>{module.credits} Credits</span></div>
         </div>
-        <div className="pt-2">
+        <div className="pt-2 mt-auto">
           {module.status === "completed" ? (
-            <button className="w-full flex items-center justify-center py-2 px-4 rounded-md border border-slate-200 text-slate-400 cursor-not-allowed text-sm font-medium" disabled>
+            <button className="w-full h-11 inline-flex items-center justify-center px-4 rounded-xl border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed text-sm font-semibold" disabled>
               <CheckCircle className="h-4 w-4 mr-2" /> Evaluation Completed
             </button>
           ) : !module.form_available ? (
-            <button className="w-full flex items-center justify-center py-2 px-4 rounded-md border border-slate-200 text-slate-400 text-sm font-medium cursor-not-allowed" disabled>
+            <button className="w-full h-11 inline-flex items-center justify-center px-4 rounded-xl border border-slate-200 bg-slate-100 text-slate-400 text-sm font-semibold cursor-not-allowed" disabled>
               No Form Available
             </button>
           ) : (
             <button 
-              className="w-full bg-[#1f474d] text-white py-2 px-4 rounded-md hover:bg-[#2a5d65] font-bold transition-colors text-sm" 
+              className="w-full h-11 inline-flex items-center justify-center px-4 rounded-xl bg-[#1f474d] text-white text-sm font-semibold hover:bg-[#2a5d65] transition-colors" 
               onClick={() => {
                 window.history.pushState({ formId: module.form_id }, '', `/dashboard/evaluate/${module.id}`);
                 window.dispatchEvent(new PopStateEvent('popstate'));
@@ -208,13 +208,13 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
       <div className="font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 px-0 py-0">
         <div className="max-w-7xl mx-auto">
           <div className="flex justify-start mb-8">
-            <div className="inline-flex items-center p-1.5 bg-slate-200/50 rounded-full border border-slate-200">
+            <div className="inline-flex items-center p-1 bg-slate-200/60 rounded-full border border-slate-200 shadow-inner">
               {['all', 'pending', 'completed'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`px-6 py-1.5 rounded-full text-sm font-bold transition-all duration-200 capitalize ${
-                    activeTab === tab ? "bg-white text-[#1f474d] shadow-sm" : "text-slate-500 hover:text-slate-800"
+                  className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 capitalize ${
+                    activeTab === tab ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
                   {tab} ({counts[tab]})
@@ -223,7 +223,7 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {loading ? (
               <div className="col-span-full py-20 text-center">
                 <Clock className="h-12 w-12 text-slate-300 mx-auto mb-4" />
@@ -258,7 +258,7 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
         <Sidebar role="student" activeItem="evaluation" />
 
         <main className="flex-1 overflow-y-auto px-6 py-12">
-          <div className="container mx-auto max-w-6xl">
+          <div className="container mx-auto max-w-7xl">
             {/* Page Title - Changed color to your brand teal */}
             {/* <div className="mb-8">
               <h1 className="text-4xl font-bold text-[#1f474d] tracking-tight">My Modules</h1>
@@ -269,13 +269,13 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
 
             {/* Pill Tabs - Light theme styling */}
             <div className="flex justify-center mb-8">
-              <div className="inline-flex items-center p-1.5 bg-slate-200/50 rounded-full border border-slate-200">
+              <div className="inline-flex items-center p-1 bg-slate-200/60 rounded-full border border-slate-200 shadow-inner">
                 {['all', 'pending', 'completed'].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
-                    className={`px-6 py-1.5 rounded-full text-sm font-bold transition-all duration-200 capitalize ${
-                      activeTab === tab ? "bg-white text-[#1f474d] shadow-sm" : "text-slate-500 hover:text-slate-800"
+                    className={`px-6 py-2 rounded-full text-sm font-semibold transition-all duration-200 capitalize ${
+                      activeTab === tab ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     {tab} ({counts[tab]})
@@ -285,7 +285,7 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
             </div>
 
             {/* Module Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
               {loading ? (
                 <div className="col-span-full py-20 text-center">
                   <Clock className="h-12 w-12 text-slate-300 mx-auto mb-4" />

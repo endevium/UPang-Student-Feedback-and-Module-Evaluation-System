@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
-import { Plus, Users } from 'lucide-react';
+import { Plus, Users, CircleCheck, Clock3 } from 'lucide-react';
 
 const ClassroomPage = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -71,6 +71,11 @@ const ClassroomPage = () => {
       return;
     }
 
+    if (!/^[A-Z0-9]+$/.test(classroomCode)) {
+      setJoinError('Class code can only contain letters and numbers.');
+      return;
+    }
+
     setJoining(true);
     setJoinError('');
 
@@ -103,13 +108,13 @@ const ClassroomPage = () => {
 
   const normalizedClassrooms = useMemo(() => {
     return classrooms.map((item, index) => {
-      const code = item?.code || item?.subject_code || item?.module_code || '';
-      const name = item?.name || item?.title || item?.module_name || code || `Classroom ${index + 1}`;
+      const code = item?.subject_code || item?.code || item?.module_code || '';
+      const name = item?.module_name || item?.name || item?.title || code || `Classroom ${index + 1}`;
       const instructor = item?.instructor || item?.instructor_name || item?.lecturer || 'Instructor TBA';
-      const section = item?.section || item?.classroom_code || item?.block || `CS-${index + 1}A`;
-      const schedule = item?.schedule || item?.class_schedule || item?.time_slot || 'MWF 10:00 AM - 11:30 AM';
-      const room = item?.room || item?.room_name || item?.location || 'TBA';
-      const students = Number(item?.students_count ?? item?.student_count ?? item?.enrolled_count ?? 0) || 0;
+      const section = item?.block || item?.classroom_code || item?.section || `CS-${index + 1}A`;
+      const schedule = item?.schedule || 'TBA';
+      const room = item?.room || 'TBA';
+      const students = Number(item?.students_count) || 0;
 
       const initials = String(instructor)
         .split(' ')
@@ -120,6 +125,8 @@ const ClassroomPage = () => {
 
       return {
         id: item?.id || `${code}-${index}`,
+        classroomId: item?.id || null,
+        classCode: item?.classroom_code || item?.class_code || '',
         code: code || `CS${400 + index + 1}`,
         section,
         title: name,
@@ -142,9 +149,13 @@ const ClassroomPage = () => {
       return {
         id: item?.enrollment_id || `${item?.classroom_code || 'APP'}-${index}`,
         code: item?.subject_code || 'N/A',
+        section: item?.block || item?.section || '',
         title: item?.module_name || 'Unknown Module',
         classroomCode: item?.classroom_code || 'N/A',
         instructor: item?.instructor || 'Instructor TBA',
+        schedule: item?.schedule || 'TBA',
+        room: item?.room || 'TBA',
+        students: Number(item?.students_count) || 0,
         requestedAt,
         status: item?.status || 'Pending',
       };
@@ -156,12 +167,12 @@ const ClassroomPage = () => {
       <div className="flex flex-1 flex-row relative">
         <Sidebar role="student" activeItem="classroom" />
 
-        <main className="flex-1 overflow-y-auto px-6 py-12">
-          <div className="container mx-auto max-w-6xl">
+        <main className="flex-1 overflow-y-auto px-6 py-10">
+          <div className="container mx-auto max-w-7xl">
             <div className="flex items-start justify-between gap-4 mb-8">
               <div>
                 <h1 className="text-3xl font-bold text-[#0f2f57] tracking-tight">Classrooms</h1>
-                <p className="text-slate-500 mt-1 text-lg">Manage your enrolled classrooms</p>
+                <p className="text-slate-600 mt-2 text-lg">Manage your enrolled classrooms</p>
               </div>
               <button
                 type="button"
@@ -170,38 +181,38 @@ const ClassroomPage = () => {
                   setJoinCode('');
                   setIsJoinModalOpen(true);
                 }}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[#020824] text-white rounded-lg text-sm font-semibold hover:bg-[#0b1238] transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-semibold hover:bg-[#2a5d65] transition-colors"
               >
                 <Plus size={16} strokeWidth={2.6} />
                 Join Classroom
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            <div className="mt-1 mb-2 inline-flex items-center rounded-full bg-slate-200/60 p-1 border border-slate-200 shadow-inner">
               <button
                 type="button"
                 onClick={() => setActiveView('active')}
-                className={`text-left rounded-2xl p-5 border transition-colors ${
+                className={`inline-flex items-center gap-2 rounded-full px-6 py-2 text-sm font-semibold transition-all ${
                   activeView === 'active'
-                    ? 'bg-[#020824] border-[#020824] text-white'
-                    : 'bg-white border-slate-200 text-slate-900 hover:border-slate-300'
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <p className={`text-sm ${activeView === 'active' ? 'text-slate-200' : 'text-slate-500'}`}>Active Classrooms</p>
-                <p className="text-4xl font-bold mt-1">{normalizedClassrooms.length}</p>
+                <CircleCheck size={15} strokeWidth={2.25} />
+                Active ({normalizedClassrooms.length})
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveView('applied')}
-                className={`text-left rounded-2xl p-5 border transition-colors ${
+                className={`inline-flex items-center gap-2 rounded-full px-6 py-2 text-sm font-semibold transition-all ${
                   activeView === 'applied'
-                    ? 'bg-[#7a4a06] border-[#7a4a06] text-white'
-                    : 'bg-white border-slate-200 text-slate-900 hover:border-slate-300'
+                    ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <p className={`text-sm ${activeView === 'applied' ? 'text-amber-100' : 'text-slate-500'}`}>Applied Classrooms</p>
-                <p className="text-4xl font-bold mt-1">{normalizedApplications.length}</p>
+                <Clock3 size={15} strokeWidth={2.25} />
+                Applied ({normalizedApplications.length})
               </button>
             </div>
 
@@ -220,7 +231,7 @@ const ClassroomPage = () => {
                 normalizedClassrooms.map((classroom) => (
                   <div
                     key={classroom.id}
-                    className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm"
+                    className="h-full bg-white border border-slate-200 rounded-2xl p-6 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300 flex flex-col"
                   >
                     <div className="flex items-center gap-2 mb-3">
                       <span className="font-mono text-[10px] px-2 py-1 bg-slate-50 border border-slate-200 rounded text-slate-600 font-bold uppercase">
@@ -231,8 +242,8 @@ const ClassroomPage = () => {
                       </span>
                     </div>
 
-                    <h2 className="text-[34px] leading-tight font-medium text-slate-900 tracking-tight">{classroom.title}</h2>
-                    <p className="text-slate-500 text-[30px] mt-1">{classroom.instructor}</p>
+                    <h1 className="text-xl leading-tight font-bold text-slate-900 tracking-tight">{classroom.title}</h1>
+                    <p className="text-sm text-slate-500 mt-1">{classroom.instructor}</p>
 
                     <div className="mt-6 space-y-2.5 text-sm text-slate-700">
                       <p>
@@ -251,7 +262,14 @@ const ClassroomPage = () => {
 
                     <button
                       type="button"
-                      className="w-full mt-5 bg-[#020824] text-white py-2.5 rounded-lg font-semibold hover:bg-[#0b1238] transition-colors"
+                      onClick={() => {
+                        const nextPath = classroom.classroomId
+                          ? `/dashboard/classroom/students?classroom_id=${encodeURIComponent(classroom.classroomId)}`
+                          : '/dashboard/classroom/students';
+                        window.history.pushState({ classroom }, '', nextPath);
+                        window.dispatchEvent(new PopStateEvent('popstate'));
+                      }}
+                      className="w-full mt-auto h-11 inline-flex items-center justify-center px-4 rounded-xl bg-[#1f474d] text-white text-sm font-semibold hover:bg-[#2a5d65] transition-colors"
                     >
                       View Classroom
                     </button>
@@ -265,25 +283,55 @@ const ClassroomPage = () => {
               )}
               </div>
             ) : (
-              <div className="mt-6 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                <h2 className="text-3xl font-semibold text-slate-900">Applied Classrooms</h2>
-                <p className="text-slate-500 mt-1 text-base">Track classrooms you are applying to and their status</p>
-
+              <div className="mt-6">
                 {normalizedApplications.length === 0 ? (
-                  <div className="mt-4 text-slate-500">No pending applications.</div>
+                  <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-500 shadow-sm">No pending applications.</div>
                 ) : (
-                  <div className="mt-4 divide-y divide-slate-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                     {normalizedApplications.map((application) => (
-                      <div key={application.id} className="py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                        <div>
-                          <p className="text-lg font-semibold text-slate-900">{application.code} - {application.title}</p>
-                          <p className="text-slate-600 text-sm">Class Code: {application.classroomCode}</p>
-                          <p className="text-slate-600 text-sm">Instructor: {application.instructor}</p>
-                          <p className="text-slate-500 text-sm">Requested: {application.requestedAt}</p>
+                      <div key={application.id} className="h-full bg-white border border-slate-200 rounded-2xl p-6 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300 flex flex-col">
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                          <span className="font-mono text-[10px] px-2 py-1 bg-slate-50 border border-slate-200 rounded text-slate-600 font-bold uppercase">
+                            {application.code}
+                          </span>
+                          {application.section ? (
+                            <span className="text-[10px] px-2 py-1 bg-indigo-100 text-indigo-700 rounded font-bold uppercase">
+                              {application.section}
+                            </span>
+                          ) : null}
+                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full font-bold bg-amber-100 text-amber-700 border border-amber-200 uppercase">
+                            <Clock3 size={11} /> Pending Approval
+                          </span>
                         </div>
-                        <span className="inline-flex items-center self-start md:self-auto px-3 py-1 rounded-full text-sm font-semibold bg-amber-100 text-amber-700">
-                          {application.status}
-                        </span>
+
+                        <h3 className="text-xl leading-tight font-bold text-slate-900 tracking-tight">{application.title}</h3>
+                        <p className="text-sm text-slate-500 mt-1">{application.instructor}</p>
+
+                        <div className="mt-6 space-y-2.5 text-sm text-slate-700">
+                          <p>
+                            <span className="font-semibold">Schedule:</span>{' '}
+                            <span>{application.schedule}</span>
+                          </p>
+                          <p>
+                            <span className="font-semibold">Room:</span>{' '}
+                            <span>{application.room}</span>
+                          </p>
+                          {application.students > 0 ? (
+                            <p className="inline-flex items-center gap-2 text-slate-700 font-semibold">
+                              <Users size={14} className="text-slate-400" />
+                              {application.students} students
+                            </p>
+                          ) : null}
+                          <p className="inline-flex items-center gap-2 text-slate-700">
+                            <Clock3 size={14} className="text-slate-400" />
+                            Applied on {application.requestedAt}
+                          </p>
+                        </div>
+
+                        <div className="mt-auto pt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+                          <p className="font-bold">Waiting for instructor approval.</p>
+
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -297,46 +345,48 @@ const ClassroomPage = () => {
 
       {isJoinModalOpen && (
         <div className="fixed inset-0 z-[9999] bg-black/45 flex items-center justify-center p-4">
-          <div className="w-full max-w-[520px] bg-[#ededed] rounded-md shadow-xl border border-slate-300">
-            <div className="px-5 pt-4 pb-5">
-              <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200">
+            <div className="px-6 pt-6 pb-6">
+              <div className="flex items-start justify-between gap-3 mb-6">
                 <div>
-                  <h2 className="text-[30px] leading-tight font-semibold text-slate-900">Join Classroom</h2>
-                  <p className="text-slate-500 mt-1 text-[22px] leading-tight">Enter the class code provided by your instructor</p>
+                  <h2 className="text-2xl font-bold text-[#0f2f57] tracking-tight">Join Classroom</h2>
+                  <p className="text-slate-500 mt-1 text-sm">Enter the class code provided by your instructor</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsJoinModalOpen(false)}
-                  className="text-slate-500 hover:text-slate-700 text-lg leading-none px-2"
+                  className="text-slate-400 hover:text-slate-700 text-xl leading-none px-1"
                   aria-label="Close join classroom modal"
                 >
                   ×
                 </button>
               </div>
 
-              <label className="block text-[26px] font-medium text-slate-900 mt-6 mb-1.5">Enter Code</label>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Class Code</label>
               <input
                 type="text"
                 value={joinCode}
                 onChange={(e) => {
-                  setJoinCode(e.target.value.toUpperCase());
+                  const sanitizedValue = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                  setJoinCode(sanitizedValue);
                   if (joinError) setJoinError('');
                 }}
-                placeholder="1234b678"
+                placeholder="e.g. 1234B678"
                 maxLength={8}
-                className="w-full h-[50px] px-4 rounded-[10px] border border-slate-400 bg-white text-center text-[26px] text-slate-700 focus:outline-none"
+                pattern="[A-Za-z0-9]{8}"
+                className="w-full h-11 px-4 rounded-xl border border-slate-300 bg-slate-50 text-center text-base font-mono font-bold text-slate-800 tracking-widest focus:outline-none focus:ring-2 focus:ring-[#1f474d]/30 focus:border-[#1f474d]"
               />
-              <p className="text-slate-500 text-[20px] mt-1">Class codes are 8 characters long</p>
+              <p className="text-slate-400 text-xs mt-1.5">Class codes are 8 characters long</p>
 
               {joinError && (
                 <p className="text-sm text-rose-600 font-medium mt-2">{joinError}</p>
               )}
 
-              <div className="mt-5 flex items-center gap-3">
+              <div className="mt-6 flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setIsJoinModalOpen(false)}
-                  className="flex-1 h-12 rounded-xl border border-slate-300 bg-[#efefef] text-slate-900 font-semibold text-[26px]"
+                  className="flex-1 h-11 rounded-xl border border-slate-200 bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors"
                 >
                   Cancel
                 </button>
@@ -344,9 +394,9 @@ const ClassroomPage = () => {
                   type="button"
                   onClick={handleJoinClassroom}
                   disabled={joining || joinCode.trim().length !== 8}
-                  className="flex-1 h-12 rounded-xl bg-[#020824] text-white font-semibold text-[26px] disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex-1 h-11 rounded-xl bg-[#1f474d] text-white text-sm font-semibold hover:bg-[#2a5d65] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {joining ? 'Joining...' : 'Join'}
+                  {joining ? 'Joining...' : 'Join Classroom'}
                 </button>
               </div>
             </div>

@@ -12,13 +12,25 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
+const normalizeCode = (value) => String(value || '').trim().toUpperCase();
+
+const isCompletedFromItem = (item, completedModuleCodes) => {
+  const code = normalizeCode(item?.subject_code || item?.code || item?.module_code);
+  return Boolean(
+    item?.evaluation_completed ||
+      item?.is_completed ||
+      item?.completed ||
+      (code && completedModuleCodes.has(code))
+  );
+};
+
 const StudentDashboard = () => {
   const [studentName, setStudentName] = useState('Student');
   const [stats, setStats] = useState([
-    { title: "Total Modules", value: "0", description: "Enrolled this semester", icon: BookOpen, color: "bg-blue-100 text-blue-600" },
-    { title: "Instructors", value: "0", description: "To evaluate", icon: Users, color: "bg-purple-100 text-purple-600" },
-    { title: "Completed", value: "0", description: "Total evaluations done", icon: CheckCircle, color: "bg-green-100 text-green-600" },
-    { title: "Pending", value: "0", description: "Awaiting feedback", icon: AlertCircle, color: "bg-amber-100 text-amber-600" },
+    { title: "Total Modules", value: "0", description: "Enrolled this semester", icon: BookOpen, color: "bg-slate-100 text-[#0f2f57]" },
+    { title: "Instructors", value: "0", description: "To evaluate", icon: Users, color: "bg-slate-100 text-[#0f2f57]" },
+    { title: "Completed", value: "0", description: "Total evaluations done", icon: CheckCircle, color: "bg-slate-100 text-[#0f2f57]" },
+    { title: "Pending", value: "0", description: "Awaiting feedback", icon: AlertCircle, color: "bg-slate-100 text-[#0f2f57]" },
   ]);
   const [recentModules, setRecentModules] = useState([]);
   const [loadError, setLoadError] = useState('');
@@ -61,43 +73,59 @@ const StudentDashboard = () => {
       const name = `${data?.student?.firstname || ''} ${data?.student?.lastname || ''}`.trim();
       setStudentName(name || 'Student');
 
-      const apiStats = data?.stats || {};
+      // Use the same list fallback order used by the evaluation page.
+      const classrooms = Array.isArray(data?.classrooms)
+        ? data.classrooms
+        : Array.isArray(data?.modules)
+          ? data.modules
+          : Array.isArray(data?.enrolled_modules)
+            ? data.enrolled_modules
+            : Array.isArray(data?.recent_modules)
+              ? data.recent_modules
+              : [];
+
+      // Reuse module-form completion as a fallback so status matches EvaluationPage.
+      const completedModuleCodes = new Set();
+      try {
+        const formsRes = await fetch(`${API_BASE_URL}/module-evaluation-forms/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const formsData = await formsRes.json().catch(() => []);
+        if (formsRes.ok && Array.isArray(formsData)) {
+          formsData.forEach((form) => {
+            if (!form?.is_completed) return;
+            const code = normalizeCode(form?.title || form?.subject_code);
+            if (code) completedModuleCodes.add(code);
+          });
+        }
+      } catch {
+        // Non-blocking: dashboard can still render using classroom/module flags.
+      }
+      
+      // Extract unique instructors from classrooms
+      const instructorSet = new Set(classrooms.map(c => c?.instructor || '').filter(Boolean));
+      const totalInstructors = instructorSet.size;
+
+      // Calculate stats from available data
+      const totalModules = classrooms.length;
+      const completedEvaluations = classrooms.filter((c) => isCompletedFromItem(c, completedModuleCodes)).length;
+      const pendingEvaluations = classrooms.filter((c) => !isCompletedFromItem(c, completedModuleCodes)).length;
       setStats([
-        { title: "Total Modules", value: String(apiStats.total_modules ?? 0), description: "Enrolled this semester", icon: BookOpen, color: "bg-blue-100 text-blue-600" },
-        { title: "Instructors", value: String(apiStats.instructors ?? 0), description: "To evaluate", icon: Users, color: "bg-purple-100 text-purple-600" },
-        { title: "Completed", value: String(apiStats.completed ?? 0), description: "Total evaluations done", icon: CheckCircle, color: "bg-green-100 text-green-600" },
-        { title: "Pending", value: String(apiStats.pending ?? 0), description: "Awaiting feedback", icon: AlertCircle, color: "bg-amber-100 text-amber-600" },
+        { title: "Total Modules", value: String(totalModules), description: "Enrolled this semester", icon: BookOpen, color: "bg-slate-100 text-[#0f2f57]" },
+        { title: "Instructors", value: String(totalInstructors), description: "To evaluate", icon: Users, color: "bg-slate-100 text-[#0f2f57]" },
+        { title: "Completed", value: String(completedEvaluations), description: "Total evaluations done", icon: CheckCircle, color: "bg-slate-100 text-[#0f2f57]" },
+        { title: "Pending", value: String(pendingEvaluations), description: "Awaiting feedback", icon: AlertCircle, color: "bg-slate-100 text-[#0f2f57]" },
       ]);
 
-      const enrolled = data?.student?.enrolled_subjects || data?.enrolled_subjects || [];
-      const instructorByCode = new Map();
-      if (Array.isArray(enrolled)) {
-        enrolled.forEach(s => {
-          const code = (s?.code || '').toString().trim().toUpperCase();
-          const inst = (s?.instructor_name || '').toString().trim();
-          if (code && inst) instructorByCode.set(code, inst);
-        });
-      }
-
-      const recent = Array.isArray(data?.recent_modules) ? data.recent_modules : [];
-      const enriched = recent.map(m => {
-        const codeKey = (
-                  m?.code ||
-                  m?.module_code ||
-                  m?.subject_code ||
-                  m?.subject?.code ||
-                  m?.module?.code ||
-                  '' // do NOT use id as primary code key
-                ).toString().trim().toUpperCase();
-        const instFromEnrollment = instructorByCode.get(codeKey);
-        
-        const apiInstructor = (m?.instructor || m?.instructor_name || '').toString().trim();
-        const apiInstructorIsTba = !apiInstructor || apiInstructor.toUpperCase() === 'TBA';
-        return {
-          ...m,
-          instructor: (apiInstructorIsTba ? '' : apiInstructor) || instFromEnrollment || 'TBA',
-        };
-      });
+      // Map classrooms to recent modules format for display
+      const enriched = classrooms.map((classroom, idx) => ({
+        id: classroom?.id || idx,
+        name: classroom?.module_name || classroom?.name || classroom?.title || 'Unknown Module',
+        instructor: classroom?.instructor || classroom?.instructor_name || classroom?.lecturer || 'TBA',
+        status: isCompletedFromItem(classroom, completedModuleCodes) ? 'completed' : 'pending',
+        code: classroom?.subject_code || classroom?.code || classroom?.module_code || 'N/A',
+        classroom_code: classroom?.classroom_code || 'N/A',
+      }));
       setRecentModules(enriched);
     } catch {
       setLoadError('Unable to reach the server. Please try again.');
@@ -110,6 +138,18 @@ const StudentDashboard = () => {
     }, 0);
 
     return () => clearTimeout(timer);
+  }, [fetchDashboard]);
+
+  // Re-fetch dashboard when page becomes visible (returning from evaluation form)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDashboard();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [fetchDashboard]);
 
   return (
@@ -129,18 +169,19 @@ const StudentDashboard = () => {
             </header>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {stats.map((stat) => {
                 const Icon = stat.icon;
                 return (
-                  // Change 2: Cards to bg-white with soft shadows and slate borders
-                  <div key={stat.title} className="bg-white p-6 rounded-xl border border-slate-200 hover:border-slate-300 transition-all shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">{stat.title}</h3>
-                      <div className={`p-2 rounded-lg ${stat.color}`}><Icon className="h-5 w-5" /></div>
+                  <div key={stat.title} className="bg-white border border-slate-200 rounded-2xl p-6 flex items-center gap-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stat.color}`}>
+                      <Icon className="h-5 w-5" />
                     </div>
-                    <div className="text-3xl font-bold text-slate-900">{stat.value}</div>
-                    <p className="text-xs text-slate-400 mt-1">{stat.description}</p>
+                    <div>
+                      <p className="text-slate-600 text-sm">{stat.title}</p>
+                      <p className="text-4xl leading-none font-bold text-slate-900 mt-1">{stat.value}</p>
+                      <p className="text-xs text-slate-400 mt-2">{stat.description}</p>
+                    </div>
                   </div>
                 );
               })}

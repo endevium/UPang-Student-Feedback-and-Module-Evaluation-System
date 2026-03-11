@@ -28,6 +28,9 @@ from .blockchain import feedback_payload, compute_feedback_hash_hex, store_hash_
 
 from .models.AuditLog import AuditLog
 from .models.DepartmentHead import DepartmentHead
+from .models.FeedbackResponse import FeedbackResponse
+from .models.ModuleEvaluationForm import ModuleEvaluationForm
+from .models.InstructorEvaluationForm import InstructorEvaluationForm
 from .models.EvaluationForm import EvaluationForm
 from .models.Faculty import Faculty
 from .models.InstructorEvaluationForm import InstructorEvaluationForm
@@ -733,17 +736,47 @@ class StudentMeView(APIView):
                 student=student, approved=False
             ).select_related("classroom", "classroom__faculty")
 
-            classrooms = [
-                {
+            # Get ModuleEvaluationForm content type for feedback lookup
+            module_eval_ct = ContentType.objects.get_for_model(ModuleEvaluationForm)
+            instructor_eval_ct = ContentType.objects.get_for_model(InstructorEvaluationForm)
+
+            classrooms = []
+            for e in approved:
+                # Check if student has submitted feedback for this classroom
+                module_feedback_exists = FeedbackResponse.objects.filter(
+                    student=student,
+                    form_content_type=module_eval_ct,
+                    form_object_id__in=ModuleEvaluationForm.objects.filter(
+                        classroom=e.classroom
+                    ).values_list('id', flat=True)
+                ).exists()
+
+                instructor_feedback_exists = FeedbackResponse.objects.filter(
+                    student=student,
+                    form_content_type=instructor_eval_ct,
+                    form_object_id__in=InstructorEvaluationForm.objects.filter(
+                        classroom=e.classroom
+                    ).values_list('id', flat=True)
+                ).exists()
+
+                # Mark as completed only if both module and instructor feedback are submitted
+                is_completed = module_feedback_exists and instructor_feedback_exists
+
+                classrooms.append({
+                    "id": e.classroom.id,
                     "classroom_code": e.classroom.classroom_code,
                     "subject_code": e.classroom.subject_code,
                     "module_name": e.classroom.module_name,
                     "program": e.classroom.program,
                     "block": e.classroom.block,
                     "instructor": f"{e.classroom.faculty.firstname} {e.classroom.faculty.lastname}",
-                }
-                for e in approved
-            ]
+                    "schedule": e.classroom.schedule or "TBA",
+                    "room": e.classroom.room or "TBA",
+                    "students_count": ClassroomEnrollment.objects.filter(
+                        classroom=e.classroom, approved=True
+                    ).count(),
+                    "evaluation_completed": is_completed,
+                })
 
             applications = [
                 {
