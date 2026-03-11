@@ -11,9 +11,14 @@ def verify_recaptcha_v2(*, token: str | None, remote_ip: str | None = None) -> N
     Validates reCAPTCHA v2 (including Invisible).
     Frontend sends token as: 'g-recaptcha-response' (we accept it as recaptcha_token).
     """
-    if settings.DEBUG or os.getenv("DISABLE_RECAPTCHA") == "1":
-        logger.debug("recaptcha check bypassed (DEBUG=%s, DISABLE_RECAPTCHA=%s)",
-                     settings.DEBUG, os.getenv("DISABLE_RECAPTCHA"))
+    enforce_in_debug = bool(getattr(settings, "RECAPTCHA_ENFORCE_IN_DEBUG", False))
+    if (settings.DEBUG and not enforce_in_debug) or os.getenv("DISABLE_RECAPTCHA") == "1":
+        logger.debug(
+            "recaptcha check bypassed (DEBUG=%s, RECAPTCHA_ENFORCE_IN_DEBUG=%s, DISABLE_RECAPTCHA=%s)",
+            settings.DEBUG,
+            enforce_in_debug,
+            os.getenv("DISABLE_RECAPTCHA"),
+        )
         return
     
     secret = getattr(settings, "RECAPTCHA_SECRET_KEY", "") or ""
@@ -34,7 +39,14 @@ def verify_recaptcha_v2(*, token: str | None, remote_ip: str | None = None) -> N
     except Exception:
         raise ValidationError({"recaptcha_token": "reCAPTCHA verification failed. Please try again."})
 
-    logger.warning("reCAPTCHA verify response: %s", data)
+    logger.info("reCAPTCHA verify response: %s", data)
 
     if not data.get("success"):
-        raise ValidationError({"recaptcha_token": "reCAPTCHA verification failed."})
+        error_codes = data.get("error-codes") or []
+        logger.warning("reCAPTCHA verification failed with error-codes=%s", error_codes)
+        raise ValidationError(
+            {
+                "recaptcha_token": "reCAPTCHA verification failed.",
+                "recaptcha_error_codes": error_codes,
+            }
+        )
