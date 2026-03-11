@@ -2,7 +2,7 @@ from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from .authentication import LegacyJWTAuthentication
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
@@ -217,7 +217,7 @@ def _get_bearer_token(request) -> str | None:
 
 # List all students or create a new student
 class StudentListCreateView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
@@ -305,7 +305,7 @@ class StudentListCreateView(generics.ListCreateAPIView):
     
 # Retrieve, update, or delete a single student
 class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
@@ -359,7 +359,7 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
         return super().destroy(request, *args, **kwargs)
 
 class FacultyListCreateView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = Faculty.objects.all()
     serializer_class = FacultySerializer
@@ -421,7 +421,7 @@ class FacultyListCreateView(generics.ListCreateAPIView):
         return response
 
 class FacultyDetailView(generics.RetrieveUpdateDestroyAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = Faculty.objects.all()
     serializer_class = FacultySerializer
@@ -474,7 +474,7 @@ class FacultyDetailView(generics.RetrieveUpdateDestroyAPIView):
         return super().destroy(request, *args, **kwargs)
 
 class DepartmentHeadListCreateView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = DepartmentHead.objects.all()
     serializer_class = DepartmentHeadSerializer
@@ -495,7 +495,7 @@ class DepartmentHeadListCreateView(generics.ListCreateAPIView):
         return super().list(request, *args, **kwargs)
 
 class DepartmentHeadDetailView(generics.RetrieveUpdateDestroyAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = DepartmentHead.objects.all()
     serializer_class = DepartmentHeadSerializer
@@ -547,7 +547,7 @@ class DepartmentHeadDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class StudentLoginView(APIView):
     throttle_classes = [LoginRateThrottle]
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -589,7 +589,7 @@ class StudentLoginView(APIView):
 
 class FacultyLoginView(APIView):
     throttle_classes = [LoginRateThrottle]
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -631,7 +631,7 @@ class FacultyLoginView(APIView):
 
 class DepartmentHeadLoginView(APIView):
     throttle_classes = [LoginRateThrottle]
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     
     def post(self, request):
@@ -670,7 +670,7 @@ class DepartmentHeadLoginView(APIView):
         )
 
 class StudentChangePasswordView(APIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -686,7 +686,7 @@ class StudentChangePasswordView(APIView):
         return Response({"detail": "Password updated"}, status=status.HTTP_200_OK)
 
 class FacultyChangePasswordView(APIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -702,7 +702,7 @@ class FacultyChangePasswordView(APIView):
         return Response({"detail": "Password updated"}, status=status.HTTP_200_OK)
 
 class StudentMeView(APIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def get(self, request):
@@ -784,7 +784,7 @@ class StudentMeView(APIView):
 
 class FacultyModulesView(APIView):
     """Return modules assigned to the logged-in faculty along with basic evaluation stats."""
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def get(self, request):
@@ -869,7 +869,7 @@ class FacultyModulesView(APIView):
         return Response(results, status=status.HTTP_200_OK)
     
 class EvaluationFormListCreateView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = EvaluationForm.objects.all()
     serializer_class = EvaluationFormSerializer
@@ -917,7 +917,7 @@ class EvaluationFormListCreateView(generics.ListCreateAPIView):
         return response
 
 class EvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = EvaluationForm.objects.all()
     serializer_class = EvaluationFormSerializer
@@ -990,7 +990,7 @@ class EvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class ModuleEvaluationFormListCreateView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = ModuleEvaluationForm.objects.all()
     serializer_class = ModuleEvaluationFormSerializer
@@ -1082,7 +1082,7 @@ class ModuleEvaluationFormListCreateView(generics.ListCreateAPIView):
         return response
 
 class ModuleEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = ModuleEvaluationForm.objects.all()
     serializer_class = ModuleEvaluationFormSerializer
@@ -1176,7 +1176,7 @@ class ModuleEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class InstructorEvaluationFormListCreateView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = InstructorEvaluationForm.objects.all()
     serializer_class = InstructorEvaluationFormSerializer
@@ -1260,7 +1260,7 @@ class InstructorEvaluationFormListCreateView(generics.ListCreateAPIView):
             )
         return response
 class InstructorEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = InstructorEvaluationForm.objects.all()
     serializer_class = InstructorEvaluationFormSerializer
@@ -1350,7 +1350,7 @@ class InstructorEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class StudentBulkImportView(APIView):
     """Bulk import students from CSV file"""
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -1565,7 +1565,7 @@ class StudentBulkImportView(APIView):
 
 class FacultyBulkImportView(APIView):
     """Bulk import faculty from CSV file"""
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -1683,7 +1683,7 @@ class FacultyBulkImportView(APIView):
 
 
 class AuditLogListView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = AuditLog.objects.filter(role__in=['Depthead', 'Department Head'])
     serializer_class = AuditLogSerializer
@@ -1740,7 +1740,7 @@ class AuditLogListView(generics.ListCreateAPIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 class FeedbackResponseCreateView(generics.CreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     serializer_class = FeedbackResponseSerializer
     queryset = FeedbackResponse.objects.all()
@@ -1884,7 +1884,7 @@ class FeedbackResponseCreateView(generics.CreateAPIView):
         return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
     
 class FeedbackResponseListView(generics.ListAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     serializer_class = FeedbackResponseSerializer
 
@@ -1921,7 +1921,7 @@ class StudentFeedbackHistoryView(generics.ListAPIView):
     """
     GET /api/feedback/history/  – return the logged‑in student's submissions.
     """
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     serializer_class = FeedbackResponseSerializer
 
@@ -1952,7 +1952,7 @@ class StudentFeedbackHistoryView(generics.ListAPIView):
         
 class SentimentTestView(APIView):
     throttle_classes = []
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -1968,8 +1968,7 @@ class SentimentTestView(APIView):
 
 
 class FeedbackThemeCheckView(APIView):
-    throttle_classes = []
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -1999,7 +1998,7 @@ class FeedbackThemeCheckView(APIView):
 
 class ModuleRecommendationView(APIView):
     throttle_classes = [AIRequestRateThrottle]
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -2253,7 +2252,7 @@ class ModuleRecommendationView(APIView):
     
 class SendOTPView(APIView):
     throttle_classes = [LoginRateThrottle]
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -2290,7 +2289,7 @@ class SendOTPView(APIView):
 
 class VerifyOTPView(APIView):
     throttle_classes = [LoginRateThrottle]
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     MAX_ATTEMPTS = 5
@@ -2453,7 +2452,7 @@ class VerifyOTPView(APIView):
 
 class PasswordResetSendView(APIView):
     throttle_classes = [LoginRateThrottle]
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -2490,7 +2489,7 @@ class PasswordResetSendView(APIView):
 
 
 class PasswordResetConfirmView(APIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -2531,14 +2530,14 @@ class PasswordResetConfirmView(APIView):
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class CSRFCookieView(APIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def get(self, request):
         return Response({"detail": "CSRF cookie set"})
 
 class ClassroomListCreateView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = Classroom.objects.all()
     serializer_class = ClassroomSerializer
@@ -2608,7 +2607,7 @@ class ClassroomListCreateView(generics.ListCreateAPIView):
         serializer.save(faculty=faculty)
 
 class ClassroomJoinView(APIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -2656,7 +2655,7 @@ class ClassroomJoinView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 class StudentLeaveClassroomView(APIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -2713,7 +2712,7 @@ class StudentLeaveClassroomView(APIView):
         return Response({"detail": "Left classroom"}, status=status.HTTP_200_OK)
 
 class FacultyPendingEnrollmentsView(APIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def get(self, request):
@@ -2735,7 +2734,7 @@ class FacultyPendingEnrollmentsView(APIView):
 
 
 class FacultyEnrollmentHistoryView(APIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def get(self, request):
@@ -2760,7 +2759,7 @@ class FacultyEnrollmentHistoryView(APIView):
 
 
 class FacultyApproveEnrollmentView(APIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -2838,7 +2837,7 @@ class FacultyApproveEnrollmentView(APIView):
         return Response(ClassroomEnrollmentSerializer(enr).data)
 
 class ProgramListCreateView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = Program.objects.all()
     serializer_class = ProgramSerializer
@@ -2887,7 +2886,7 @@ class ProgramListCreateView(generics.ListCreateAPIView):
         serializer.save()
 
 class ModuleListCreateView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = Module.objects.all()
     serializer_class = ModuleSerializer
@@ -2974,7 +2973,7 @@ class ModuleListCreateView(generics.ListCreateAPIView):
         serializer.save(department_head=head, department=head.department)
 
 class BlockListCreateView(generics.ListCreateAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = Block.objects.all()
     serializer_class = BlockSerializer
@@ -3029,12 +3028,8 @@ class BlockListCreateView(generics.ListCreateAPIView):
         return super().create(request, *args, **kwargs)
 
 class StoreRecommendationHashView(APIView):
-    """
-    POST /api/ai/store-recommendation-hash/
-    Hashes the AI recommendation + aggregate data and stores it on-chain.
-    """
     throttle_classes = [AIRequestRateThrottle]
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def post(self, request):
@@ -3122,7 +3117,7 @@ class StoreRecommendationHashView(APIView):
         )
         
 class StudentAuditLogListView(generics.ListAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     serializer_class = AuditLogSerializer
 
@@ -3151,7 +3146,7 @@ class StudentAuditLogListView(generics.ListAPIView):
 
 
 class FacultyAuditLogListView(generics.ListAPIView):
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     serializer_class = AuditLogSerializer
 
@@ -3179,12 +3174,7 @@ class FacultyAuditLogListView(generics.ListAPIView):
         ).order_by("-timestamp")
 
 class ClassroomStudentsView(APIView):
-    """
-    GET /api/classrooms/<classroom_id>/students/
-    Returns all approved enrolled students for a classroom.
-    Accessible by the faculty who owns the classroom, or a dept head.
-    """
-    authentication_classes = []
+    authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
 
     def get(self, request, classroom_id):
