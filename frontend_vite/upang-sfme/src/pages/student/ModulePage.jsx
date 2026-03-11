@@ -65,8 +65,9 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
         try {
           const formsRes = await fetch(`${API_BASE_URL}/module-evaluation-forms/`, { headers: { Authorization: `Bearer ${token}` } });
           const formsData = await formsRes.json().catch(() => []);
-          if (formsRes.ok && Array.isArray(formsData)) {
-            formsData.forEach(f => {
+          const formsList = Array.isArray(formsData) ? formsData : (Array.isArray(formsData?.results) ? formsData.results : []);
+          if (formsRes.ok && formsList.length > 0) {
+            formsList.forEach(f => {
               if (f.status === 'Active') {
                 const raw = (f.title || f.subject_code || '').toString();
                 const code = raw.trim().toUpperCase();
@@ -100,6 +101,9 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
                 // If the evaluation is already completed, ensure no form is shown / start button enabled
                 if (isCompleted) form_available = false;
 
+                // Hide modules that do not have an active form and are not completed yet.
+                if (!form_available && !isCompleted) return null;
+
                 // Prefer instructor info from the module object, otherwise use enrolled subject's instructor (if provided)
                 const instructor =
                                   m.instructor ||
@@ -120,7 +124,7 @@ const ModulePage = ({ showSidebar = true, searchQuery = '' }) => {
                 form_available: form_available,
                 form_id: form?.id,
               })
-            })
+            }).filter(Boolean)
           : [];
 
         setModulesFromApi(normalized);

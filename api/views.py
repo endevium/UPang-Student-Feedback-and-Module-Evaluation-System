@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Q
 from rest_framework.exceptions import ValidationError
 import logging
@@ -187,6 +188,21 @@ def _run_feedback_ai_security_checks(comments):
         deduped.append(v)
 
     return deduped
+
+
+def _delete_connected_feedback_for_form(form_instance):
+    """Delete feedback rows linked through GenericForeignKey to this form."""
+    if not form_instance or not getattr(form_instance, "id", None):
+        return {"responses_deleted": 0}
+
+    form_content_type = ContentType.objects.get_for_model(form_instance.__class__)
+    responses_qs = FeedbackResponse.objects.filter(
+        form_content_type=form_content_type,
+        form_object_id=form_instance.id,
+    )
+    responses_deleted = responses_qs.count()
+    responses_qs.delete()
+    return {"responses_deleted": responses_deleted}
 
 def _issue_jwt(role: str, legacy_user_id: int) -> str:
     token = AccessToken()
@@ -1175,9 +1191,15 @@ class ModuleEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
         new = serializer.instance
         user_name = "System"
         if hasattr(self.request, "user") and self.request.user:
+            first_name = getattr(self.request.user, "firstname", "")
+            last_name = getattr(self.request.user, "lastname", "")
+            email = getattr(self.request.user, "email", "")
+            username = getattr(self.request.user, "username", "")
             user_name = (
-                f"{self.request.user.firstname} {self.request.user.lastname}"
-                .strip() or self.request.user.email or "Depthead User"
+                f"{first_name} {last_name}".strip()
+                or email
+                or username
+                or "Depthead User"
             )
         AuditLog.objects.create(
             user=user_name,
@@ -1192,20 +1214,31 @@ class ModuleEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
     def perform_destroy(self, instance):
         user_name = "System"
         if hasattr(self.request, "user") and self.request.user:
+            first_name = getattr(self.request.user, "firstname", "")
+            last_name = getattr(self.request.user, "lastname", "")
+            email = getattr(self.request.user, "email", "")
+            username = getattr(self.request.user, "username", "")
             user_name = (
-                f"{self.request.user.firstname} {self.request.user.lastname}"
-                .strip() or self.request.user.email or "Depthead User"
+                f"{first_name} {last_name}".strip()
+                or email
+                or username
+                or "Depthead User"
             )
-        AuditLog.objects.create(
-            user=user_name,
-            role="Depthead",
-            action="Deleted Module Evaluation Form",
-            category="FORM MANAGEMENT",
-            status="Success",
-            message=f"Deleted module form: {getattr(instance, 'subject_code', 'Unknown')}",
-            ip=self.request.META.get("REMOTE_ADDR", "Unknown"),
-        )
-        super().perform_destroy(instance)
+        with transaction.atomic():
+            delete_summary = _delete_connected_feedback_for_form(instance)
+            super().perform_destroy(instance)
+            AuditLog.objects.create(
+                user=user_name,
+                role="Depthead",
+                action="Deleted Module Evaluation Form",
+                category="FORM MANAGEMENT",
+                status="Success",
+                message=(
+                    f"Deleted module form: {getattr(instance, 'subject_code', 'Unknown')} "
+                    f"(removed {delete_summary['responses_deleted']} feedback submission(s))"
+                ),
+                ip=self.request.META.get("REMOTE_ADDR", "Unknown"),
+            )
 
 
 class InstructorEvaluationFormListCreateView(generics.ListCreateAPIView):
@@ -1370,16 +1403,21 @@ class InstructorEvaluationFormDetailView(generics.RetrieveUpdateDestroyAPIView):
                 f"{self.request.user.firstname} {self.request.user.lastname}"
                 .strip() or self.request.user.email or "Depthead User"
             )
-        AuditLog.objects.create(
-            user=user_name,
-            role="Depthead",
-            action="Deleted Instructor Evaluation Form",
-            category="FORM MANAGEMENT",
-            status="Success",
-            message=f"Deleted instructor form: {getattr(instance, 'instructor_name', 'Unknown')}",
-            ip=self.request.META.get("REMOTE_ADDR", "Unknown"),
-        )
-        super().perform_destroy(instance)
+        with transaction.atomic():
+            delete_summary = _delete_connected_feedback_for_form(instance)
+            super().perform_destroy(instance)
+            AuditLog.objects.create(
+                user=user_name,
+                role="Depthead",
+                action="Deleted Instructor Evaluation Form",
+                category="FORM MANAGEMENT",
+                status="Success",
+                message=(
+                    f"Deleted instructor form: {getattr(instance, 'instructor_name', 'Unknown')} "
+                    f"(removed {delete_summary['responses_deleted']} feedback submission(s))"
+                ),
+                ip=self.request.META.get("REMOTE_ADDR", "Unknown"),
+            )
 
 class StudentBulkImportView(APIView):
     """Bulk import students from CSV file"""

@@ -955,7 +955,7 @@ const StudentsManagement = () => {
       {isBulkImportOpen && (
         <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsBulkImportOpen(false)}>
           <div
-            className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden"
+            className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -968,7 +968,7 @@ const StudentsManagement = () => {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto">
               <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center">
                 <div className="text-4xl mb-4">📁</div>
                 <h4 className="text-lg font-semibold text-slate-700 mb-2">Upload CSV File</h4>
@@ -1076,18 +1076,6 @@ const StudentsManagement = () => {
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  className="px-4 py-2 text-sm font-bold text-slate-500"
-                  onClick={() => {
-                    setIsBulkImportOpen(false);
-                    setBulkImportResult(null);
-                  }}
-                >
-                  Close
-                </button>
-              </div>
             </div>
           </div>
         </div>

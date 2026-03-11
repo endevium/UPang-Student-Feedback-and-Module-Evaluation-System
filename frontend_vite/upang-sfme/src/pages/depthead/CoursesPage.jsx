@@ -56,7 +56,8 @@ const CoursesPage = () => {
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const [selectedProgram, setSelectedProgram] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedYearLevel, setSelectedYearLevel] = useState('ALL');
   const [formData, setFormData] = useState({
     department: '',
     subject_code: '',
@@ -114,25 +115,26 @@ const CoursesPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const normalizedPrograms = useMemo(() => {
-    return programs.map((p) => ({
-      code: String(p.program_code || '').trim(),
-      name: String(p.program_name || p.program_code || '').trim(),
-    }));
-  }, [programs]);
-
   const filteredCourses = useMemo(() => {
-    if (selectedProgram === 'ALL') return courses;
-    return courses.filter((course) => String(course?.program || '').trim() === selectedProgram);
-  }, [courses, selectedProgram]);
+    let list = courses || [];
+    if (selectedYearLevel !== 'ALL') {
+      list = list.filter((course) => String(course?.year_level || '').trim() === selectedYearLevel);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter((course) => {
+        const code = String(course?.subject_code || '').toLowerCase();
+        const name = String(course?.module_name || '').toLowerCase();
+        return code.includes(q) || name.includes(q);
+      });
+    }
+    return list;
+  }, [courses, searchQuery, selectedYearLevel]);
 
-  const programCounts = useMemo(() => {
-    const counts = { ALL: courses.length };
-    normalizedPrograms.forEach((program) => {
-      counts[program.code] = courses.filter((c) => String(c?.program || '').trim() === program.code).length;
-    });
-    return counts;
-  }, [courses, normalizedPrograms]);
+  const yearLevels = useMemo(() => {
+    const levels = Array.from(new Set((courses || []).map((c) => String(c?.year_level || '').trim()).filter(Boolean)));
+    return levels;
+  }, [courses]);
 
   const departmentOptions = useMemo(() => {
     const fromPrograms = programs
@@ -144,6 +146,14 @@ const CoursesPage = () => {
     const unique = Array.from(new Set([...fromPrograms, ...fromCourses]));
     return unique;
   }, [programs, courses]);
+
+  const departmentCounts = useMemo(() => {
+    const counts = { ALL: courses.length };
+    departmentOptions.forEach((department) => {
+      counts[department] = courses.filter((c) => String(c?.department || '').trim() === department).length;
+    });
+    return counts;
+  }, [courses, departmentOptions]);
 
   useEffect(() => {
     if (departmentOptions.length === 0) return;
@@ -230,56 +240,52 @@ const CoursesPage = () => {
         <Sidebar role="depthead" activeItem="courses" />
 
         <main className="flex-1 p-8 overflow-y-auto">
-          <div className="flex items-start justify-between gap-4 mb-6">
-            <div>
-              <h1 className="text-4xl font-bold text-[#1f2937]">Courses Management</h1>
-              <p className="text-slate-500 mt-1">View and manage all courses by program</p>
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-start justify-between gap-4 mb-8">
+              <div>
+                <h1 className="text-4xl font-bold text-[#1f2937]">Courses Management</h1>
+                <p className="text-slate-500 mt-1">View and manage all courses by department</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCreateError('');
+                  setIsCreateOpen(true);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#020824] text-white rounded-lg text-sm font-semibold hover:bg-[#0b1238]"
+              >
+                <Plus size={15} />
+                Create Course
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setCreateError('');
-                setIsCreateOpen(true);
-              }}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#020824] text-white rounded-lg text-sm font-semibold hover:bg-[#0b1238]"
-            >
-              <Plus size={15} />
-              Create Course
-            </button>
-          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6">
-            <section className="bg-white border border-slate-200 rounded-2xl p-4 h-fit">
-              <h2 className="text-2xl font-bold text-slate-800">Programs/Subjects</h2>
-              <p className="text-slate-500 text-sm mt-1 mb-4">Select a program</p>
-
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedProgram('ALL')}
-                  className={`w-full text-left px-3 py-2 rounded-xl border ${selectedProgram === 'ALL' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-700'}`}
-                >
-                  <p className="font-semibold">ALL</p>
-                  <p className="text-xs text-slate-500">{programCounts.ALL || 0} courses</p>
-                </button>
-                {normalizedPrograms.map((program) => (
-                  <button
-                    key={program.code}
-                    type="button"
-                    onClick={() => setSelectedProgram(program.code)}
-                    className={`w-full text-left px-3 py-2 rounded-xl border ${selectedProgram === program.code ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-700'}`}
+            <section className="mb-6">
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by code or title"
+                    className="w-full h-11 px-4 rounded-xl border border-slate-300 bg-white text-slate-800"
+                  />
+                </div>
+                <div className="w-60">
+                  <select
+                    value={selectedYearLevel}
+                    onChange={(e) => setSelectedYearLevel(e.target.value)}
+                    className="w-full h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-800"
                   >
-                    <p className="font-semibold">{program.code}</p>
-                    <p className="text-xs text-slate-500">{programCounts[program.code] || 0} courses</p>
-                  </button>
-                ))}
+                    <option value="ALL">All Year Levels</option>
+                    {yearLevels.map((lvl) => (
+                      <option key={lvl} value={lvl}>{lvl}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </section>
 
             <section>
-              <h2 className="text-4xl font-bold text-slate-900">All Programs</h2>
-              <p className="text-slate-500 mt-1 mb-4">{filteredCourses.length} courses available</p>
-
               {loading ? (
                 <div className="bg-white border border-slate-200 rounded-2xl p-8 text-slate-500">Loading courses...</div>
               ) : error ? (
@@ -287,7 +293,7 @@ const CoursesPage = () => {
               ) : cardData.length === 0 ? (
                 <div className="bg-white border border-slate-200 rounded-2xl p-8 text-slate-500">No courses found.</div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                   {cardData.map((course) => (
                     <article key={course.id} className="bg-white border border-slate-200 rounded-2xl p-5">
                       <span className="inline-flex px-3 py-1 rounded-lg border border-slate-300 bg-slate-50 text-xs font-mono">

@@ -5,6 +5,11 @@ import { getAccessToken, getUser, logoutAndReload } from '../../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
+const toNumber = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+};
+
 const FacultyDashboard = () => {
   useEffect(() => {
     const token = getAccessToken();
@@ -34,9 +39,11 @@ const FacultyDashboard = () => {
       name: user?.firstname ? `${user.firstname} ${user.lastname || ''}`.trim() : user?.email || 'Faculty',
       department: user?.department || '',
       specialization: user?.specialization || '',
+      employeeId: user?.employee_id || user?.employeeId || user?.id || null,
       overallRating: null,
       totalEvaluations: null,
       totalStudents: null,
+      responseRate: null,
     });
 
     const fetchModules = async () => {
@@ -50,19 +57,41 @@ const FacultyDashboard = () => {
         const data = await res.json();
 
         // Map backend module-assignment objects into the module shape used by this page
-        const mapped = (Array.isArray(data) ? data : data.results || []).map((m) => ({
+        const mapped = (Array.isArray(data) ? data : data.results || []).map((m) => {
+          const students = toNumber(m.enrolled_students ?? m.students_count);
+          const evaluations = toNumber(m.responses_count);
+          const averageRating = m.average_rating == null ? null : Number(m.average_rating);
+          const responseRate = students > 0 ? Math.min(100, Math.round((evaluations / students) * 100)) : 0;
+
+          return {
           id: m.module_id || m.id || m.subject_code,
           code: (m.subject_code || '').toUpperCase(),
           name: m.module_name || m.subject_code || 'Untitled',
           semester: m.semester || m.academic_year || '',
-          students: m.students_count || 0,
-          evaluations: m.responses_count || m.responses_count || 0,
-          averageRating: m.average_rating || null,
-          responseRate: m.response_rate || 0,
+          students,
+          evaluations,
+          averageRating,
+          responseRate,
           status: 'active',
-        }));
+        }});
 
         setModules(mapped);
+
+        const totalStudents = mapped.reduce((sum, module) => sum + module.students, 0);
+        const totalEvaluations = mapped.reduce((sum, module) => sum + module.evaluations, 0);
+        const ratedModules = mapped.filter((module) => module.averageRating != null);
+        const overallRating = ratedModules.length > 0
+          ? (ratedModules.reduce((sum, module) => sum + module.averageRating, 0) / ratedModules.length)
+          : null;
+        const responseRate = totalStudents > 0 ? Math.min(100, Math.round((totalEvaluations / totalStudents) * 100)) : 0;
+
+        setFacultyInfo((prev) => prev ? ({
+          ...prev,
+          overallRating,
+          totalEvaluations,
+          totalStudents,
+          responseRate,
+        }) : prev);
       } catch (err) {
         console.error('FacultyDashboard fetch error', err);
         setError(err.message || 'Failed to load modules');
@@ -90,51 +119,61 @@ const FacultyDashboard = () => {
           <section className="bg-white border-b border-slate-200 py-10 px-8">
             <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
               <div>
-                <h1 className="text-3xl font-bold text-[#1f474d]">Welcome, {facultyInfo?.name || 'Faculty'}</h1>
+                <h1 className="text-3xl font-bold text-[#0f2f57] tracking-tight">Welcome, {facultyInfo?.name || 'Faculty'}</h1>
                 <p className="text-slate-500 mt-1">{facultyInfo?.department || ''}{facultyInfo?.department && facultyInfo?.specialization ? ' • ' : ''}{facultyInfo?.specialization || ''}</p>
                 <p className="text-xs mt-2 font-semibold text-slate-400 uppercase tracking-wider">
                   Employee ID: <span className="text-amber-600">{facultyInfo?.employeeId || '—'}</span>
                 </p>
               </div>
-              <div className="hidden md:block p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <TrendingUp className="text-[#1f474d]" size={32} />
+              <div className="hidden md:block p-4 bg-slate-100 rounded-2xl border border-slate-200">
+                <TrendingUp className="text-[#0f2f57]" size={32} />
               </div>
             </div>
           </section>
 
           <div className="max-w-6xl mx-auto px-8 py-8">
             
-            {/* STATS GRID */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-xs font-bold uppercase mb-2">Overall Rating</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-4xl font-bold text-amber-500">{facultyInfo?.overallRating ?? '-'}</p>
-                  <Star className="text-amber-500 fill-amber-500" size={24} />
-                </div>
-              </div>
+            {/* OVERALL PERFORMANCE */}
+            <div className="mb-12 rounded-2xl border border-[#b6cff2] bg-[#f5f7ff] p-6 md:p-7">
+              <h2 className="text-3xl font-bold text-slate-900">Your Overall Performance</h2>
+              <p className="text-slate-500 mt-1">Aggregated ratings from all your modules</p>
 
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-xs font-bold uppercase mb-2">Total Students</p>
-                <div className="flex items-center justify-between">
-                  <p className="text-4xl font-bold text-slate-800">{facultyInfo?.totalStudents ?? '-'}</p>
-                  <Users className="text-blue-500" size={32} />
+              <div className="mt-6 grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-5 items-stretch">
+                <div className="rounded-xl p-2">
+                  <p className="text-2xl font-semibold text-slate-800">Overall Rating</p>
+                  <div className="flex items-center gap-1 mt-2">
+                    {[1, 2, 3, 4, 5].map((s) => {
+                      const rating = facultyInfo?.overallRating || 0;
+                      return (
+                        <Star
+                          key={s}
+                          size={22}
+                          className={s <= Math.floor(rating) ? 'fill-amber-400 text-amber-400' : 'fill-amber-200 text-amber-200'}
+                        />
+                      );
+                    })}
+                  </div>
+                  <p className="text-5xl font-black text-[#0f2f57] mt-2">
+                    {facultyInfo?.overallRating != null ? `${facultyInfo.overallRating.toFixed(1)}/5.0` : '-'}
+                  </p>
                 </div>
-              </div>
 
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-xs font-bold uppercase mb-2">Evaluations</p>
-                <div className="flex items-center justify-between">
-                  <p className="text-4xl font-bold text-slate-800">{facultyInfo?.totalEvaluations ?? '-'}</p>
-                  <MessageSquare className="text-emerald-500" size={32} />
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-xs font-bold uppercase mb-2">Response Rate</p>
-                <div className="flex items-center justify-between">
-                  <p className="text-4xl font-bold text-purple-600">92%</p>
-                  <TrendingUp className="text-purple-600" size={32} />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="rounded-xl bg-white/70 p-6 text-center border border-white/80">
+                    <Users className="mx-auto text-blue-600" size={28} />
+                    <p className="text-5xl font-black text-[#0f2f57] mt-3">{facultyInfo?.totalStudents ?? '-'}</p>
+                    <p className="text-2xl text-slate-700 mt-1">Total Students</p>
+                  </div>
+                  <div className="rounded-xl bg-white/70 p-6 text-center border border-white/80">
+                    <MessageSquare className="mx-auto text-emerald-600" size={28} />
+                    <p className="text-5xl font-black text-[#0f2f57] mt-3">{facultyInfo?.totalEvaluations ?? '-'}</p>
+                    <p className="text-2xl text-slate-700 mt-1">Evaluations</p>
+                  </div>
+                  <div className="rounded-xl bg-white/70 p-6 text-center border border-white/80">
+                    <TrendingUp className="mx-auto text-violet-600" size={28} />
+                    <p className="text-5xl font-black text-[#0f2f57] mt-3">{facultyInfo?.responseRate ?? 0}%</p>
+                    <p className="text-2xl text-slate-700 mt-1">Response Rate</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -151,8 +190,14 @@ const FacultyDashboard = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-              {modules.map((module) => (
-                <div key={module.id} className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group">
+              {loading ? (
+                <div className="col-span-full text-center text-slate-500 py-10">Loading modules...</div>
+              ) : error ? (
+                <div className="col-span-full text-center text-rose-600 py-10">{error}</div>
+              ) : modules.length === 0 ? (
+                <div className="col-span-full text-center text-slate-500 py-10">No modules assigned yet.</div>
+              ) : modules.map((module) => (
+                <div key={module.id} className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-slate-300 transition-all group">
                   <div className="flex justify-between items-start mb-6">
                     <div>
                       <span className="text-amber-600 font-mono font-bold text-xs tracking-widest">{module.code}</span>
@@ -169,10 +214,10 @@ const FacultyDashboard = () => {
                     <div className="flex items-center gap-3">
                       <div className="flex">
                         {[1, 2, 3, 4, 5].map((s) => (
-                          <Star key={s} size={18} className={`${s <= Math.floor(module.averageRating) ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
+                          <Star key={s} size={18} className={`${s <= Math.floor(module.averageRating || 0) ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
                         ))}
                       </div>
-                      <span className="text-2xl font-bold text-slate-800">{module.averageRating}</span>
+                      <span className="text-2xl font-bold text-slate-800">{module.averageRating != null ? module.averageRating.toFixed(1) : 'N/A'}</span>
                       <span className="text-slate-400 text-sm font-medium">/ 5.0</span>
                     </div>
                   </div>
@@ -194,7 +239,7 @@ const FacultyDashboard = () => {
 
                   <button 
                     onClick={() => handleViewDetails(module.id)}
-                    className="w-full flex items-center justify-center gap-2 bg-[#1f474d] text-white py-3 rounded-xl font-bold hover:bg-[#2a5d65] transition-all shadow-lg shadow-slate-200"
+                    className="w-full h-11 inline-flex items-center justify-center gap-2 px-4 rounded-xl bg-[#1f474d] text-white text-sm font-semibold hover:bg-[#2a5d65] transition-colors"
                   >
                     View Detailed Feedback
                     <ChevronRight size={18} />

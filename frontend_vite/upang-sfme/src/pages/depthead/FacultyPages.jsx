@@ -1111,18 +1111,7 @@ const FacultyPages = () => {
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  className="px-4 py-2 text-sm font-bold text-slate-500"
-                  onClick={() => {
-                    setIsBulkImportOpen(false);
-                    setBulkImportResult(null);
-                  }}
-                >
-                  Close
-                </button>
-              </div>
+             
             </div>
           </div>
         </div>
