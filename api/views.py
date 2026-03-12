@@ -71,6 +71,9 @@ from .serializers.ClassroomEnrollment import ClassroomEnrollmentSerializer
 from .utils import create_and_send_otp, is_password_expired, validate_uploaded_csv, validate_plain_text
 logger = logging.getLogger(__name__)
 
+ACTIVE_STATUS = "active"
+ARCHIVED_STATUS = "archived"
+
 _SEXUAL_RE = re.compile(
     r"\b(daddy|mommy|porn|sex|sexy|nude|nsfw|cum|orgasm|xxx)\b",
     flags=re.IGNORECASE,
@@ -241,6 +244,9 @@ class StudentListCreateView(generics.ListCreateAPIView):
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
 
+    def get_queryset(self):
+        return Student.objects.filter(status=ACTIVE_STATUS)
+
     def list(self, request, *args, **kwargs):
         token = _get_bearer_token(request)
         if not token:
@@ -377,11 +383,39 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
 
         return super().destroy(request, *args, **kwargs)
 
+
+class ArchivedStudentListView(generics.ListAPIView):
+    authentication_classes = [LegacyJWTAuthentication]
+    permission_classes = []
+    queryset = Student.objects.all()
+    serializer_class = StudentSerializer
+
+    def get_queryset(self):
+        return Student.objects.filter(status=ARCHIVED_STATUS)
+
+    def list(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except Exception as e:
+            return Response({"detail": "Invalid token", "error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden - token role mismatch"}, status=status.HTTP_403_FORBIDDEN)
+
+        return super().list(request, *args, **kwargs)
+
 class FacultyListCreateView(generics.ListCreateAPIView):
     authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
     queryset = Faculty.objects.all()
     serializer_class = FacultySerializer
+
+    def get_queryset(self):
+        return Faculty.objects.filter(status=ACTIVE_STATUS)
 
     def list(self, request, *args, **kwargs):
         token = _get_bearer_token(request)
@@ -491,6 +525,31 @@ class FacultyDetailView(generics.RetrieveUpdateDestroyAPIView):
             return Response({"detail": "Forbidden - token role mismatch"}, status=status.HTTP_403_FORBIDDEN)
 
         return super().destroy(request, *args, **kwargs)
+
+
+class ArchivedFacultyListView(generics.ListAPIView):
+    authentication_classes = [LegacyJWTAuthentication]
+    permission_classes = []
+    queryset = Faculty.objects.all()
+    serializer_class = FacultySerializer
+
+    def get_queryset(self):
+        return Faculty.objects.filter(status=ARCHIVED_STATUS)
+
+    def list(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            decoded_token = AccessToken(token)
+        except Exception as e:
+            return Response({"detail": "Invalid token", "error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if decoded_token.get("role") != "department_head":
+            return Response({"detail": "Forbidden - token role mismatch"}, status=status.HTTP_403_FORBIDDEN)
+
+        return super().list(request, *args, **kwargs)
 
 class DepartmentHeadListCreateView(generics.ListCreateAPIView):
     authentication_classes = [LegacyJWTAuthentication]
@@ -3043,6 +3102,66 @@ class ModuleListCreateView(generics.ListCreateAPIView):
             raise DRFValidationError("Internal error: department head missing")
         serializer.save(department_head=head, department=head.department)
 
+
+class ModuleDetailView(generics.RetrieveUpdateDestroyAPIView):
+    authentication_classes = [LegacyJWTAuthentication]
+    permission_classes = []
+    queryset = Module.objects.all()
+    serializer_class = ModuleSerializer
+
+    def get_queryset(self):
+        token = _get_bearer_token(self.request)
+        if not token:
+            return Module.objects.none()
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Module.objects.none()
+
+        role = decoded.get("role")
+        uid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+
+        if role == "department_head":
+            head = DepartmentHead.objects.filter(id=uid).first()
+            if head:
+                return Module.objects.filter(department=head.department)
+            return Module.objects.none()
+
+        if role == "faculty":
+            faculty = Faculty.objects.filter(id=uid).first()
+            if faculty and faculty.department:
+                return Module.objects.filter(department=faculty.department)
+
+        return Module.objects.none()
+
+    def update(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        serializer.save(department_head=instance.department_head, department=instance.department)
+
 class BlockListCreateView(generics.ListCreateAPIView):
     authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
@@ -3097,6 +3216,70 @@ class BlockListCreateView(generics.ListCreateAPIView):
             return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
         request.user = head
         return super().create(request, *args, **kwargs)
+
+
+class BlockDetailView(generics.RetrieveUpdateDestroyAPIView):
+    authentication_classes = [LegacyJWTAuthentication]
+    permission_classes = []
+    queryset = Block.objects.all()
+    serializer_class = BlockSerializer
+
+    def get_queryset(self):
+        token = _get_bearer_token(self.request)
+        if not token:
+            return Block.objects.none()
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Block.objects.none()
+
+        role = decoded.get("role")
+        uid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+
+        if role == "department_head":
+            head = DepartmentHead.objects.filter(id=uid).first()
+            if head:
+                return Block.objects.filter(program__department=head.department)
+            return Block.objects.none()
+
+        if role == "faculty":
+            faculty = Faculty.objects.filter(id=uid).first()
+            if faculty and faculty.department:
+                return Block.objects.filter(program__department=faculty.department)
+
+        return Block.objects.none()
+
+    def update(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        hid = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        head = DepartmentHead.objects.filter(id=hid).first()
+        if not head:
+            return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        request.user = head
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        token = _get_bearer_token(request)
+        if not token:
+            return Response({"detail": "No token provided"}, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+        if decoded.get("role") != "department_head":
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        return super().destroy(request, *args, **kwargs)
 
 class StoreRecommendationHashView(APIView):
     throttle_classes = [AIRequestRateThrottle]

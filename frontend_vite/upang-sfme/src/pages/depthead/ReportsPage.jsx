@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Download, TrendingUp } from 'lucide-react';
+import { Download } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
@@ -318,15 +318,6 @@ const ReportsPage = () => {
     fetchData();
   }, []);
   // derive lists for UI from loaded data
-  const performanceIssues = useMemo(() => (
-    completedEvaluationsData
-      .slice()
-      .sort((a, b) => (a.average_rating || 0) - (b.average_rating || 0))
-      .filter((m) => m.average_rating !== null)
-      .slice(0, 5)
-      .map((m, idx) => ({ id: idx + 1, name: m.module, department: '', rating: m.average_rating || 0, status: 'attention' }))
-  ), [completedEvaluationsData]);
-
   const recommendations = useMemo(() => (
     completedEvaluationsData
       .slice()
@@ -489,14 +480,15 @@ const ReportsPage = () => {
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 overflow-x-hidden flex flex-col lg:flex-row">
       <Sidebar role="depthead" activeItem="reports" />
       <div className="flex-1 flex flex-col">
-        <main className="flex-1 px-6 py-8">
+        <main className="flex-1 overflow-y-auto px-8 py-8">
+          <div className="max-w-7xl mx-auto w-full">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-slate-900">Reports & Analytics</h1>
-              <p className="text-slate-500 text-sm mt-1">Comprehensive evaluation insights and trends</p>
+              <h1 className="text-4xl font-bold text-[#1f2937]">Reports & Analytics</h1>
+              <p className="text-slate-500 mt-1">Comprehensive evaluation insights and trends</p>
             </div>
-            <button className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition">
+            <button className="inline-flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-semibold hover:bg-[#18393e] transition-all">
               <Download className="w-4 h-4" />
               Export Report
             </button>
@@ -508,8 +500,6 @@ const ReportsPage = () => {
               label="Total Evaluation Forms" 
               value={isLoading ? '…' : stats.totalEvaluations} 
               unit="forms"
-              icon={TrendingUp}
-              color="bg-yellow-500"
             />
             <StatCard 
               label="Average Rating" 
@@ -739,31 +729,6 @@ const ReportsPage = () => {
             </div>
           </div>
 
-          {/* Performance Issues */}
-          <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200 mb-8">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Performance Review</h3>
-              <p className="text-slate-500 text-sm mb-6">Instructors requiring attention</p>
-              <div className="space-y-4">
-                {performanceIssues.map((issue) => (
-                  <div key={issue.id} className="flex items-center justify-between py-3 border-b border-slate-200 last:border-b-0">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-sm font-semibold">
-                        {issue.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="font-medium text-slate-900">{issue.name}</p>
-                        <p className="text-xs text-slate-500">{issue.department}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-slate-900">{issue.rating}</p>
-                      <span className="inline-block px-2 py-1 text-xs bg-red-100 text-red-700 rounded">⚠ Notify</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-          </div>
-
           {/* Recommendations */}
           <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Recommended Actions</h3>
@@ -776,6 +741,7 @@ const ReportsPage = () => {
                 </div>
               ))}
             </div>
+          </div>
           </div>
         </main>
       </div>

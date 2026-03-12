@@ -12,6 +12,11 @@ import {
 } from 'lucide-react';
 import { getToken } from '../../utils/auth';
 
+const normalizePersonStatus = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'archived' ? 'Archived' : 'Active';
+};
+
 const toValidRating = (rawRating) => {
   const rating = Number(rawRating);
   return Number.isFinite(rating) && rating >= 1 ? rating : null;
@@ -68,10 +73,11 @@ const FacultyPages = () => {
   const [selectedFaculty, setSelectedFaculty] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [isArchiveOpenFaculty, setIsArchiveOpenFaculty] = useState(false);
+  const [showArchivedFaculty, setShowArchivedFaculty] = useState(false);
   const [archivedFaculty, setArchivedFaculty] = useState([]);
   const [isLoadingArchivedFaculty, setIsLoadingArchivedFaculty] = useState(false);
   const [archiveFacultyError, setArchiveFacultyError] = useState('');
+  const [facultyToArchive, setFacultyToArchive] = useState(null);
   const [formValues, setFormValues] = useState({
     email: '',
     firstname: '',
@@ -91,7 +97,7 @@ const FacultyPages = () => {
     students: Number(metrics?.students ?? f?.students) || 0,
     evaluations: Number(metrics?.evaluations ?? f?.evaluations) || 0,
     rating: Number(metrics?.rating ?? f?.rating) || 0,
-    status: typeof f?.status === 'boolean' ? (f.status ? 'Active' : 'Inactive') : (f?.status || 'Active'),
+    status: normalizePersonStatus(f?.status),
   });
 
   const validateCsvFile = (file) => {
@@ -368,19 +374,17 @@ const FacultyPages = () => {
     }
   };
 
-  const archiveFaculty = async (facultyId) => {
-    const ok = window.confirm('Archive this faculty member? This will remove them from the active list.');
-    if (!ok) return;
+  const archiveFaculty = async (faculty) => {
+    if (!faculty?.id) return;
     try {
-      // Soft-archive via PATCH
       const token = getToken();
-      const res = await fetch(`${API_BASE_URL}/faculty/${facultyId}/`, {
+      const res = await fetch(`${API_BASE_URL}/faculty/${faculty.id}/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ archived: true }),
+        body: JSON.stringify({ status: 'archived' }),
       });
       if (!res.ok) {
         setErrorMessage('Unable to archive faculty.');
@@ -389,9 +393,11 @@ const FacultyPages = () => {
       const facultyData = await res.json();
       await createAuditLog(
         'Archived Faculty',
-        `Archived faculty member: ${facultyData.firstname || ''} ${facultyData.lastname || ''} (${facultyData.email || facultyId})`
+        `Archived faculty member: ${facultyData.firstname || ''} ${facultyData.lastname || ''} (${facultyData.email || faculty.id})`
       );
-      setFacultyData((prev) => prev.filter((f) => f.id !== facultyId));
+      setFacultyData((prev) => prev.filter((f) => f.id !== faculty.id));
+      setArchivedFaculty((prev) => [mapFaculty(facultyData), ...prev.filter((f) => f.id !== faculty.id)]);
+      setFacultyToArchive(null);
     } catch {
       setErrorMessage('Unable to reach the server.');
     }
@@ -434,7 +440,7 @@ const FacultyPages = () => {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ archived: false }),
+        body: JSON.stringify({ status: 'active' }),
       });
       if (!res.ok) {
         setArchiveFacultyError('Unable to restore faculty.');
@@ -442,8 +448,8 @@ const FacultyPages = () => {
       }
       const data = await res.json();
       await createAuditLog('Restored Faculty', `Restored faculty: ${data.firstname || ''} ${data.lastname || ''} (${data.email || facultyId})`);
-      fetchFaculty();
-      fetchArchivedFaculty();
+      setFacultyData((prev) => [mapFaculty(data), ...prev.filter((f) => f.id !== facultyId)]);
+      setArchivedFaculty((prev) => prev.filter((f) => f.id !== facultyId));
     } catch {
       setArchiveFacultyError('Unable to reach the server.');
     }
@@ -642,7 +648,7 @@ const FacultyPages = () => {
     }
   };
 
-  const filteredFaculty = useMemo(() => {
+  const filteredActiveFaculty = useMemo(() => {
     if (!searchQuery.trim()) return facultyData;
     const q = searchQuery.toLowerCase();
     return facultyData.filter((f) => 
@@ -652,6 +658,19 @@ const FacultyPages = () => {
       String(f.title).toLowerCase().includes(q)
     );
   }, [searchQuery, facultyData]);
+
+  const filteredArchivedFaculty = useMemo(() => {
+    if (!searchQuery.trim()) return archivedFaculty;
+    const q = searchQuery.toLowerCase();
+    return archivedFaculty.filter((f) => 
+      String(f.id).toLowerCase().includes(q) ||
+      String(f.name).toLowerCase().includes(q) ||
+      String(f.dept).toLowerCase().includes(q) ||
+      String(f.title).toLowerCase().includes(q)
+    );
+  }, [searchQuery, archivedFaculty]);
+
+  const tableFaculty = showArchivedFaculty ? filteredArchivedFaculty : filteredActiveFaculty;
 
   const totalFaculty = facultyData.length;
   const activeFaculty = facultyData.filter((f) => f.status === 'Active').length;
@@ -666,6 +685,7 @@ const FacultyPages = () => {
         <Sidebar role="depthead" activeItem="faculty" />
 
         <main className="flex-1 p-8 overflow-y-auto">
+          <div className="max-w-7xl mx-auto w-full">
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-[#1f2937]">Faculty Management</h1>
             <p className="text-slate-500 mt-1">View and manage all teaching staff</p>
@@ -715,29 +735,33 @@ const FacultyPages = () => {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-800">All Faculty Members</h2>
-                <p className="text-slate-400 text-sm">Complete list of teaching staff</p>
+                <h2 className="text-xl font-bold text-slate-800">{showArchivedFaculty ? 'Archived Faculty Members' : 'All Faculty Members'}</h2>
+                <p className="text-slate-400 text-sm">{showArchivedFaculty ? 'Archived teaching staff list' : 'Complete list of teaching staff'}</p>
               </div>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => { setIsEditing(false); setEditingId(null); resetForm(); setIsAddOpen(true); }}
-                  className="flex items-center gap-2 px-4 py-2 bg-[#ffcc00] text-[#041c32] rounded-lg text-sm font-bold hover:bg-[#e6b800] transition-all"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-semibold hover:bg-[#18393e] transition-all"
                 >
                   + Add Faculty
                 </button>
                 <button
                   className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-200 transition-all"
-                  onClick={() => { setIsArchiveOpenFaculty(true); fetchArchivedFaculty(); }}
+                  onClick={() => {
+                    const nextValue = !showArchivedFaculty;
+                    setShowArchivedFaculty(nextValue);
+                    if (nextValue) fetchArchivedFaculty();
+                  }}
                 >
-                  <Folder size={16} /> Archived Faculty
+                  <Folder size={16} /> {showArchivedFaculty ? 'Back To Active Faculty' : 'Archived Faculty'}
                 </button>
                 <button
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 transition-all"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-semibold hover:bg-[#18393e] transition-all"
                   onClick={() => setIsBulkImportOpen(true)}
                 >
                   📁 Bulk Import
                 </button>
-                <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">
+                <button className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
                   <Download size={16} /> Export List
                 </button>
               </div>
@@ -772,7 +796,7 @@ const FacultyPages = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredFaculty.map((faculty, idx) => (
+                  {tableFaculty.map((faculty, idx) => (
                     <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                       <td className="px-6 py-4 text-xs font-mono text-slate-500">{faculty.id}</td>
                       <td className="px-6 py-4 text-sm font-black text-slate-800">{faculty.name}</td>
@@ -787,7 +811,7 @@ const FacultyPages = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black uppercase rounded-lg tracking-wider">
+                        <span className={`px-3 py-1 border text-[10px] font-black uppercase rounded-lg tracking-wider ${faculty.status === 'Archived' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
                           {faculty.status}
                         </span>
                       </td>
@@ -796,12 +820,20 @@ const FacultyPages = () => {
                           <button onClick={() => showFacultyDetails(faculty.id)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all" title="View">
                             <Eye size={18} />
                           </button>
-                          <button onClick={() => startEditFaculty(faculty.id)} className="p-2 text-sky-600 hover:text-sky-800 hover:bg-slate-100 rounded-lg transition-all" title="Edit">
-                            <Edit size={18} />
-                          </button>
-                          <button onClick={() => archiveFaculty(faculty.id)} className="p-2 text-rose-600 hover:text-rose-800 hover:bg-slate-100 rounded-lg transition-all" title="Archive">
-                            <Folder size={18} />
-                          </button>
+                          {showArchivedFaculty ? (
+                            <button onClick={() => restoreFaculty(faculty.id)} className="p-2 text-emerald-600 hover:text-emerald-800 hover:bg-slate-100 rounded-lg transition-all" title="Restore">
+                              <Folder size={18} />
+                            </button>
+                          ) : (
+                            <>
+                              <button onClick={() => startEditFaculty(faculty.id)} className="p-2 text-sky-600 hover:text-sky-800 hover:bg-slate-100 rounded-lg transition-all" title="Edit">
+                                <Edit size={18} />
+                              </button>
+                              <button onClick={() => setFacultyToArchive(faculty)} className="p-2 text-rose-600 hover:text-rose-800 hover:bg-slate-100 rounded-lg transition-all" title="Archive">
+                                <Folder size={18} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -809,72 +841,48 @@ const FacultyPages = () => {
                 </tbody>
               </table>
             </div>
-            {/* Archived Faculty Modal */}
-            {isArchiveOpenFaculty && (
-              <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsArchiveOpenFaculty(false)}>
-                <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                  <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-black text-slate-800">Archived Faculty</h3>
-                      <p className="text-sm text-slate-400">Faculty members that were archived</p>
-                    </div>
-                    <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={() => setIsArchiveOpenFaculty(false)}>&times;</button>
-                  </div>
-
-                  <div className="p-6">
-                    {isLoadingArchivedFaculty && <div className="text-sm text-slate-500">Loading archived faculty...</div>}
-                    {archiveFacultyError && <div className="text-sm text-rose-600">{archiveFacultyError}</div>}
-                    {!isLoadingArchivedFaculty && !archiveFacultyError && archivedFaculty.length === 0 && (
-                      <div className="text-sm text-slate-500">No archived faculty found.</div>
-                    )}
-
-                    {!isLoadingArchivedFaculty && archivedFaculty.length > 0 && (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                          <thead className="bg-slate-50 border-b border-slate-100">
-                            <tr>
-                              <th className="px-4 py-3 text-sm text-slate-500">Faculty ID</th>
-                              <th className="px-4 py-3 text-sm text-slate-500">Name</th>
-                              <th className="px-4 py-3 text-sm text-slate-500">Department</th>
-                              <th className="px-4 py-3 text-sm text-slate-500 text-center">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {archivedFaculty.map((f, i) => (
-                              <tr key={f.id || i} className="hover:bg-slate-50/80">
-                                <td className="px-4 py-3 text-xs font-mono text-slate-500">{f.id}</td>
-                                <td className="px-4 py-3 text-sm font-black text-slate-800">{f.name}</td>
-                                <td className="px-4 py-3 text-sm text-slate-600">{f.dept}</td>
-                                <td className="px-4 py-3 text-center">
-                                  <div className="flex items-center justify-center gap-2">
-                                    <button onClick={() => { setIsArchiveOpenFaculty(false); showFacultyDetails(f.id); }} className="px-3 py-1 bg-slate-100 rounded-lg text-sm font-semibold">View</button>
-                                    <button onClick={() => restoreFaculty(f.id)} className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-lg text-sm font-semibold">Restore</button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    <div className="flex justify-end mt-4">
-                      <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm" onClick={() => setIsArchiveOpenFaculty(false)}>Close</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            {((showArchivedFaculty && isLoadingArchivedFaculty) || (!showArchivedFaculty && isLoading)) && (
+              <div className="p-6 text-sm text-slate-500">Loading faculty...</div>
             )}
-            {(isLoading || loadError || filteredFaculty.length === 0) && (
+            {showArchivedFaculty && archiveFacultyError && (
+              <div className="p-6 text-sm text-rose-600">{archiveFacultyError}</div>
+            )}
+            {!showArchivedFaculty && loadError && (
+              <div className="p-6 text-sm text-slate-500">{loadError}</div>
+            )}
+            {!isLoading && !isLoadingArchivedFaculty && !loadError && !archiveFacultyError && tableFaculty.length === 0 && (
               <div className="p-6 text-sm text-slate-500">
-                {isLoading && 'Loading faculty...'}
-                {!isLoading && loadError}
-                {!isLoading && !loadError && filteredFaculty.length === 0 && 'No faculty found.'}
+                {showArchivedFaculty ? 'No archived faculty found.' : 'No faculty found.'}
               </div>
             )}
           </div>
+          </div>
         </main>
       </div>
+
+      {facultyToArchive && (
+        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setFacultyToArchive(null)}>
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-black text-slate-800">Archive Faculty Member</h3>
+              <p className="text-sm text-slate-400 mt-1">This will move the faculty member to the archived section.</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-700">
+                Are you sure you want to archive <span className="font-bold text-slate-900">{facultyToArchive.name}</span>?
+              </p>
+              <div className="flex items-center justify-end gap-3">
+                <button type="button" className="px-4 py-2 text-sm font-bold text-slate-500" onClick={() => setFacultyToArchive(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="px-4 py-2 text-sm font-bold bg-rose-600 text-white rounded-lg hover:bg-rose-700" onClick={() => archiveFaculty(facultyToArchive)}>
+                  Archive
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* INTEGRATED MODAL */}
       {isAddOpen && (

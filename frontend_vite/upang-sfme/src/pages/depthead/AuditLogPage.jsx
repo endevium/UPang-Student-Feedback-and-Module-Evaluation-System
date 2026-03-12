@@ -159,14 +159,15 @@ const AuditLogPage = () => {
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 overflow-x-hidden flex flex-col lg:flex-row">
       <Sidebar role="depthead" activeItem="audit-log" />
       <div className="flex-1 flex flex-col">
-        <main className="container mx-auto px-6 py-8 max-w-6xl flex-1">
+        <main className="flex-1 overflow-y-auto px-8 py-8">
+          <div className="max-w-7xl mx-auto w-full">
           <div className="flex items-start justify-between mb-6">
             <div>
-              <h1 className="text-3xl font-bold">Audit Log</h1>
-              <p className="text-slate-500 mt-2">Track all system activities and changes</p>
+              <h1 className="text-4xl font-bold text-[#1f2937]">Audit Log</h1>
+              <p className="text-slate-500 mt-1">Track all system activities and changes</p>
             </div>
-            <div className="flex items-center gap-3">
-              <button className="bg-white text-slate-800 px-3 py-2 rounded-lg shadow-sm hover:opacity-95 flex items-center gap-2">
+              <div className="flex items-center gap-3">
+              <button className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M7 10l5 5 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 Export Logs
               </button>
@@ -362,6 +363,7 @@ const AuditLogPage = () => {
             )}
           </div>
 
+          </div>
         </main>
       </div>
     </div>

@@ -22,6 +22,9 @@ class StudentLoginSerializer(serializers.Serializer):
 
         if not user:
             raise serializers.ValidationError("Invalid credentials")
+
+        if getattr(user, 'status', Student.STATUS_ACTIVE) == Student.STATUS_ARCHIVED:
+            raise serializers.ValidationError("This student account is archived")
         
         if user and is_password_expired(user):
             user.must_change_password = True

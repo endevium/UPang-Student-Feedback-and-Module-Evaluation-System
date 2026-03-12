@@ -22,6 +22,9 @@ class FacultyLoginSerializer(serializers.Serializer):
 
         if not user:
             raise serializers.ValidationError("Invalid credentials")
+
+        if getattr(user, 'status', Faculty.STATUS_ACTIVE) == Faculty.STATUS_ARCHIVED:
+            raise serializers.ValidationError("This faculty account is archived")
         
         if user and is_password_expired(user):
             user.must_change_password = True

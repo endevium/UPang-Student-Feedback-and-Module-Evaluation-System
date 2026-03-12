@@ -4,12 +4,14 @@ from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 
 urlpatterns = [
     path("students/", views.StudentListCreateView.as_view(), name="student-list-create"),
+    path("students/archived/", views.ArchivedStudentListView.as_view(), name="student-archived-list"),
     path("students/<int:pk>/", views.StudentDetailView.as_view(), name="student-detail"),
     path("students/login/", views.StudentLoginView.as_view(), name="student-login"),
     path("students/change-password/", views.StudentChangePasswordView.as_view(), name="student-change-password"),
     path("students/me/", views.StudentMeView.as_view(), name="student-me"),
 
     path("faculty/", views.FacultyListCreateView.as_view(), name="faculty-list-create"),
+    path("faculty/archived/", views.ArchivedFacultyListView.as_view(), name="faculty-archived-list"),
     path("faculty/<int:pk>/", views.FacultyDetailView.as_view(), name="faculty-detail"),
     path("faculty/modules/", views.FacultyModulesView.as_view(), name="faculty-modules"),
     path("faculty/login/", views.FacultyLoginView.as_view(), name="faculty-login"),
@@ -57,7 +59,9 @@ urlpatterns = [
     
     path("programs/", views.ProgramListCreateView.as_view(), name="program-list-create"),
     path("modules/", views.ModuleListCreateView.as_view(), name="module-list-create"),
+    path("modules/<int:pk>/", views.ModuleDetailView.as_view(), name="module-detail"),
     path("blocks/", views.BlockListCreateView.as_view(), name="block-list-create"),
+    path("blocks/<int:pk>/", views.BlockDetailView.as_view(), name="block-detail"),
     
     path("auth/csrf/", views.CSRFCookieView.as_view(), name="csrf_cookie"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),

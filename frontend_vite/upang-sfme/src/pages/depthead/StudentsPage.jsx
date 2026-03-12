@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from 'react';
-import Header from '../../components/Header';
+import React, { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { 
   Users, 
@@ -13,6 +12,11 @@ import {
 } from 'lucide-react';
 import { getToken } from '../../utils/auth';
 
+const normalizePersonStatus = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'archived' ? 'Archived' : 'Active';
+};
+
 const StudentsManagement = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
   const MAX_CSV_SIZE = 2 * 1024 * 1024;
@@ -20,15 +24,21 @@ const StudentsManagement = () => {
   const [studentData, setStudentData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [bulkImportResult, setBulkImportResult] = useState(null);
 
-  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [showArchivedStudents, setShowArchivedStudents] = useState(false);
   const [archivedStudents, setArchivedStudents] = useState([]);
   const [isLoadingArchived, setIsLoadingArchived] = useState(false);
   const [archiveError, setArchiveError] = useState('');
+  const [studentToArchive, setStudentToArchive] = useState(null);
+
+  const [blocks, setBlocks] = useState([]);
+  const [isLoadingBlocks, setIsLoadingBlocks] = useState(false);
+  const [blocksError, setBlocksError] = useState('');
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -172,10 +182,16 @@ const StudentsManagement = () => {
       : student.enrolled_subject || student.subject || 'N/A',
     block: student.block_section || student.block || 'N/A',
     year: formatYearLabel(student.year_level),
-    modules: 0,
+    modules: (function countEnrolledSubjects(s) {
+      const value = s || student.enrolled_subjects || student.enrolled_subject || student.subject;
+      if (!value) return 0;
+      if (Array.isArray(value)) return value.length;
+      if (typeof value === 'string') return value.split(/;|,/).map(x => x.trim()).filter(Boolean).length;
+      return 0;
+    })(student.enrolled_subjects),
     completed: 0,
     pending: 0,
-    status: 'Active',
+    status: normalizePersonStatus(student.status),
   });
 
   const validateCsvFile = (file) => {
@@ -233,6 +249,31 @@ const StudentsManagement = () => {
     }
   };
 
+  const fetchBlocks = async () => {
+    setIsLoadingBlocks(true);
+    setBlocksError('');
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_BASE_URL}/blocks/`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        setBlocks([]);
+        setBlocksError('Unable to load blocks.');
+        return;
+      }
+      const data = await res.json().catch(() => []);
+      setBlocks(Array.isArray(data) ? data : data?.results || []);
+    } catch (e) {
+      setBlocksError('Unable to reach server for blocks.');
+      setBlocks([]);
+    } finally {
+      setIsLoadingBlocks(false);
+    }
+  };
+
   const fetchArchivedStudents = async () => {
     setIsLoadingArchived(true);
     setArchiveError('');
@@ -270,7 +311,7 @@ const StudentsManagement = () => {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ archived: false }),
+        body: JSON.stringify({ status: 'active' }),
       });
       if (!res.ok) {
         setArchiveError('Unable to restore student.');
@@ -291,9 +332,34 @@ const StudentsManagement = () => {
 
   useEffect(() => {
     fetchStudents();
+    fetchBlocks();
     // Intentionally load once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const normalizeYearForCompare = (val) => {
+    if (val == null) return '';
+    const s = String(val).trim();
+    const n = parseInt(s, 10);
+    if (!Number.isNaN(n)) return String(n);
+    const m = s.match(/\d+/);
+    return m ? String(parseInt(m[0], 10)) : '';
+  };
+
+  const availableBlocks = useMemo(() => {
+    const target = normalizeYearForCompare(formValues.year_level);
+    if (!target) return [];
+    return blocks.filter((b) => normalizeYearForCompare(b.year_level) === target);
+  }, [blocks, formValues.year_level]);
+
+  const availableBlockNames = useMemo(() => availableBlocks.map((b) => b.block_name), [availableBlocks]);
+
+  useEffect(() => {
+    if (formValues.block_section && !availableBlockNames.includes(formValues.block_section)) {
+      setFormValues((prev) => ({ ...prev, block_section: '' }));
+    }
+    // only react to changes in available blocks
+  }, [availableBlockNames]);
 
   const handleAddStudent = async (e) => {
     e.preventDefault();
@@ -510,18 +576,17 @@ const StudentsManagement = () => {
     }
   };
 
-  const archiveStudent = async (studentId) => {
-    const ok = window.confirm('Archive this student? This will remove them from the active list.');
-    if (!ok) return;
+  const archiveStudent = async (student) => {
+    if (!student?.pk) return;
     try {
       const token = getToken();
-      const res = await fetch(`${API_BASE_URL}/students/${studentId}/`, {
+      const res = await fetch(`${API_BASE_URL}/students/${student.pk}/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ archived: true }),
+        body: JSON.stringify({ status: 'archived' }),
       });
       if (!res.ok) {
         setErrorMessage('Unable to archive student.');
@@ -531,14 +596,28 @@ const StudentsManagement = () => {
       // Log the archive action
       await createAuditLog(
         'Archived Student',
-        `Archived student: ${studentData.firstname || ''} ${studentData.lastname || ''} (${studentData.student_number || studentId})`
+        `Archived student: ${studentData.firstname || ''} ${studentData.lastname || ''} (${studentData.student_number || student.pk})`
       );
 
-      setStudentData((prev) => prev.filter((s) => s.pk !== studentId));
+      setStudentData((prev) => prev.filter((s) => s.pk !== student.pk));
+      setArchivedStudents((prev) => [mapStudent(studentData), ...prev.filter((s) => s.pk !== student.pk)]);
+      setStudentToArchive(null);
     } catch {
       setErrorMessage('Unable to reach the server.');
     }
   };
+
+  const filteredStudents = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const source = showArchivedStudents ? archivedStudents : studentData;
+    if (!query) return source;
+    return source.filter((student) => (
+      String(student.id || '').toLowerCase().includes(query) ||
+      String(student.name || '').toLowerCase().includes(query) ||
+      String(student.program || '').toLowerCase().includes(query) ||
+      String(student.block || '').toLowerCase().includes(query)
+    ));
+  }, [searchQuery, studentData, archivedStudents, showArchivedStudents]);
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">      
@@ -546,6 +625,7 @@ const StudentsManagement = () => {
         <Sidebar role="depthead" activeItem="students" />
         
         <main className="flex-1 p-8 overflow-y-auto">
+          <div className="max-w-7xl mx-auto w-full">
           {/* Page Title */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-[#1f2937]">Students Management</h1>
@@ -598,29 +678,33 @@ const StudentsManagement = () => {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-800">All Students</h2>
-                <p className="text-slate-400 text-sm">Complete list of enrolled students</p>
+                <h2 className="text-xl font-bold text-slate-800">{showArchivedStudents ? 'Archived Students' : 'All Students'}</h2>
+                <p className="text-slate-400 text-sm">{showArchivedStudents ? 'Archived student records' : 'Complete list of enrolled students'}</p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <button
-                  className="flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-bold hover:bg-[#18393e] transition-all"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-semibold hover:bg-[#18393e] transition-all"
                   onClick={() => { setIsEditing(false); setEditingId(null); resetForm(); setIsAddOpen(true); }}
                 >
                   + Add Student
                 </button>
                 <button
                   className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-200 transition-all"
-                  onClick={() => { setIsArchiveOpen(true); fetchArchivedStudents(); }}
+                  onClick={() => {
+                    const nextValue = !showArchivedStudents;
+                    setShowArchivedStudents(nextValue);
+                    if (nextValue) fetchArchivedStudents();
+                  }}
                 >
-                  <Folder size={16} /> Archived Students
+                  <Folder size={16} /> {showArchivedStudents ? 'Back To Active Students' : 'Archived Students'}
                 </button>
                 <button
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 transition-all"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-semibold hover:bg-[#18393e] transition-all"
                   onClick={() => setIsBulkImportOpen(true)}
                 >
                   📁 Bulk Import
                 </button>
-                <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all">
+                <button className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
                   <Download size={16} /> Export List
                 </button>
               </div>
@@ -632,6 +716,8 @@ const StudentsManagement = () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input 
                   type="text" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search by name, student ID, or program..." 
                   className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1f474d]/20 transition-all bg-white"
                 />
@@ -646,7 +732,6 @@ const StudentsManagement = () => {
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Student ID</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Name</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Program</th>
-                    <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Subjects</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Block</th>
                     <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Year</th>
                     <th className="px-3 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">Modules</th>
@@ -657,19 +742,18 @@ const StudentsManagement = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {studentData.map((student, idx) => (
+                  {filteredStudents.map((student, idx) => (
                     <tr key={student.pk || idx} className="hover:bg-slate-50/80 transition-colors">
                       <td className="px-6 py-4 text-xs font-mono text-slate-500">{student.id}</td>
                       <td className="px-6 py-4 text-sm font-black text-slate-800">{student.name}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 font-medium">{student.program}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600 font-medium">{student.subject}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 text-center font-medium">{student.block}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 text-center font-bold">{student.year}</td>
                       <td className="px-3 py-3 text-sm text-slate-600 text-center font-bold">{student.modules}</td>
                       <td className="px-3 py-3 text-sm text-emerald-600 text-center font-black">{student.completed}</td>
                       <td className="px-3 py-3 text-sm text-amber-500 text-center font-black">{student.pending}</td>
                       <td className="px-6 py-4">
-                        <span className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black uppercase rounded-lg tracking-wider">
+                        <span className={`px-3 py-1 border text-[10px] font-black uppercase rounded-lg tracking-wider ${student.status === 'Archived' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
                           {student.status}
                         </span>
                       </td>
@@ -678,12 +762,20 @@ const StudentsManagement = () => {
                           <button onClick={() => showStudentDetails(student.pk)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-all" title="View">
                             <Eye size={18} />
                           </button>
-                          <button onClick={() => startEditStudent(student.pk)} className="p-2 text-sky-600 hover:text-sky-800 hover:bg-slate-100 rounded-lg transition-all" title="Edit">
-                            <Edit size={18} />
-                          </button>
-                          <button onClick={() => archiveStudent(student.pk)} className="p-2 text-rose-600 hover:text-rose-800 hover:bg-slate-100 rounded-lg transition-all" title="Archive">
-                            <Folder size={18} />
-                          </button>
+                          {showArchivedStudents ? (
+                            <button onClick={() => restoreStudent(student.pk)} className="p-2 text-emerald-600 hover:text-emerald-800 hover:bg-slate-100 rounded-lg transition-all" title="Restore">
+                              <Folder size={18} />
+                            </button>
+                          ) : (
+                            <>
+                              <button onClick={() => startEditStudent(student.pk)} className="p-2 text-sky-600 hover:text-sky-800 hover:bg-slate-100 rounded-lg transition-all" title="Edit">
+                                <Edit size={18} />
+                              </button>
+                              <button onClick={() => setStudentToArchive(student)} className="p-2 text-rose-600 hover:text-rose-800 hover:bg-slate-100 rounded-lg transition-all" title="Archive">
+                                <Folder size={18} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -691,13 +783,21 @@ const StudentsManagement = () => {
                 </tbody>
               </table>
             </div>
-            {(isLoading || loadError || studentData.length === 0) && (
+            {((showArchivedStudents && isLoadingArchived) || (!showArchivedStudents && isLoading)) && (
+              <div className="p-6 text-sm text-slate-500">Loading students...</div>
+            )}
+            {showArchivedStudents && archiveError && (
+              <div className="p-6 text-sm text-rose-600">{archiveError}</div>
+            )}
+            {!showArchivedStudents && loadError && (
+              <div className="p-6 text-sm text-slate-500">{loadError}</div>
+            )}
+            {!isLoading && !isLoadingArchived && !loadError && !archiveError && filteredStudents.length === 0 && (
               <div className="p-6 text-sm text-slate-500">
-                {isLoading && 'Loading students...'}
-                {!isLoading && loadError}
-                {!isLoading && !loadError && studentData.length === 0 && 'No students found.'}
+                {showArchivedStudents ? 'No archived students found.' : 'No students found.'}
               </div>
             )}
+          </div>
           </div>
         </main>
       </div>
@@ -813,18 +913,6 @@ const StudentsManagement = () => {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Block / Section</label>
-                  <input
-                    name="block_section"
-                    value={formValues.block_section}
-                    onChange={handleInputChange}
-                    onBlur={() => validateField('block_section')}
-                    placeholder="e.g., A1, B2"
-                    className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.block_section ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
-                  />
-                  {formErrors.block_section && <div className="text-rose-600 text-sm mt-1">{formErrors.block_section}</div>}
-                </div>
-                <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Year Level</label>
                   <select
                     name="year_level"
@@ -840,6 +928,28 @@ const StudentsManagement = () => {
                     <option value="4">4th Year</option>
                     <option value="5">5th Year</option>
                   </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Block / Section</label>
+                  <div>
+                    <select
+                      name="block_section"
+                      value={formValues.block_section}
+                      onChange={handleInputChange}
+                      onBlur={() => validateField('block_section')}
+                      className={`w-full mt-2 px-3 py-2 rounded-lg text-sm border ${formErrors.block_section ? 'border-rose-500 ring-rose-100 bg-rose-50' : 'border-slate-200 bg-white'}`}
+                    >
+                      <option value="">Select block/section</option>
+                      {availableBlocks.length === 0 ? (
+                        <option value="" disabled>{isLoadingBlocks ? 'Loading blocks...' : 'No blocks for selected year'}</option>
+                      ) : (
+                        availableBlocks.map((b) => (
+                          <option key={b.id || b.block_name} value={b.block_name}>{b.block_name}</option>
+                        ))
+                      )}
+                    </select>
+                    {formErrors.block_section && <div className="text-rose-600 text-sm mt-1">{formErrors.block_section}</div>}
+                  </div>
                 </div>
               </div>
 
@@ -866,57 +976,24 @@ const StudentsManagement = () => {
         </div>
       )}
 
-      {/* Archived Students Modal */}
-      {isArchiveOpen && (
-        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsArchiveOpen(false)}>
-          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-black text-slate-800">Archived Students</h3>
-                <p className="text-sm text-slate-400">Students that were archived</p>
-              </div>
-              <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={() => setIsArchiveOpen(false)}>&times;</button>
+      {studentToArchive && (
+        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setStudentToArchive(null)}>
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-black text-slate-800">Archive Student</h3>
+              <p className="text-sm text-slate-400 mt-1">This will move the student to the archived section.</p>
             </div>
-
-            <div className="p-6">
-              {isLoadingArchived && <div className="text-sm text-slate-500">Loading archived students...</div>}
-              {archiveError && <div className="text-sm text-rose-600">{archiveError}</div>}
-              {!isLoadingArchived && !archiveError && archivedStudents.length === 0 && (
-                <div className="text-sm text-slate-500">No archived students found.</div>
-              )}
-
-              {!isLoadingArchived && archivedStudents.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-100">
-                      <tr>
-                        <th className="px-4 py-3 text-sm text-slate-500">Student ID</th>
-                        <th className="px-4 py-3 text-sm text-slate-500">Name</th>
-                        <th className="px-4 py-3 text-sm text-slate-500">Program</th>
-                        <th className="px-4 py-3 text-sm text-slate-500 text-center">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {archivedStudents.map((s, i) => (
-                        <tr key={s.pk || i} className="hover:bg-slate-50/80">
-                          <td className="px-4 py-3 text-xs font-mono text-slate-500">{s.id}</td>
-                          <td className="px-4 py-3 text-sm font-black text-slate-800">{s.name}</td>
-                          <td className="px-4 py-3 text-sm text-slate-600">{s.program}</td>
-                          <td className="px-4 py-3 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <button onClick={() => { setIsArchiveOpen(false); showStudentDetails(s.pk); }} className="px-3 py-1 bg-slate-100 rounded-lg text-sm font-semibold">View</button>
-                              <button onClick={() => restoreStudent(s.pk)} className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-lg text-sm font-semibold">Restore</button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <div className="flex justify-end mt-4">
-                <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm" onClick={() => setIsArchiveOpen(false)}>Close</button>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-700">
+                Are you sure you want to archive <span className="font-bold text-slate-900">{studentToArchive.name}</span>?
+              </p>
+              <div className="flex items-center justify-end gap-3">
+                <button type="button" className="px-4 py-2 text-sm font-bold text-slate-500" onClick={() => setStudentToArchive(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="px-4 py-2 text-sm font-bold bg-rose-600 text-white rounded-lg hover:bg-rose-700" onClick={() => archiveStudent(studentToArchive)}>
+                  Archive
+                </button>
               </div>
             </div>
           </div>
