@@ -14,16 +14,6 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
 
 const normalizeCode = (value) => String(value || '').trim().toUpperCase();
 
-const isCompletedFromItem = (item, completedModuleCodes) => {
-  const code = normalizeCode(item?.subject_code || item?.code || item?.module_code);
-  return Boolean(
-    item?.evaluation_completed ||
-      item?.is_completed ||
-      item?.completed ||
-      (code && completedModuleCodes.has(code))
-  );
-};
-
 const StudentDashboard = () => {
   const [studentName, setStudentName] = useState('Student');
   const [stats, setStats] = useState([
@@ -73,43 +63,120 @@ const StudentDashboard = () => {
       const name = `${data?.student?.firstname || ''} ${data?.student?.lastname || ''}`.trim();
       setStudentName(name || 'Student');
 
-      // Use the same list fallback order used by the evaluation page.
-      const classrooms = Array.isArray(data?.classrooms)
-        ? data.classrooms
-        : Array.isArray(data?.modules)
-          ? data.modules
-          : Array.isArray(data?.enrolled_modules)
-            ? data.enrolled_modules
-            : Array.isArray(data?.recent_modules)
-              ? data.recent_modules
+      // Use the same list fallback order used by the evaluation modules page.
+      const moduleList = Array.isArray(data?.modules)
+        ? data.modules
+        : Array.isArray(data?.enrolled_modules)
+          ? data.enrolled_modules
+          : Array.isArray(data?.recent_modules)
+            ? data.recent_modules
+            : Array.isArray(data?.classrooms)
+              ? data.classrooms
               : [];
 
-      // Reuse module-form completion as a fallback so status matches EvaluationPage.
+      // Mirror ModulePage rules for active form availability + completion state.
+      const availableModuleCodes = new Set();
+      const formByCode = new Map();
       const completedModuleCodes = new Set();
+      const enrolledSubjectCodes = new Set();
+      const enrolledByCode = new Map();
+
+      const rawEnrolled =
+        data?.enrolled_subjects ||
+        data?.student?.enrolled_subjects ||
+        data?.classrooms ||
+        null;
+
+      if (Array.isArray(rawEnrolled)) {
+        rawEnrolled.forEach((subject) => {
+          if (!subject) return;
+          if (typeof subject === 'string') {
+            const code = normalizeCode(subject);
+            if (code) enrolledSubjectCodes.add(code);
+            return;
+          }
+
+          if (typeof subject === 'object') {
+            const code = normalizeCode(subject.code || subject.subject_code || subject.module_code);
+            if (!code) return;
+
+            enrolledSubjectCodes.add(code);
+            const instructor = subject.instructor || subject.instructor_name || subject.lecturer || subject.lecturer_name || '';
+            if (instructor) enrolledByCode.set(code, instructor);
+          }
+        });
+      }
+
       try {
         const formsRes = await fetch(`${API_BASE_URL}/module-evaluation-forms/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const formsData = await formsRes.json().catch(() => []);
-        if (formsRes.ok && Array.isArray(formsData)) {
-          formsData.forEach((form) => {
-            if (!form?.is_completed) return;
+        const formsList = Array.isArray(formsData)
+          ? formsData
+          : Array.isArray(formsData?.results)
+            ? formsData.results
+            : [];
+
+        if (formsRes.ok && formsList.length > 0) {
+          formsList.forEach((form) => {
+            if (form?.status !== 'Active') return;
             const code = normalizeCode(form?.title || form?.subject_code);
-            if (code) completedModuleCodes.add(code);
+            if (!code) return;
+
+            availableModuleCodes.add(code);
+            formByCode.set(code, form);
+            if (form?.is_completed) completedModuleCodes.add(code);
           });
         }
       } catch {
         // Non-blocking: dashboard can still render using classroom/module flags.
       }
-      
-      // Extract unique instructors from classrooms
-      const instructorSet = new Set(classrooms.map(c => c?.instructor || '').filter(Boolean));
+
+      const alignedModules = moduleList
+        .map((module, idx) => {
+          const code = normalizeCode(module?.code || module?.subject_code || module?.module_code);
+          const form = formByCode.get(code);
+
+          let formAvailable = Boolean(
+            module?.form_available ||
+            module?.has_form ||
+            module?.form_id ||
+            (availableModuleCodes.has(code) && enrolledSubjectCodes.has(code))
+          );
+
+          const isCompleted = Boolean(
+            module?.evaluation_completed ||
+            module?.is_completed ||
+            module?.completed ||
+            (code && completedModuleCodes.has(code))
+          );
+
+          if (isCompleted) formAvailable = false;
+
+          // Hide modules that are unavailable and not completed (same as ModulePage).
+          if (!formAvailable && !isCompleted) return null;
+
+          return {
+            id: code || String(module?.id || idx),
+            name: module?.module_name || module?.name || module?.title || module?.code || 'Unknown Module',
+            instructor: module?.instructor || module?.instructor_name || module?.lecturer || enrolledByCode.get(code) || 'TBA',
+            status: isCompleted ? 'completed' : 'pending',
+            code: code || 'N/A',
+            classroom_code: module?.classroom_code || 'N/A',
+            form_id: form?.id,
+          };
+        })
+        .filter(Boolean);
+
+      // Extract unique instructors from the same normalized list used by EvaluationPage.
+      const instructorSet = new Set(alignedModules.map((m) => m.instructor).filter(Boolean));
       const totalInstructors = instructorSet.size;
 
-      // Calculate stats from available data
-      const totalModules = classrooms.length;
-      const completedEvaluations = classrooms.filter((c) => isCompletedFromItem(c, completedModuleCodes)).length;
-      const pendingEvaluations = classrooms.filter((c) => !isCompletedFromItem(c, completedModuleCodes)).length;
+      // Calculate stats from aligned modules to keep Dashboard and Evaluation page in sync.
+      const totalModules = alignedModules.length;
+      const completedEvaluations = alignedModules.filter((m) => m.status === 'completed').length;
+      const pendingEvaluations = alignedModules.filter((m) => m.status === 'pending').length;
       setStats([
         { title: "Total Modules", value: String(totalModules), description: "Enrolled this semester", icon: BookOpen, color: "bg-slate-100 text-[#0f2f57]" },
         { title: "Instructors", value: String(totalInstructors), description: "To evaluate", icon: Users, color: "bg-slate-100 text-[#0f2f57]" },
@@ -117,16 +184,7 @@ const StudentDashboard = () => {
         { title: "Pending", value: String(pendingEvaluations), description: "Awaiting feedback", icon: AlertCircle, color: "bg-slate-100 text-[#0f2f57]" },
       ]);
 
-      // Map classrooms to recent modules format for display
-      const enriched = classrooms.map((classroom, idx) => ({
-        id: classroom?.id || idx,
-        name: classroom?.module_name || classroom?.name || classroom?.title || 'Unknown Module',
-        instructor: classroom?.instructor || classroom?.instructor_name || classroom?.lecturer || 'TBA',
-        status: isCompletedFromItem(classroom, completedModuleCodes) ? 'completed' : 'pending',
-        code: classroom?.subject_code || classroom?.code || classroom?.module_code || 'N/A',
-        classroom_code: classroom?.classroom_code || 'N/A',
-      }));
-      setRecentModules(enriched);
+      setRecentModules(alignedModules);
     } catch {
       setLoadError('Unable to reach the server. Please try again.');
     }

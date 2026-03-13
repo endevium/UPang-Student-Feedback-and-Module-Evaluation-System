@@ -181,7 +181,7 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 
 # CSRF / Session cookie hardening
-CSRF_COOKIE_HTTPONLY = False  # must be readable by JS if you send it as X-CSRFToken
+CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = "Lax"  # dev-friendly; for cross-site + HTTPS use "None"
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_TRUSTED_ORIGINS = [

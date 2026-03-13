@@ -16,7 +16,7 @@ const Footer = () => {
               <img src={logo} alt="UPang Logo" className="h-12 w-auto" />
             </div>
             <p className="text-sm text-white/60 leading-relaxed">
-              Empowering students to shape the future of education at University of Pampanga.
+              Empowering students to shape the future of education at PHINMA University of Pangasinan.
             </p>
           </div>
 
@@ -35,7 +35,7 @@ const Footer = () => {
           <div>
             <h5 className="text-[#ffcc00] font-bold mb-6">Contact</h5>
             <ul className="space-y-4 text-sm text-white/70">
-              <li>University of Pampanga</li>
+              <li>PHINMA University of Pangasinan</li>
               <li>evaluation@upang.edu.ph</li>
               <li>+63 (45) 123-4567</li>
             </ul>
@@ -43,7 +43,7 @@ const Footer = () => {
         </div>
 
         <div className="pt-8 border-t border-white/10 text-center text-xs md:text-sm text-white/40">
-          © 2026 University of Pampanga. All rights reserved.
+          © 2026 PHINMA University of Pangasinan. All rights reserved.
         </div>
       </div>
     </footer>
