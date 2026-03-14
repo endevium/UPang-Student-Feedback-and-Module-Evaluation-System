@@ -12,6 +12,8 @@ export const USER_KEY = 'authUser';
 export const ACCESS_TOKEN_KEY = 'authAccessToken';
 export const REFRESH_TOKEN_KEY = 'authRefreshToken';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+
 const hasWindow = typeof window !== 'undefined';
 
 const readFromStorage = (storage, key) => {
@@ -35,18 +37,19 @@ const writeToStorage = (storage, key, value) => {
   }
 };
 
-const decodeJwtExp = (token) => {
+const decodeJwtPayload = (token) => {
   try {
     const payload = token?.split('.')?.[1];
     if (!payload) return null;
     const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
     const padded = normalized + '='.repeat((4 - (normalized.length % 4 || 4)) % 4);
-    const decoded = JSON.parse(atob(padded));
-    return Number(decoded?.exp) || null;
+    return JSON.parse(atob(padded));
   } catch {
     return null;
   }
 };
+
+const decodeJwtExp = (token) => Number(decodeJwtPayload(token)?.exp) || null;
 
 const chooseBestToken = (...tokens) => {
   const now = Math.floor(Date.now() / 1000);
@@ -178,18 +181,47 @@ export function clearSession() {
   }
 }
 
+async function recordUserLogout() {
+  const token = getAccessToken();
+  const role = decodeJwtPayload(token)?.role || getUser()?.user_type;
+
+  if (!token || !role) {
+    return;
+  }
+
+  const endpointByRole = {
+    student: '/students/logout/',
+    faculty: '/faculty/logout/',
+  };
+
+  const endpoint = endpointByRole[role];
+  if (!endpoint) return;
+
+  try {
+    await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  } catch {
+    // best-effort only; logout should continue
+  }
+}
+
 /**
  * Logout helper: clear session and reload the page so the app shows
  * the landing/login screen. This is used by the idle timer to force
  * a full reload after clearing auth state.
  */
-export function logoutAndReload() {
+export async function logoutAndReload(redirectPath = '/') {
+  await recordUserLogout();
   clearSession();
   // Ensure we return to the landing/login route. Use a full navigation to
   // `/` so the router renders the public LandingPage instead of reloading
   // the current protected route (which may still be in the URL).
   try {
-    window.location.href = '/';
+    window.location.href = redirectPath;
   } catch  {
     // fallback to reload if assigning href fails for some reason
     window.location.reload();

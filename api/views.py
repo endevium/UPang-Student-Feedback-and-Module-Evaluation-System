@@ -237,6 +237,54 @@ def _get_bearer_token(request) -> str | None:
         return auth_header.split(" ", 1)[1].strip()
     return None
 
+
+def _log_student_auth_event(student, action: str, message: str, request) -> None:
+    if not student:
+        return
+
+    try:
+        AuditLog.objects.create(
+            user=f"{student.firstname} {student.lastname}".strip(),
+            role="Student",
+            action=action,
+            category="AUTH",
+            status="Success",
+            message=message,
+            ip=request.META.get("REMOTE_ADDR", "Unknown"),
+        )
+    except Exception:
+        logger.exception("Failed to write student auth audit log")
+
+
+def _log_faculty_auth_event(faculty, action: str, message: str, request) -> None:
+    if not faculty:
+        return
+
+    try:
+        AuditLog.objects.create(
+            user=f"{faculty.firstname} {faculty.lastname}".strip(),
+            role="Faculty",
+            action=action,
+            category="AUTH",
+            status="Success",
+            message=message,
+            ip=request.META.get("REMOTE_ADDR", "Unknown"),
+        )
+    except Exception:
+        logger.exception("Failed to write faculty auth audit log")
+
+
+def _get_feedback_form_label(form_obj, fallback: str = "Unknown form") -> str:
+    if isinstance(form_obj, ModuleEvaluationForm):
+        return (
+            getattr(form_obj, "subject_description", None)
+            or getattr(form_obj, "subject_code", None)
+            or fallback
+        )
+    if isinstance(form_obj, InstructorEvaluationForm):
+        return getattr(form_obj, "instructor_name", None) or fallback
+    return fallback
+
 # List all students or create a new student
 class StudentListCreateView(generics.ListCreateAPIView):
     authentication_classes = [LegacyJWTAuthentication]
@@ -763,6 +811,32 @@ class StudentChangePasswordView(APIView):
 
         return Response({"detail": "Password updated"}, status=status.HTTP_200_OK)
 
+
+class StudentLogoutView(APIView):
+    authentication_classes = [LegacyJWTAuthentication]
+    permission_classes = []
+
+    def post(self, request):
+        user = getattr(request, "user", None)
+        if not getattr(user, "is_authenticated", False) or getattr(user, "role", None) != "student":
+            return Response({"detail": "Forbidden - token role mismatch"}, status=status.HTTP_403_FORBIDDEN)
+
+        student = getattr(user, "instance", None)
+        if not student:
+            student_id = getattr(user, "legacy_user_id", None) or getattr(user, "id", None)
+            student = Student.objects.filter(id=student_id).first()
+
+        if not student:
+            return Response({"detail": "Student not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        _log_student_auth_event(
+            student,
+            action="Student Logout",
+            message="Student logged out successfully.",
+            request=request,
+        )
+        return Response({"detail": "Student logout recorded."}, status=status.HTTP_200_OK)
+
 class FacultyChangePasswordView(APIView):
     authentication_classes = [LegacyJWTAuthentication]
     permission_classes = []
@@ -778,6 +852,32 @@ class FacultyChangePasswordView(APIView):
         user.save()
 
         return Response({"detail": "Password updated"}, status=status.HTTP_200_OK)
+
+
+class FacultyLogoutView(APIView):
+    authentication_classes = [LegacyJWTAuthentication]
+    permission_classes = []
+
+    def post(self, request):
+        user = getattr(request, "user", None)
+        if not getattr(user, "is_authenticated", False) or getattr(user, "role", None) != "faculty":
+            return Response({"detail": "Forbidden - token role mismatch"}, status=status.HTTP_403_FORBIDDEN)
+
+        faculty = getattr(user, "instance", None)
+        if not faculty:
+            faculty_id = getattr(user, "legacy_user_id", None) or getattr(user, "id", None)
+            faculty = Faculty.objects.filter(id=faculty_id).first()
+
+        if not faculty:
+            return Response({"detail": "Faculty not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        _log_faculty_auth_event(
+            faculty,
+            action="Faculty Logout",
+            message="Faculty logged out successfully.",
+            request=request,
+        )
+        return Response({"detail": "Faculty logout recorded."}, status=status.HTTP_200_OK)
 
 class StudentMeView(APIView):
     authentication_classes = [LegacyJWTAuthentication]
@@ -1997,7 +2097,7 @@ class FeedbackResponseCreateView(generics.CreateAPIView):
         # THEN create the audit log
         student_name = f"{student.firstname} {student.lastname}".strip() if student else "Anonymous"
         form_type_label = str(request.data.get("form_type") or "").capitalize()
-        form_id_label = str(request.data.get("form_id") or "")
+        form_label = _get_feedback_form_label(getattr(obj, "form", None), fallback=str(request.data.get("form_id") or ""))
 
         AuditLog.objects.create(
             user=student_name,
@@ -2005,7 +2105,7 @@ class FeedbackResponseCreateView(generics.CreateAPIView):
             action="Submitted Feedback",
             category="FEEDBACK",
             status="Success",
-            message=f"Student submitted {form_type_label} evaluation feedback (form_id: {form_id_label})",
+            message=f"Student submitted {form_type_label} evaluation feedback for {form_label}",
             ip=request.META.get("REMOTE_ADDR", "Unknown"),
         )
 
@@ -2477,6 +2577,12 @@ class VerifyOTPView(APIView):
                     )
                 
                 tokens = _issue_jwt_pair("student", user.id)
+                _log_student_auth_event(
+                    user,
+                    action="Student Login",
+                    message="Student logged in successfully via OTP verification.",
+                    request=request,
+                )
                 return Response(
                     {
                         "detail": "OTP verified",
@@ -2515,6 +2621,12 @@ class VerifyOTPView(APIView):
                     )
                 
                 tokens = _issue_jwt_pair("faculty", user.id)
+                _log_faculty_auth_event(
+                    user,
+                    action="Faculty Login",
+                    message="Faculty logged in successfully via OTP verification.",
+                    request=request,
+                )
                 return Response(
                     {
                         "detail": "OTP verified",

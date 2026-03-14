@@ -3,16 +3,66 @@ import {
   Activity,
   BookOpenText,
   ClipboardList,
-  Gauge,
   LogIn,
   Search,
-  UserRound,
   Users,
 } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
 import { getAccessToken } from '../../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+
+const formatLogDate = (value) => {
+  if (!value) return 'Unknown time';
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Unknown time';
+
+  return parsed.toLocaleDateString('en-US', {
+    month: 'long',
+    day: '2-digit',
+    year: 'numeric',
+  });
+};
+
+const LEGACY_EVALUATION_MESSAGE_RE = /Student submitted\s+(module|instructor)\s+evaluation feedback\s+\(form_id:\s*([^)]+)\)/i;
+
+const buildFormLabelMap = (moduleForms, instructorForms) => {
+  const entries = [];
+
+  moduleForms.forEach((form) => {
+    const label = form?.subject_description || form?.subject_code;
+    if (form?.id && label) {
+      entries.push([`module:${String(form.id)}`, label]);
+    }
+  });
+
+  instructorForms.forEach((form) => {
+    const label = form?.instructor_name || form?.subject_description || form?.subject_code;
+    if (form?.id && label) {
+      entries.push([`instructor:${String(form.id)}`, label]);
+    }
+  });
+
+  return Object.fromEntries(entries);
+};
+
+const replaceLegacyEvaluationMessage = (log, formLabels) => {
+  const rawMessage = String(log?.message || '');
+  const match = rawMessage.match(LEGACY_EVALUATION_MESSAGE_RE);
+
+  if (!match) {
+    return rawMessage || 'No details provided.';
+  }
+
+  const [, formType, formId] = match;
+  const label = formLabels[`${formType.toLowerCase()}:${String(formId).trim()}`];
+  if (!label) {
+    return rawMessage;
+  }
+
+  return `Student submitted ${formType} evaluation feedback for ${label}`;
+};
 
 const detectGroup = (log) => {
   const category = String(log?.category || '').toUpperCase();
@@ -21,7 +71,7 @@ const detectGroup = (log) => {
   const text = `${category} ${action} ${message}`;
 
   if (text.includes('EVAL') || text.includes('FEEDBACK') || text.includes('FORM')) return 'Evaluations';
-  if (text.includes('LOGIN') || text.includes('AUTH') || text.includes('OTP') || text.includes('PASSWORD')) return 'Auth';
+  if (text.includes('LOGIN') || text.includes('LOGOUT') || text.includes('AUTH') || text.includes('OTP') || text.includes('PASSWORD') || text.includes('SIGN OUT')) return 'Auth';
   if (text.includes('CLASSROOM') || text.includes('ENROLL')) return 'Classroom';
   if (text.includes('PROFILE') || text.includes('ACCOUNT') || text.includes('STUDENT')) return 'Profile';
   return 'System';
@@ -44,6 +94,7 @@ const statusBadgeColor = (status) => {
 
 const StudentAuditLogPage = () => {
   const [logs, setLogs] = useState([]);
+  const [formLabels, setFormLabels] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -62,22 +113,34 @@ const StudentAuditLogPage = () => {
       setError('');
 
       try {
-        const res = await fetch(`${API_BASE_URL}/audit-logs/students/`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const headers = { Authorization: `Bearer ${token}` };
+        const [logsRes, moduleFormsRes, instructorFormsRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/audit-logs/students/`, { headers }),
+          fetch(`${API_BASE_URL}/module-evaluation-forms/`, { headers }),
+          fetch(`${API_BASE_URL}/instructor-evaluation-forms/`, { headers }),
+        ]);
 
-        const data = await res.json().catch(() => []);
-        if (!res.ok) {
-          setError(data?.detail || 'Unable to load audit logs.');
+        const logsData = await logsRes.json().catch(() => []);
+        const moduleFormsData = await moduleFormsRes.json().catch(() => []);
+        const instructorFormsData = await instructorFormsRes.json().catch(() => []);
+
+        if (!logsRes.ok) {
+          setError(logsData?.detail || 'Unable to load audit logs.');
           setLogs([]);
+          setFormLabels({});
           return;
         }
 
-        const list = Array.isArray(data) ? data : data?.results || [];
+        const list = Array.isArray(logsData) ? logsData : logsData?.results || [];
+        const moduleForms = Array.isArray(moduleFormsData) ? moduleFormsData : moduleFormsData?.results || [];
+        const instructorForms = Array.isArray(instructorFormsData) ? instructorFormsData : instructorFormsData?.results || [];
+
         setLogs(list);
+        setFormLabels(buildFormLabelMap(moduleForms, instructorForms));
       } catch {
         setError('Unable to reach server.');
         setLogs([]);
+        setFormLabels({});
       } finally {
         setLoading(false);
       }
@@ -89,9 +152,10 @@ const StudentAuditLogPage = () => {
   const normalizedLogs = useMemo(() => {
     return logs.map((log) => ({
       ...log,
+      message: replaceLegacyEvaluationMessage(log, formLabels),
       group: detectGroup(log),
     }));
-  }, [logs]);
+  }, [logs, formLabels]);
 
   const stats = useMemo(() => {
     const evaluationCount = normalizedLogs.filter((log) => log.group === 'Evaluations').length;
@@ -103,8 +167,6 @@ const StudentAuditLogPage = () => {
       authCount,
       classroomCount,
       totalCount: normalizedLogs.length,
-      profileCount: normalizedLogs.filter((log) => log.group === 'Profile').length,
-      systemCount: normalizedLogs.filter((log) => log.group === 'System').length,
     };
   }, [normalizedLogs]);
 
@@ -129,8 +191,6 @@ const StudentAuditLogPage = () => {
     { key: 'Evaluations', label: 'Evaluations', count: stats.evaluationCount, icon: BookOpenText },
     { key: 'Auth', label: 'Auth', count: stats.authCount, icon: LogIn },
     { key: 'Classroom', label: 'Classroom', count: stats.classroomCount, icon: Users },
-    { key: 'Profile', label: 'Profile', count: stats.profileCount, icon: UserRound },
-    { key: 'System', label: 'System', count: stats.systemCount, icon: Gauge },
   ]), [stats]);
 
   return (
@@ -162,9 +222,9 @@ const StudentAuditLogPage = () => {
                   <LogIn size={20} />
                 </div>
                 <div>
-                  <p className="text-slate-600 text-sm">Logins</p>
+                  <p className="text-slate-600 text-sm">Auth</p>
                   <p className="text-4xl leading-none font-bold text-slate-900 mt-1">{stats.authCount}</p>
-                  <p className="text-xs text-slate-400 mt-2">Authentication activities</p>
+                  <p className="text-xs text-slate-400 mt-2">Login and logout activities</p>
                 </div>
               </div>
 
@@ -259,7 +319,7 @@ const StudentAuditLogPage = () => {
                       <p className="mt-2 text-slate-700">{log.message || 'No details provided.'}</p>
 
                       <div className="mt-2 text-xs text-slate-500 flex items-center gap-4">
-                        <span>{log.timestamp ? new Date(log.timestamp).toLocaleString() : 'Unknown time'}</span>
+                        <span>{formatLogDate(log.timestamp)}</span>
                         <span>IP: {log.ip || 'Unknown'}</span>
                       </div>
                     </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReCAPTCHA from 'react-google-recaptcha';
 import { User, Lock, Eye, EyeOff } from 'lucide-react';
 import logo from '../assets/navbar-logo.png';
-import studentGroupImg from '../assets/group-student2.png';
+import studentGroupImg from '../assets/group-students.png';
 import SafeImg from './SafeImg';
 import OTPModal from './OTPModal';
 import { saveTokens, saveToken, saveUser, getToken } from '../utils/auth';
@@ -587,7 +587,6 @@ const LoginModal = ({ isOpen, onClose }) => {
   return (
     <div 
       className="fixed inset-0 w-full h-full bg-black/85 flex justify-center items-center z-[9999] backdrop-blur-[5px] p-4" 
-      onClick={(e) => { if (e.target === e.currentTarget) handleCloseAnimated(); }}
       onContextMenu={handleContextMenu}
       onKeyDown={handleKeyDown}
     > 
@@ -597,7 +596,7 @@ const LoginModal = ({ isOpen, onClose }) => {
         }`}
       >
       <div 
-        className="font-upang bg-[#23344E] bg-gradient-to-b from-[#28625C] to-[#23344E] w-full max-w-[1100px] max-h-[95vh] rounded-[20px] relative overflow-y-auto lg:overflow-hidden text-white shadow-2xl" 
+        className="font-upang bg-[#23344E] bg-gradient-to-b from-[#28625C] to-[#23344E] w-full max-w-[1100px] max-h-[92vh] rounded-[20px] relative overflow-y-auto text-white shadow-2xl" 
         onClick={(e) => e.stopPropagation()}
         onContextMenu={handleContextMenu}
         onDragStart={(e) => e.preventDefault()}
@@ -615,22 +614,26 @@ const LoginModal = ({ isOpen, onClose }) => {
           &times;
         </button>
         
-        <div className="flex flex-col lg:flex-row min-h-[420px] select-none">
+        <div className="flex flex-col lg:flex-row lg:min-h-[420px] select-none">
           
           {/* Left Side: Students Image (Hidden on mobile/tablet) */}
-          <div className="hidden lg:flex lg:flex-1 relative bg-transparent items-end justify-center overflow-visible p-12">
+          <div className="hidden lg:flex lg:flex-1 relative bg-transparent items-end justify-start overflow-visible pl-8 pr-4 py-8">
             <SafeImg
               src={studentGroupImg}
               alt="Students"
-              className="w-full h-auto z-0 object-contain translate-x-[10%] scale-[1.3]"
+              className="w-full h-auto z-0 object-contain -translate-x-[-3%] translate-y-[-12%] scale-[1.42]"
             />
           </div>
 
           {/* Right Side: Form */}
-          <div className="flex-1 lg:flex-[1.2] p-6 sm:p-10 lg:p-12">
+          <div className={`flex-1 lg:flex-[1.2] ${mustChangePassword ? 'p-4 sm:p-6 lg:p-7' : 'p-6 sm:p-10 lg:p-12'}`}>
             {/* Logo Section */}
-            <div className="flex justify-center lg:justify-start items-center mb-6">
-              <SafeImg src={logo} alt="Logo" className="w-[220px] sm:w-[300px] lg:w-[400px] h-auto" />
+            <div className={`flex justify-center lg:justify-start items-center ${mustChangePassword ? 'mb-4' : 'mb-6'}`}>
+              <SafeImg
+                src={logo}
+                alt="Logo"
+                className={mustChangePassword ? 'w-[180px] sm:w-[230px] lg:w-[300px] h-auto' : 'w-[220px] sm:w-[300px] lg:w-[400px] h-auto'}
+              />
             </div>
 
             {!mustChangePassword ? (
@@ -756,11 +759,7 @@ const LoginModal = ({ isOpen, onClose }) => {
                 {isSubmitting ? 'LOGGING IN...' : `LOGIN`}
               </button>
 
-              <div className="flex flex-col sm:flex-row justify-between items-center mt-6 gap-4 text-sm">
-                <label className="flex items-center cursor-pointer group">
-                  <input type="checkbox" className="w-5 h-5 accent-[#ffcc00]" /> 
-                  <span className="ml-2">Remember me</span>
-                </label>
+              <div className="flex justify-end mt-6 text-sm">
                 <button
                   type="button"
                   onClick={() => {
@@ -783,11 +782,11 @@ const LoginModal = ({ isOpen, onClose }) => {
             ) : (
               <form className="form-content" onSubmit={handleChangePassword}>
                 <h1 className="text-2xl sm:text-3xl lg:text-[2rem] mb-2 font-black">Change Password</h1>
-                <p className="opacity-70 text-sm mb-6">
+                <p className="opacity-70 text-sm mb-4">
                   For your security, please set a new password before continuing.
                 </p>
 
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <div>
                     <label className="block mb-2 text-xs font-bold uppercase tracking-wider opacity-80">New Password</label>
                     <div className="flex items-center bg-white rounded-xl py-3 px-4">
@@ -826,9 +825,9 @@ const LoginModal = ({ isOpen, onClose }) => {
                     </div>
 
                     {/* Live Checklist */}
-                    <div className="mt-2 p-3 bg-white/5 rounded-xl border border-white/10">
-                      <div className="text-sm font-semibold mb-2">Password requirements</div>
-                      <div className="grid gap-2 text-sm">
+                    <div className="mt-1 p-2.5 bg-white/5 rounded-xl border border-white/10">
+                      <div className="text-sm font-semibold mb-1.5">Password requirements</div>
+                      <div className="grid gap-1.5 text-xs sm:text-sm">
                         <div className={`flex items-center gap-2 ${criteria.length ? 'text-green-400' : 'text-red-400'}`}>
                           <span className="w-5">{criteria.length ? '✓' : '✕'}</span>
                           <span>At least 12 characters</span>

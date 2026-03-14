@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
-import { BookOpen, Users, Star, TrendingUp, MessageSquare, ChevronRight } from 'lucide-react';
-import { getAccessToken, getUser, logoutAndReload } from '../../utils/auth';
+import { Users, Star, TrendingUp, MessageSquare, ChevronRight } from 'lucide-react';
+import { getAccessToken, getUser } from '../../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
@@ -106,27 +106,16 @@ const FacultyDashboard = () => {
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 flex flex-col">
       <div className="flex flex-1 flex-row relative">
-        <Sidebar
-          role="faculty"
-          activeItem="dashboard"
-          onLogout={() => logoutAndReload('/')}
-        />
+        <Sidebar role="faculty" activeItem="dashboard" />
 
         {/* MAIN CONTENT SCROLL AREA */}
         <main className="flex-1 overflow-y-auto">
           
-          {/* WELCOME BANNER (White Theme Gradient) */}
-          <section className="bg-white border-b border-slate-200 py-10 px-8">
-            <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+          <section className="py-10 px-8">
+            <div className="max-w-6xl mx-auto">
               <div>
                 <h1 className="text-3xl font-bold text-[#0f2f57] tracking-tight">Welcome, {facultyInfo?.name || 'Faculty'}</h1>
                 <p className="text-slate-500 mt-1">{facultyInfo?.department || ''}{facultyInfo?.department && facultyInfo?.specialization ? ' • ' : ''}{facultyInfo?.specialization || ''}</p>
-                <p className="text-xs mt-2 font-semibold text-slate-400 uppercase tracking-wider">
-                  Employee ID: <span className="text-amber-600">{facultyInfo?.employeeId || '—'}</span>
-                </p>
-              </div>
-              <div className="hidden md:block p-4 bg-slate-100 rounded-2xl border border-slate-200">
-                <TrendingUp className="text-[#0f2f57]" size={32} />
               </div>
             </div>
           </section>
@@ -248,28 +237,6 @@ const FacultyDashboard = () => {
               ))}
             </div>
 
-            {/* RECENT HIGHLIGHTS */}
-            <h2 className="text-xl font-bold text-slate-800 mb-6">Recent Highlights</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-5 bg-emerald-50 border-l-4 border-emerald-500 rounded-r-xl">
-                <p className="font-bold text-emerald-700 text-sm">Strong Performance</p>
-                <p className="text-slate-600 text-xs mt-1 leading-relaxed">
-                  Web Development received 4.8/5.0 for content clarity.
-                </p>
-              </div>
-              <div className="p-5 bg-blue-50 border-l-4 border-blue-500 rounded-r-xl">
-                <p className="font-bold text-blue-700 text-sm">High Engagement</p>
-                <p className="text-slate-600 text-xs mt-1 leading-relaxed">
-                  92% average response rate shows student interest.
-                </p>
-              </div>
-              <div className="p-5 bg-purple-50 border-l-4 border-purple-500 rounded-r-xl">
-                <p className="font-bold text-purple-700 text-sm">Clear Explanations</p>
-                <p className="text-slate-600 text-xs mt-1 leading-relaxed">
-                  Students praised the teaching methodology.
-                </p>
-              </div>
-            </div>
           </div>
         </main>
       </div>

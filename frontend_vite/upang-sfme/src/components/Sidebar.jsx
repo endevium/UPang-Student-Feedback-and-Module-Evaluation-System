@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { BookOpen, Users, History as HistoryIcon, GraduationCap, ClipboardList, BarChart3, FileText, LogOut, Menu, X } from 'lucide-react';
-import { clearSession } from '../utils/auth';
+import { logoutAndReload } from '../utils/auth';
 // import logo from '../assets/header-logo.png';
 
-const Sidebar = ({ role, activeItem, onLogout }) => {
+const Sidebar = ({ role, activeItem }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
@@ -52,17 +52,11 @@ const Sidebar = ({ role, activeItem, onLogout }) => {
     setIsConfirmOpen(true);
   };
 
-  const handleConfirmLogout = () => {
-    try {
-      clearSession();
-    } catch {
-      // noop: continue logout navigation even if storage cleanup fails
-    }
-    if (typeof onLogout === 'function') onLogout();
-    window.history.pushState({}, '', '/');
-    window.dispatchEvent(new PopStateEvent('popstate'));
+  const handleConfirmLogout = async () => {
     setIsOpen(false);
     setIsConfirmOpen(false);
+
+    await logoutAndReload('/');
   };
 
   const handleCancelLogout = () => {

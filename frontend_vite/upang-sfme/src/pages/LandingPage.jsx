@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import SafeImg from '../components/SafeImg';
+import LoginModal from '../components/LoginModal';
 
 // Assets
 import studentCutout from '../assets/students-cutout.png';
@@ -43,6 +44,8 @@ const LandingPage = () => {
     }
   }, []);
 
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+
   return (
     <div className="w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-white selection:bg-yellow-400 selection:text-slate-900 overflow-x-hidden">
       <Navbar />
@@ -67,7 +70,10 @@ const LandingPage = () => {
                   className="w-full max-w-[400px] sm:max-w-[450px] md:max-w-[500px] lg:max-w-[650px] mb-8"
                 />
                 <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-                  <button className="bg-[#ffcc00] text-[#041c32] px-8 py-4 rounded-lg font-bold hover:scale-105 transition-all shadow-lg text-center">
+                  <button
+                    onClick={() => setIsLoginOpen(true)}
+                    className="bg-[#ffcc00] text-[#041c32] px-8 py-4 rounded-lg font-bold hover:scale-105 transition-all shadow-lg text-center"
+                  >
                     Get Started →
                   </button>
                   <a href="/about" className="inline-block bg-white/10 backdrop-blur-md border border-white/40 px-8 py-4 rounded-lg hover:bg-white/20 transition-all text-center">
@@ -166,7 +172,10 @@ const LandingPage = () => {
           <div className="order-1 lg:order-2 bg-[#144272] rounded-[32px] p-8 md:p-12 shadow-2xl border border-white/5 w-full max-w-lg mx-auto">
             <h3 className="text-[#ffcc00] text-2xl font-bold mb-4 tracking-tight">READY TO GET STARTED?</h3>
             <p className="text-white/80 mb-8">Sign in using your Student Number and Start your evaluation</p>
-            <button className="w-full bg-[#ffcc00] text-[#041c32] py-4 rounded-xl font-bold hover:brightness-110 active:scale-95 transition-all shadow-lg">
+            <button
+              onClick={() => setIsLoginOpen(true)}
+              className="w-full bg-[#ffcc00] text-[#041c32] py-4 rounded-xl font-bold hover:brightness-110 active:scale-95 transition-all shadow-lg"
+            >
               Get Started →
             </button>
             <p className="text-[0.75rem] opacity-50 mt-6 text-center italic">
@@ -178,10 +187,9 @@ const LandingPage = () => {
 
       {/* 4. HOW IT WORKS (Full Screen) */}
       {/* Added min-h-screen and flex alignment */}
-      <section className="relative min-h-screen flex items-center bg-[#1b263b] py-24 overflow-hidden">
-        <div className="absolute inset-0 bg-[#0d1b2a] [clip-path:polygon(0_15%,100%_0,100%_100%,0%_100%)] z-0"></div>
-        
-        <div className="container mx-auto px-6 max-w-6xl relative z-10">
+      <section className="min-h-screen flex items-center py-24 bg-gradient-to-t from-[#071826] via-[#0f2b41] to-[#19344a]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_10%_10%,rgba(255,255,255,0.02),transparent_25%)] pointer-events-none" aria-hidden="true"></div>
+        <div className="container mx-auto px-6 max-w-6xl">
           <div className="text-center mb-16 flex flex-col items-center">
             <SafeImg src={sectionText3} alt="How it works" className="w-full max-w-[300px] md:max-w-[450px] h-auto mb-6" />
             <p className="text-lg opacity-80">Simple, straightforward evaluation process.</p>
@@ -205,6 +213,7 @@ const LandingPage = () => {
         </div>
       </section>
 
+      <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
       <Footer />
     </div>
   );

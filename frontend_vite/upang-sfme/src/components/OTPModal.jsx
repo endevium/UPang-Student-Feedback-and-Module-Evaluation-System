@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import logo from '../assets/navbar-logo.png'
-import studentGroupImg from '../assets/group-student2.png'
+import studentGroupImg from '../assets/group-students.png'
 import SafeImg from './SafeImg'
 import { saveToken, saveUser, saveTokens } from '../utils/auth'
 
@@ -79,6 +79,7 @@ const OTPModal = ({
     setError('')
     setInfo('')
     if (!email) return setError('Please enter an email')
+    const genericSendError = 'Unable to send verification code. Please try again.'
     setIsSending(true)
     try {
       const res = await fetch(`${API_BASE_URL}${sendEndpoint}`, {
@@ -89,10 +90,10 @@ const OTPModal = ({
       const data = await res.json()
       console.log('sendOtp response', res.status, data)
       if (!res.ok) {
-        // Prefer backend-provided message when available to aid debugging
-        const msg = data?.detail || data?.error || data?.message || 'Unable to send verification code. Please try again.'
-        console.error('sendOtp failed', res.status, msg)
-        setError(msg)
+        // Keep details in console but show a single user-friendly message in the modal.
+        const debugMsg = data?.detail || data?.error || data?.message || genericSendError
+        console.error('sendOtp failed', res.status, debugMsg)
+        setError(genericSendError)
         return
       }
 
@@ -102,7 +103,7 @@ const OTPModal = ({
       else setExpiresAt(new Date(Date.now() + (data.ttl_minutes || 5) * 60000).toISOString())
       setInfo('OTP sent. Check your email for the code.')
     } catch  {
-      setError('Network error while sending OTP')
+      setError(genericSendError)
     } finally {
       setIsSending(false)
     }
@@ -185,10 +186,9 @@ const OTPModal = ({
   return (
     <div
       className="fixed inset-0 w-full h-full bg-black/85 flex justify-center items-center z-[9999] backdrop-blur-[5px] p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}
     >
       <div
-        className="font-upang bg-[#23344E] bg-gradient-to-b from-[#28625C] to-[#23344E] w-full max-w-[1100px] max-h-[95vh] rounded-[20px] relative overflow-y-auto lg:overflow-hidden text-white shadow-2xl"
+        className="font-upang bg-[#23344E] bg-gradient-to-b from-[#28625C] to-[#23344E] w-full max-w-[1100px] max-h-[92vh] rounded-[20px] relative overflow-y-auto text-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -199,18 +199,23 @@ const OTPModal = ({
           &times;
         </button>
 
-        <div className="flex flex-col lg:flex-row min-h-[320px] select-none">
-          <div className="hidden lg:flex lg:flex-1 relative bg-transparent items-end justify-center overflow-visible p-12">
+        {/* Use min-h-[420px] and adjust image positioning to match LoginModal */}
+        <div className="flex flex-col lg:flex-row lg:min-h-[420px] select-none">
+          <div className="hidden lg:flex lg:flex-1 relative bg-transparent items-end justify-start overflow-visible pl-8 pr-4 py-8">
             <SafeImg
               src={studentGroupImg}
               alt="Students"
-              className="w-full h-auto z-0 object-contain translate-x-[10%] scale-[1.15]"
+              className="w-full h-auto z-0 object-contain -translate-x-[-3%] translate-y-[-12%] scale-[1.42]"
             />
           </div>
 
           <div className="flex-1 lg:flex-[1.2] p-6 sm:p-10 lg:p-12">
             <div className="flex justify-center lg:justify-start items-center mb-6">
-              <SafeImg src={logo} alt="Logo" className="w-[220px] sm:w-[300px] lg:w-[400px] h-auto" />
+              <SafeImg 
+                src={logo} 
+                alt="Logo" 
+                className="w-[220px] sm:w-[300px] lg:w-[400px] h-auto" 
+              />
             </div>
             <div className="mb-4">
               <h1 className="text-2xl font-black">Verification Code</h1>
@@ -238,6 +243,8 @@ const OTPModal = ({
                     <button type="button" onClick={sendOtp} disabled={isSending} className="flex-1 py-3 bg-[#ffcc00] text-[#041c32] rounded-xl font-black disabled:opacity-70 disabled:cursor-not-allowed">{isSending ? 'SENDING...' : 'SEND CODE'}</button>
                     <button type="button" onClick={() => { setEmail(''); setError(''); }} className="py-3 px-4 border rounded-xl bg-white/5 text-white">Clear</button>
                   </div>
+                  {error && <div className="mt-3 text-sm text-[#ffcc00] font-semibold">{error}</div>}
+                  {info && <div className="mt-3 text-sm text-green-300 font-semibold">{info}</div>}
                 </div>
               ) : (
                 <div>

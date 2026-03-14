@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
-import { Search, ClipboardList, Building2, LogIn, UserRoundCheck, Activity, FileText, Gauge, Clock3, CheckCircle2 } from 'lucide-react';
+import { Search, ClipboardList, Building2, LogIn, UserRoundCheck, Activity, Clock3, CheckCircle2 } from 'lucide-react';
 import { getAccessToken } from '../../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -13,7 +13,7 @@ const detectGroup = (log) => {
 
   if (text.includes('ENROLL')) return 'Enroll';
   if (text.includes('CLASSROOM')) return 'Classroom';
-  if (text.includes('LOGIN') || text.includes('AUTH') || text.includes('OTP') || text.includes('PASSWORD')) return 'Auth';
+  if (text.includes('LOGIN') || text.includes('LOGOUT') || text.includes('AUTH') || text.includes('OTP') || text.includes('PASSWORD') || text.includes('SIGN OUT')) return 'Auth';
   if (text.includes('EVAL') || text.includes('FORM')) return 'Eval';
   return 'System';
 };
@@ -134,8 +134,6 @@ const FacultyAuditLogPage = () => {
       authCount,
       enrollCount,
       totalCount: normalizedLogs.length,
-      evalCount: normalizedLogs.filter((log) => log.group === 'Eval').length,
-      systemCount: normalizedLogs.filter((log) => log.group === 'System').length,
     };
   }, [normalizedLogs]);
 
@@ -158,8 +156,6 @@ const FacultyAuditLogPage = () => {
     { key: 'Classroom', label: 'Classroom', count: stats.classroomCount, icon: Building2 },
     { key: 'Auth', label: 'Auth', count: stats.authCount, icon: LogIn },
     { key: 'Enroll', label: 'Enroll', count: stats.enrollCount, icon: UserRoundCheck },
-    { key: 'Eval', label: 'Eval', count: stats.evalCount, icon: FileText },
-    { key: 'System', label: 'System', count: stats.systemCount, icon: Gauge },
   ]), [stats]);
 
   return (
@@ -190,7 +186,7 @@ const FacultyAuditLogPage = () => {
                   <LogIn size={20} />
                 </div>
                 <div>
-                  <p className="text-slate-600 text-sm">Logins</p>
+                  <p className="text-slate-600 text-sm">Auth</p>
                   <p className="text-4xl leading-none font-bold text-slate-900 mt-1">{stats.authCount}</p>
                 </div>
               </div>

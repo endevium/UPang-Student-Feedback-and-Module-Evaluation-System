@@ -7,6 +7,7 @@ urlpatterns = [
     path("students/archived/", views.ArchivedStudentListView.as_view(), name="student-archived-list"),
     path("students/<int:pk>/", views.StudentDetailView.as_view(), name="student-detail"),
     path("students/login/", views.StudentLoginView.as_view(), name="student-login"),
+    path("students/logout/", views.StudentLogoutView.as_view(), name="student-logout"),
     path("students/change-password/", views.StudentChangePasswordView.as_view(), name="student-change-password"),
     path("students/me/", views.StudentMeView.as_view(), name="student-me"),
 
@@ -15,6 +16,7 @@ urlpatterns = [
     path("faculty/<int:pk>/", views.FacultyDetailView.as_view(), name="faculty-detail"),
     path("faculty/modules/", views.FacultyModulesView.as_view(), name="faculty-modules"),
     path("faculty/login/", views.FacultyLoginView.as_view(), name="faculty-login"),
+    path("faculty/logout/", views.FacultyLogoutView.as_view(), name="faculty-logout"),
     path("faculty/change-password/", views.FacultyChangePasswordView.as_view(), name="faculty-change-password"),
 
     path("department-heads/", views.DepartmentHeadListCreateView.as_view(), name="department-head-list-create"),

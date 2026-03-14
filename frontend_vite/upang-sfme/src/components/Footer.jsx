@@ -7,8 +7,11 @@ const Footer = () => {
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
   return (
-    <footer className="bg-[#050a0f] pt-20 pb-10 border-t border-white/5">
-      <div className="container mx-auto px-6 max-w-6xl">
+    <footer className="pt-16 pb-10 border-t border-white/10 bg-gradient-to-t from-[#061525] via-[#0b2a3f] to-[#0d1b2a]">
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-x-0 top-0 h-16 bg-[linear-gradient(90deg,rgba(255,255,255,0.02),transparent)]"></div>
+      </div>
+      <div className="container mx-auto px-6 max-w-6xl relative z-10">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-16">
           {/* Brand Section */}
           <div>

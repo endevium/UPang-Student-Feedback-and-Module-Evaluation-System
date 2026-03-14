@@ -315,19 +315,23 @@ const FacultyFormsPage = () => {
       <div className="flex flex-1 flex-row relative">
         <Sidebar role="faculty" activeItem="forms" />
 
-        <main className="flex-1 p-8 overflow-y-auto">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-[#0f2f57] tracking-tight">Evaluation Forms</h1>
-              <p className="text-slate-600 mt-2 text-lg">Create and manage evaluation forms for students</p>
+        <main className="flex-1 overflow-y-auto px-6 py-10">
+          <div className="container mx-auto max-w-7xl">
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div>
+                <h1 className="text-3xl font-bold text-[#0f2f57] tracking-tight">Evaluation Forms</h1>
+                <p className="text-slate-600 mt-2 text-lg">Create and manage evaluation forms for students</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAddOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-semibold hover:bg-[#2a5d65] transition-colors"
+              >
+                <Plus size={14} strokeWidth={2.8} />
+                Create Form
+              </button>
             </div>
-            <button
-              onClick={() => setIsAddOpen(true)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#1f474d] text-white rounded-lg font-semibold text-sm hover:bg-[#2a5d65] transition-colors"
-            >
-              <Plus size={18} /> Create new Form
-            </button>
-          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
             {[
@@ -441,6 +445,7 @@ const FacultyFormsPage = () => {
                 Duplicate existing forms to create variations quickly
               </li>
             </ul>
+          </div>
           </div>
         </main>
       </div>
