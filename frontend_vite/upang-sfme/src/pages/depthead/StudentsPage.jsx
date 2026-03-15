@@ -241,11 +241,93 @@ const StudentsManagement = () => {
       }
 
       const list = Array.isArray(data) ? data : [];
-      setStudentData(list.map(mapStudent));
+      const mapped = list.map(mapStudent);
+      setStudentData(mapped);
+      // compute completion stats after setting base student list
+      computeCompletionStats(mapped);
     } catch {
       setLoadError('Unable to reach the server. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const computeCompletionStats = async (studentsList) => {
+    try {
+      const token = getToken();
+      const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      // fetch module and instructor forms
+      const [mefRes, iefRes, subsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/module-evaluation-forms/`, { headers }),
+        fetch(`${API_BASE_URL}/instructor-evaluation-forms/`, { headers }),
+        fetch(`${API_BASE_URL}/feedback/submissions/`, { headers }),
+      ]);
+
+      const mefList = mefRes.ok ? await mefRes.json().catch(() => []) : [];
+      const iefList = iefRes.ok ? await iefRes.json().catch(() => []) : [];
+      const subsList = subsRes.ok ? await subsRes.json().catch(() => []) : [];
+
+      const mefById = new Map();
+      (Array.isArray(mefList) ? mefList : mefList.results || []).forEach(f => mefById.set(String(f.id), f));
+      const iefById = new Map();
+      (Array.isArray(iefList) ? iefList : iefList.results || []).forEach(f => iefById.set(String(f.id), f));
+
+      // studentId -> classroomId -> { module: bool, instructor: bool }
+      const studentMap = new Map();
+
+      const responses = Array.isArray(subsList) ? subsList : subsList.results || [];
+      for (const r of responses) {
+        const studentId = r?.student || r?.student_id || (r.student && (r.student.id || r.student.pk));
+        if (!studentId) continue;
+
+        // resolve form id
+        const formId = r.form_object_id ?? r.form_id ?? (r.form && (r.form.id || r.form)) ?? null;
+        if (!formId) continue;
+        const fid = String(formId);
+
+        let classroomId = null;
+        let type = null;
+        if (mefById.has(fid)) {
+          type = 'module';
+          classroomId = mefById.get(fid)?.classroom ?? mefById.get(fid)?.classroom_id ?? null;
+        } else if (iefById.has(fid)) {
+          type = 'instructor';
+          classroomId = iefById.get(fid)?.classroom ?? iefById.get(fid)?.classroom_id ?? null;
+        } else if (r.form && typeof r.form === 'object' && (r.form.classroom || r.form.classroom_id)) {
+          classroomId = r.form.classroom ?? r.form.classroom_id ?? null;
+          // best-effort: if title/instructor present assume instructor form else module
+          type = r.form.instructor_name ? 'instructor' : 'module';
+        }
+        if (!classroomId) continue;
+
+        const sid = String(studentId);
+        if (!studentMap.has(sid)) studentMap.set(sid, new Map());
+        const clsMap = studentMap.get(sid);
+        const cid = String(classroomId);
+        if (!clsMap.has(cid)) clsMap.set(cid, { module: false, instructor: false });
+        const cur = clsMap.get(cid);
+        if (type === 'module') cur.module = true;
+        if (type === 'instructor') cur.instructor = true;
+        clsMap.set(cid, cur);
+      }
+
+      // compute completed/pending per student
+      const updated = studentsList.map(s => {
+        const sid = String(s.pk || s.id || s.student_number || '');
+        const clsMap = studentMap.get(sid) || new Map();
+        let completedCount = 0;
+        for (const [, val] of clsMap.entries()) {
+          if (val.module && val.instructor) completedCount += 1;
+        }
+        const totalModules = Number(s.modules || 0) || 0;
+        const pendingCount = Math.max(0, totalModules - completedCount);
+        return { ...s, completed: completedCount, pending: pendingCount };
+      });
+
+      setStudentData(updated);
+    } catch (err) {
+      console.error('Failed to compute completion stats', err);
     }
   };
 
@@ -291,7 +373,9 @@ const StudentsManagement = () => {
       }
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
-      setArchivedStudents(list.map(mapStudent));
+      const mapped = list.map(mapStudent);
+      setArchivedStudents(mapped);
+      computeCompletionStats(mapped);
     } catch {
       setArchiveError('Unable to reach the server.');
       setArchivedStudents([]);

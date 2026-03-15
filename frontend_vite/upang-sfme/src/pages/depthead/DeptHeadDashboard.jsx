@@ -153,21 +153,14 @@ const DeptHeadDashboard = () => {
         <main className="flex-1 overflow-y-auto">
           
           {/* TOP WELCOME SECTION */}
-          <section className="bg-white border-b border-slate-200 py-10">
+          <section className="border-b border-slate-200 py-10">
             <div className="container mx-auto px-8 max-w-7xl w-full">
               <div className="flex flex-col md:flex-row justify-between items-center gap-6">
                 <div>
                   <h1 className="text-4xl font-bold text-[#1f2937] tracking-tight">Department Overview</h1>
-                  <p className="text-slate-500 mt-1">{deptHeadInfo.name} • {deptHeadInfo.department} Head</p>
+                  <p className="text-slate-500 mt-1">{deptHeadInfo.name}{deptHeadInfo.department ? ` • ${deptHeadInfo.department}` : ''}</p>
                 </div>
-                <div className="flex gap-3">
-                  <button onClick={() => handleNavigation('/dept-head/reports?download=1')} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
-                    Download Report
-                  </button>
-                  <button onClick={() => handleNavigation('/dept-head/analytics')} className="inline-flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-semibold hover:bg-[#18393e] transition-all shadow-lg shadow-teal-100">
-                    Generate Analytics
-                  </button>
-                </div>
+                {/* header actions removed as requested */}
               </div>
             </div>
           </section>
