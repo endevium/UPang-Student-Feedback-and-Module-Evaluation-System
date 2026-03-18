@@ -18,11 +18,19 @@ const formatLogDate = (value) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return 'Unknown time';
 
-  return parsed.toLocaleDateString('en-US', {
+  const dateStr = parsed.toLocaleDateString('en-US', {
     month: 'long',
     day: '2-digit',
     year: 'numeric',
   });
+
+  const timeStr = parsed.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  return `${dateStr} ${timeStr}`;
 };
 
 const LEGACY_EVALUATION_MESSAGE_RE = /Student submitted\s+(module|instructor)\s+evaluation feedback\s+\(form_id:\s*([^)]+)\)/i;

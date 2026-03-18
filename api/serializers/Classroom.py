@@ -82,6 +82,20 @@ class ClassroomSerializer(serializers.ModelSerializer):
             )
         attrs["program"] = prog.program_code 
 
+        # Prevent duplicate classroom assignments for the same faculty + subject + block.
+        # Different sections/blocks are allowed.
+        duplicate_qs = Classroom.objects.filter(
+            faculty=faculty,
+            subject_code__iexact=subject_code,
+            block__iexact=block,
+        )
+        if self.instance is not None:
+            duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
+        if duplicate_qs.exists():
+            raise serializers.ValidationError(
+                "You already have a classroom with this subject code and block/section."
+            )
+
         return super().validate(attrs)
 
     def create(self, validated_data):

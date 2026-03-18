@@ -5,7 +5,6 @@ import {
   FileText,
   CheckCircle,
   FileEdit,
-  BarChart3,
   Search,
   Eye,
   Edit3,
@@ -308,7 +307,6 @@ const FacultyFormsPage = () => {
   const totalForms = formsList.length;
   const activeForms = formsList.filter((f) => f.status === 'Active').length;
   const draftForms = formsList.filter((f) => f.status === 'Draft').length;
-  const totalUsage = formsList.reduce((sum, f) => sum + (f.usage_count || 0), 0);
 
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-800 bg-slate-50 flex flex-col">
@@ -333,12 +331,11 @@ const FacultyFormsPage = () => {
               </button>
             </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
             {[
               { label: 'Total Forms', value: totalForms, icon: <FileText className="text-[#1f474d]" size={24} />, sub: 'All evaluation forms' },
               { label: 'Active Forms', value: activeForms, icon: <CheckCircle className="text-[#1f474d]" size={24} />, sub: 'Currently in use' },
-              { label: 'Draft Forms', value: draftForms, icon: <FileEdit className="text-[#1f474d]" size={24} />, sub: 'Not yet published' },
-              { label: 'Total Usage', value: totalUsage, icon: <BarChart3 className="text-[#1f474d]" size={24} />, sub: 'Times used' }
+              { label: 'Draft Forms', value: draftForms, icon: <FileEdit className="text-[#1f474d]" size={24} />, sub: 'Not yet published' }
             ].map((stat, i) => (
               <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300">
                 <div className="flex justify-between items-start mb-4">
@@ -384,7 +381,6 @@ const FacultyFormsPage = () => {
                     </div>
                     <p className="text-sm text-slate-500 mb-3">{getFormDescription(form) || 'No description provided.'}</p>
                     <div className="flex flex-wrap gap-4 text-[11px] font-bold text-slate-400 uppercase tracking-tight">
-                      <span className="flex items-center gap-1.5"><BarChart3 size={14} className="text-blue-400" /> Used {form.usage_count || 0} times</span>
                       <span className="flex items-center gap-1.5"><FileEdit size={14} className="text-purple-400" /> Created {form.created_at ? new Date(form.created_at).toLocaleDateString() : 'N/A'}</span>
                     </div>
                   </div>
@@ -543,9 +539,6 @@ const FacultyFormsPage = () => {
                 <h3 className="text-lg font-black text-slate-800">Preview: {getFormCode(selectedForm)}</h3>
                 <p className="text-sm text-slate-400">Form details and configuration</p>
               </div>
-              <button className="text-slate-400 hover:text-slate-700 text-2xl" onClick={closeModal}>
-                &times;
-              </button>
             </div>
 
             <div className="p-6 space-y-4">
@@ -571,14 +564,6 @@ const FacultyFormsPage = () => {
                 <div className="md:col-span-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Subject Description</label>
                   <p className="mt-2 text-sm text-slate-800">{getFormDescription(selectedForm) || 'No description provided'}</p>
-                </div>
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Questions</label>
-                  <p className="mt-2 text-sm text-slate-800">{selectedForm.questions_count || 0} questions</p>
-                </div>
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Usage</label>
-                  <p className="mt-2 text-sm text-slate-800">Used {selectedForm.usage_count || 0} times</p>
                 </div>
               </div>
 

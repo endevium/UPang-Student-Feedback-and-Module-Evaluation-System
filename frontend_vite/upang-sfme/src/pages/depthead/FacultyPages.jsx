@@ -17,9 +17,45 @@ const normalizePersonStatus = (value) => {
   return normalized === 'archived' ? 'Archived' : 'Active';
 };
 
-const toValidRating = (rawRating) => {
+const getQuestionScale = (questionIdRaw) => {
+  const questionId = String(questionIdRaw || '').trim().toLowerCase();
+
+  // Current student questionnaire:
+  // - learn_* uses 1..4 scale
+  // - overall_* uses 1..10 scale
+  if (questionId.startsWith('learn_')) return { min: 1, max: 4 };
+  if (questionId === 'overall_instructor' || questionId === 'overall_modules') return { min: 1, max: 10 };
+
+  // Legacy 5-point forms.
+  if (
+    questionId.startsWith('inst_') ||
+    questionId.startsWith('content_') ||
+    questionId.startsWith('assess_') ||
+    questionId.startsWith('env_') ||
+    questionId.startsWith('comp_') ||
+    questionId.startsWith('method_') ||
+    questionId.startsWith('engage_') ||
+    questionId.startsWith('feedback_') ||
+    questionId.startsWith('prof_') ||
+    questionId === 'overall_rating' ||
+    questionId === 'overall_recommend'
+  ) {
+    return { min: 1, max: 5 };
+  }
+
+  return null;
+};
+
+const toNormalizedFivePointRating = (rawRating, questionIdRaw) => {
   const rating = Number(rawRating);
-  return Number.isFinite(rating) && rating >= 1 ? rating : null;
+  if (!Number.isFinite(rating)) return null;
+
+  const scale = getQuestionScale(questionIdRaw);
+  if (!scale) return null;
+  if (rating < scale.min || rating > scale.max) return null;
+
+  if (scale.min === 1 && scale.max === 5) return rating;
+  return 1 + ((rating - scale.min) * 4) / (scale.max - scale.min);
 };
 
 const extractList = (payload) => {
@@ -222,7 +258,8 @@ const FacultyPages = () => {
 
         const respList = Array.isArray(submission?.responses) ? submission.responses : [];
         for (const item of respList) {
-          const rv = toValidRating(item?.rating);
+          const questionId = item?.question || item?.question_code || item?.question_id;
+          const rv = toNormalizedFivePointRating(item?.rating, questionId);
           if (rv === null) continue;
           statsBucket.ratingSum += rv;
           statsBucket.ratingCount += 1;
@@ -246,12 +283,13 @@ const FacultyPages = () => {
 
             const respList = Array.isArray(submission?.responses) ? submission.responses : [];
             for (const item of respList) {
-              const rv = toValidRating(item?.rating);
+              const questionId = item?.question || item?.question_code || item?.question_id;
+              const rv = toNormalizedFivePointRating(item?.rating, questionId);
               if (rv === null) continue;
 
-              if (rv >= 5) ratingBreakdown.very_good += 1;
-              else if (rv >= 4) ratingBreakdown.good += 1;
-              else if (rv >= 3) ratingBreakdown.fair += 1;
+              if (rv >= 4.5) ratingBreakdown.very_good += 1;
+              else if (rv >= 3.5) ratingBreakdown.good += 1;
+              else if (rv >= 2.5) ratingBreakdown.fair += 1;
               else ratingBreakdown.poor += 1;
             }
           }
@@ -259,10 +297,10 @@ const FacultyPages = () => {
 
         const ratingTotal = ratingBreakdown.very_good + ratingBreakdown.good + ratingBreakdown.fair + ratingBreakdown.poor;
         const distribution = [
-          { key: 'very_good', label: 'Very Good (5)', color: 'bg-emerald-500' },
-          { key: 'good', label: 'Good (4)', color: 'bg-blue-500' },
-          { key: 'fair', label: 'Fair (3)', color: 'bg-amber-500' },
-          { key: 'poor', label: 'Poor (1-2)', color: 'bg-red-500' },
+          { key: 'very_good', label: 'Very Good (>=4.5)', color: 'bg-emerald-500' },
+          { key: 'good', label: 'Good (3.5-4.49)', color: 'bg-blue-500' },
+          { key: 'fair', label: 'Fair (2.5-3.49)', color: 'bg-amber-500' },
+          { key: 'poor', label: 'Poor (<2.5)', color: 'bg-red-500' },
         ].map((item) => ({
           ...item,
           count: ratingBreakdown[item.key],
@@ -330,10 +368,10 @@ const FacultyPages = () => {
           evaluations: insight.evaluations ?? localRow?.evaluations ?? 0,
           rating: insight.rating ?? localRow?.rating ?? 0,
           ratingDistribution: insight.ratingDistribution || [
-            { key: 'very_good', label: 'Very Good (5)', color: 'bg-emerald-500', count: 0, percent: 0 },
-            { key: 'good', label: 'Good (4)', color: 'bg-blue-500', count: 0, percent: 0 },
-            { key: 'fair', label: 'Fair (3)', color: 'bg-amber-500', count: 0, percent: 0 },
-            { key: 'poor', label: 'Poor (1-2)', color: 'bg-red-500', count: 0, percent: 0 },
+            { key: 'very_good', label: 'Very Good (>=4.5)', color: 'bg-emerald-500', count: 0, percent: 0 },
+            { key: 'good', label: 'Good (3.5-4.49)', color: 'bg-blue-500', count: 0, percent: 0 },
+            { key: 'fair', label: 'Fair (2.5-3.49)', color: 'bg-amber-500', count: 0, percent: 0 },
+            { key: 'poor', label: 'Poor (<2.5)', color: 'bg-red-500', count: 0, percent: 0 },
           ],
         },
       });
@@ -585,6 +623,56 @@ const FacultyPages = () => {
     link.click();
   };
 
+  // Export current faculty table to CSV
+  const exportToCSV = (rows, headers, filename = 'faculty-list.csv') => {
+    if (!rows || rows.length === 0) {
+      window.alert('No records to export.');
+      return;
+    }
+
+    const escape = (value) => {
+      if (value === null || value === undefined) return '';
+      const s = String(value).replace(/\r?\n/g, ' ');
+      if (s.includes('"')) return '"' + s.replace(/"/g, '""') + '"';
+      if (s.includes(',') || s.includes('\n')) return '"' + s + '"';
+      return s;
+    };
+
+    const lines = [headers.join(',')];
+    for (const r of rows) {
+      const row = [
+        r.id || '',
+        r.name || '',
+        r.title || '',
+        r.dept || '',
+        r.modules ?? '',
+        r.students ?? '',
+        r.evaluations ?? '',
+        r.rating ?? '',
+        r.status || '',
+      ].map(escape).join(',');
+      lines.push(row);
+    }
+
+    const csv = lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportFaculty = () => {
+    const rows = tableFaculty;
+    const headers = ['Faculty ID','Name','Title','Department','Modules','Students','Evaluations','Rating','Status'];
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    exportToCSV(rows, headers, `faculty-list_${stamp}.csv`);
+  };
+
   const handleBulkImport = async (file) => {
     if (!file) return;
 
@@ -761,7 +849,7 @@ const FacultyPages = () => {
                 >
                   📁 Bulk Import
                 </button>
-                <button className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
+                <button onClick={handleExportFaculty} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
                   <Download size={16} /> Export List
                 </button>
               </div>
@@ -1184,7 +1272,7 @@ const FacultyPages = () => {
               <div>
                 <h4 className="text-xl font-bold text-slate-900 mb-3">Overall Rating</h4>
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 flex items-center justify-between">
-                  <p className="text-sm text-slate-500">Calculated from all rated items</p>
+                  <p className="text-sm text-slate-500">Calculated from all rated items (normalized to 5-point)</p>
                   <div className="text-right">
                     <p className="text-3xl font-black text-slate-900">{Number(selectedFaculty.metrics?.rating || 0).toFixed(1)}</p>
                     <p className="text-sm text-slate-500">average rating</p>

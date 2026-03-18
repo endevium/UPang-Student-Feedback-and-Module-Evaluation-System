@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Download } from 'lucide-react';
@@ -8,6 +8,9 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
 const getRatingCategoryFromQuestionId = (questionIdRaw) => {
   const questionId = String(questionIdRaw || '').trim().toLowerCase();
   if (!questionId) return null;
+
+  if (questionId.startsWith('learn_')) return 'Learning Experience';
+  if (questionId === 'overall_modules') return 'Overall Rating';
 
   if (questionId.startsWith('inst_')) return 'Instructor Effectiveness';
   if (questionId.startsWith('content_')) return 'Course Content & Materials';
@@ -23,6 +26,84 @@ const getRatingCategoryFromQuestionId = (questionIdRaw) => {
   if (questionId === 'overall_recommend') return 'Overall Rating';
 
   return null;
+};
+
+const getQuestionScale = (questionIdRaw) => {
+  const questionId = String(questionIdRaw || '').trim().toLowerCase();
+
+  // Current student questionnaire:
+  // - learn_* uses 1..4 scale
+  // - overall_* uses 1..10 scale
+  if (questionId.startsWith('learn_')) return { min: 1, max: 4 };
+  if (questionId === 'overall_instructor' || questionId === 'overall_modules') return { min: 1, max: 10 };
+
+  // Backward-compatible defaults for legacy forms.
+  if (
+    questionId.startsWith('inst_') ||
+    questionId.startsWith('content_') ||
+    questionId.startsWith('assess_') ||
+    questionId.startsWith('env_') ||
+    questionId.startsWith('comp_') ||
+    questionId.startsWith('method_') ||
+    questionId.startsWith('engage_') ||
+    questionId.startsWith('feedback_') ||
+    questionId.startsWith('prof_') ||
+    questionId === 'overall_rating' ||
+    questionId === 'overall_recommend'
+  ) {
+    return { min: 1, max: 5 };
+  }
+
+  return null;
+};
+
+const toNormalizedFivePointRating = (rawRating, questionIdRaw) => {
+  const rating = Number(rawRating);
+  if (!Number.isFinite(rating)) return null;
+
+  const scale = getQuestionScale(questionIdRaw);
+  if (!scale) return null;
+  if (rating < scale.min || rating > scale.max) return null;
+
+  if (scale.min === 1 && scale.max === 5) return rating;
+
+  // Normalize every supported question scale to 1..5 for fair aggregation.
+  return 1 + ((rating - scale.min) * 4) / (scale.max - scale.min);
+};
+
+const clampFivePoint = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(5, Math.max(1, n));
+};
+
+const isModuleEvaluationQuestion = (questionIdRaw) => {
+  const questionId = String(questionIdRaw || '').toLowerCase().trim();
+  return questionId.startsWith('learn_') || questionId === 'overall_modules';
+};
+
+const normalizeModuleText = (value) => String(value || '')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const extractModuleCode = (value) => {
+  const normalized = String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  // Matches common course code formats like ITE293, CS 101, IT-201
+  const match = normalized.match(/\b([A-Z]{2,}(?:[- ]?\d{2,}[A-Z]?))\b/);
+  if (!match) return '';
+  return match[1].replace(/[- ]/g, '');
+};
+
+const toModuleAggregateKey = (item) => {
+  const explicitCode = extractModuleCode(item?.module_code);
+  if (explicitCode) return `code:${explicitCode}`;
+
+  const inferredCode = extractModuleCode(item?.module);
+  if (inferredCode) return `code:${inferredCode}`;
+
+  const normalizedName = normalizeModuleText(item?.module);
+  return `name:${normalizedName}`;
 };
 
 const getTokenFromStorage = () => sessionStorage.getItem('authAccessToken') || sessionStorage.getItem('authToken') || localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || null;
@@ -89,10 +170,26 @@ const parseAiRecommendationSections = (rawText) => {
     : [];
 };
 
-// Some text/comment responses are stored with rating=0; treat only >=1 as real scored answers.
-const toValidRating = (rawRating) => {
-  const rating = Number(rawRating);
-  return Number.isFinite(rating) && rating >= 1 ? rating : null;
+const csvEscape = (value) => {
+  const str = String(value ?? '');
+  if (/[",\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
+const buildCsv = (rows) => rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+
+const downloadTextFile = (filename, content, mimeType = 'text/plain;charset=utf-8') => {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };
 
 const ReportsPage = () => {
@@ -203,42 +300,37 @@ const ReportsPage = () => {
         }
 
         // Aggregate
-        let totalResponses = 0;
+        let formsWithResponses = 0;
         let totalRatingSum = 0;
         let totalRatingCount = 0;
-        let satisfactoryCount = 0;
-        const overallCategoryAccumulator = new Map();
+        let satisfactoryRatingCount = 0;
         const completedList = ctResponses.map(({form, responses}) => {
-          // compute average rating for this form
-          let sum = 0, cnt = 0;
+          // compute average rating for this form using module questions only
+          let moduleSum = 0, moduleCnt = 0;
+          
           const comments = [];
           const categoryAccumulator = new Map();
           const ratingBreakdown = { very_good: 0, good: 0, fair: 0, poor: 0 };
           for (const r of responses) {
             const respList = Array.isArray(r.responses) ? r.responses : [];
             for (const it of respList) {
-              const rv = toValidRating(it.rating);
-              if (rv !== null) {
-                sum += rv;
-                cnt += 1;
+              const questionId = it?.question || it?.question_code || it?.question_id;
+              const rv = toNormalizedFivePointRating(it?.rating, questionId);
+              if (rv !== null && isModuleEvaluationQuestion(questionId)) {
+                moduleSum += rv;
+                moduleCnt += 1;
 
-                if (rv >= 5) ratingBreakdown.very_good += 1;
-                else if (rv >= 4) ratingBreakdown.good += 1;
-                else if (rv >= 3) ratingBreakdown.fair += 1;
+                if (rv >= 4.5) ratingBreakdown.very_good += 1;
+                else if (rv >= 3.5) ratingBreakdown.good += 1;
+                else if (rv >= 2.5) ratingBreakdown.fair += 1;
                 else ratingBreakdown.poor += 1;
 
-                const questionId = it?.question || it?.question_code || it?.question_id;
                 const category = getRatingCategoryFromQuestionId(questionId);
                 if (category) {
                   const prev = categoryAccumulator.get(category) || { sum: 0, count: 0 };
                   prev.sum += rv;
                   prev.count += 1;
                   categoryAccumulator.set(category, prev);
-
-                  const overallPrev = overallCategoryAccumulator.get(category) || { sum: 0, count: 0 };
-                  overallPrev.sum += rv;
-                  overallPrev.count += 1;
-                  overallCategoryAccumulator.set(category, overallPrev);
                 }
               }
 
@@ -250,27 +342,108 @@ const ReportsPage = () => {
           const category_rates = Array.from(categoryAccumulator.entries())
             .map(([name, v]) => ({
               name,
-              rating: v.count > 0 ? Number((v.sum / v.count).toFixed(2)) : 0,
+              rating: v.count > 0 ? Number(clampFivePoint(v.sum / v.count).toFixed(2)) : 0,
             }))
             .sort((a, b) => b.rating - a.rating);
 
-          const avg = cnt > 0 ? sum / cnt : null;
-          totalResponses += responses.length;
-          totalRatingSum += sum;
-          totalRatingCount += cnt;
-          if (avg !== null && avg >= 4) satisfactoryCount += 1;
+          const category_raw = Array.from(categoryAccumulator.entries()).map(([name, v]) => ({
+            name,
+            sum: v.sum,
+            count: v.count,
+          }));
+
+          const avg = moduleCnt > 0 ? clampFivePoint(moduleSum / moduleCnt) : null;
+          
+          if (responses.length > 0) formsWithResponses += 1;
+          totalRatingSum += moduleSum;
+          totalRatingCount += moduleCnt;
+          satisfactoryRatingCount += responses.reduce((acc, response) => {
+            const respList = Array.isArray(response.responses) ? response.responses : [];
+            return acc + respList.filter((item) => {
+              const questionId = item?.question || item?.question_code || item?.question_id;
+              const rv = toNormalizedFivePointRating(item?.rating, questionId);
+              return rv !== null && isModuleEvaluationQuestion(questionId) && rv >= 4;
+            }).length;
+          }, 0);
           return {
             id: form.id,
             module: form.title || form.subject_code || `Form ${form.id}`,
+            module_code: form.subject_code || form.classroom_code || '',
             description: form.subject_description || form.description || '',
             created_at: form.created_at,
             responses_count: responses.length,
             average_rating: avg,
             rating_breakdown: ratingBreakdown,
             category_rates,
+            category_raw,
+            module_rating_sum: moduleSum,
+            module_rating_count: moduleCnt,
             comments: comments.slice(0, 8),
           };
         });
+
+        const moduleAggregateMap = new Map();
+        completedList.forEach((item) => {
+          const key = toModuleAggregateKey(item);
+          const existing = moduleAggregateMap.get(key);
+
+          if (!existing) {
+            moduleAggregateMap.set(key, {
+              ...item,
+              created_at: item.created_at || null,
+              module_rating_sum: item.module_rating_sum || 0,
+              module_rating_count: item.module_rating_count || 0,
+              rating_breakdown: { ...item.rating_breakdown },
+              category_raw: Array.isArray(item.category_raw) ? [...item.category_raw] : [],
+              comments: Array.isArray(item.comments) ? [...item.comments] : [],
+            });
+            return;
+          }
+
+          existing.responses_count += item.responses_count || 0;
+          existing.module_rating_sum += item.module_rating_sum || 0;
+          existing.module_rating_count += item.module_rating_count || 0;
+          existing.average_rating = existing.module_rating_count > 0
+            ? clampFivePoint(existing.module_rating_sum / existing.module_rating_count)
+            : null;
+
+          if (!existing.created_at || (item.created_at && new Date(item.created_at) > new Date(existing.created_at))) {
+            existing.created_at = item.created_at;
+          }
+
+          existing.rating_breakdown.very_good += item.rating_breakdown?.very_good || 0;
+          existing.rating_breakdown.good += item.rating_breakdown?.good || 0;
+          existing.rating_breakdown.fair += item.rating_breakdown?.fair || 0;
+          existing.rating_breakdown.poor += item.rating_breakdown?.poor || 0;
+
+          const catMap = new Map();
+          (existing.category_raw || []).forEach((c) => {
+            catMap.set(c.name, { sum: c.sum || 0, count: c.count || 0 });
+          });
+          (item.category_raw || []).forEach((c) => {
+            const prev = catMap.get(c.name) || { sum: 0, count: 0 };
+            prev.sum += c.sum || 0;
+            prev.count += c.count || 0;
+            catMap.set(c.name, prev);
+          });
+          existing.category_raw = Array.from(catMap.entries()).map(([name, v]) => ({ name, sum: v.sum, count: v.count }));
+          existing.category_rates = existing.category_raw
+            .map((c) => ({
+              name: c.name,
+              rating: c.count > 0 ? Number(clampFivePoint(c.sum / c.count).toFixed(2)) : 0,
+            }))
+            .sort((a, b) => b.rating - a.rating);
+
+          const combinedComments = [...(existing.comments || []), ...(item.comments || [])];
+          existing.comments = Array.from(new Set(combinedComments)).slice(0, 8);
+        });
+
+        const combinedCompletedList = Array.from(moduleAggregateMap.values()).map((item) => ({
+          ...item,
+          average_rating: item.module_rating_count > 0
+            ? clampFivePoint(item.module_rating_sum / item.module_rating_count)
+            : null,
+        }));
 
         // compute distribution of ratings across all responses
         const ratingBuckets = { very_good: 0, good: 0, fair: 0, poor: 0 };
@@ -278,11 +451,12 @@ const ReportsPage = () => {
           for (const r of responses) {
             const respList = Array.isArray(r.responses) ? r.responses : [];
             for (const it of respList) {
-              const rv = toValidRating(it.rating);
+              const questionId = it?.question || it?.question_code || it?.question_id;
+              const rv = toNormalizedFivePointRating(it?.rating, questionId);
               if (rv === null) continue;
-              if (rv >= 5) ratingBuckets.very_good += 1;
-              else if (rv >= 4) ratingBuckets.good += 1;
-              else if (rv >= 3) ratingBuckets.fair += 1;
+              if (rv >= 4.5) ratingBuckets.very_good += 1;
+              else if (rv >= 3.5) ratingBuckets.good += 1;
+              else if (rv >= 2.5) ratingBuckets.fair += 1;
               else ratingBuckets.poor += 1;
             }
           }
@@ -297,14 +471,20 @@ const ReportsPage = () => {
         ];
 
         // evaluation trend: last 5 forms by created_at with responses_count
-        const trend = completedList.slice().sort((a,b) => new Date(a.created_at) - new Date(b.created_at)).slice(-5).map((f) => ({ name: f.module, completion: f.responses_count }));
+        const trend = combinedCompletedList
+          .slice()
+          .sort((a,b) => new Date(a.created_at) - new Date(b.created_at))
+          .slice(-5)
+          .map((f) => ({ name: f.module, completion: f.responses_count }));
 
-        setCompletedEvaluationsData(completedList);
+        setCompletedEvaluationsData(combinedCompletedList);
         setStats({
           totalEvaluations: forms.length,
-          averageRating: totalRatingCount > 0 ? (totalRatingSum / totalRatingCount).toFixed(2) : null,
-          responseRate: forms.length ? Math.round((totalResponses / (forms.length || 1)) * 100) : 0,
-          satisfactoryRate: forms.length ? Math.round((satisfactoryCount / (forms.length || 1)) * 100) : 0,
+          averageRating: totalRatingCount > 0 ? clampFivePoint(totalRatingSum / totalRatingCount).toFixed(2) : null,
+          // Percent of evaluation forms that have at least one submission.
+          responseRate: forms.length ? Math.round((formsWithResponses / forms.length) * 100) : 0,
+          // Percent of rated answers that are 4 or 5.
+          satisfactoryRate: totalRatingCount ? Math.round((satisfactoryRatingCount / totalRatingCount) * 100) : 0,
         });
         setEvaluationTrend(trend);
         setRatingDistribution(dist);
@@ -317,16 +497,6 @@ const ReportsPage = () => {
 
     fetchData();
   }, []);
-  // derive lists for UI from loaded data
-  const recommendations = useMemo(() => (
-    completedEvaluationsData
-      .slice()
-      .sort((a, b) => (a.average_rating || 0) - (b.average_rating || 0))
-      .filter((m) => m.average_rating !== null)
-      .slice(0, 5)
-      .map((p) => ({ title: `Review ${p.module}`, description: `Consider targeted actions for ${p.module} (average rating ${p.average_rating || 0}).` }))
-  ), [completedEvaluationsData]);
-
   const handleShowModuleInsights = async (moduleMeta) => {
     const moduleId = String(moduleMeta.id);
 
@@ -476,6 +646,80 @@ const ReportsPage = () => {
     }
   };
 
+  const handleExportReport = () => {
+    const now = new Date();
+    const stamp = now.toISOString().replace(/[:.]/g, '-');
+    const today = now.toLocaleString();
+
+    const rows = [];
+
+    rows.push(['UPang SFME Reports Export']);
+    rows.push(['Generated At', today]);
+    rows.push([]);
+
+    rows.push(['Summary']);
+    rows.push(['Total Evaluation Forms', stats.totalEvaluations]);
+    rows.push(['Average Rating', stats.averageRating ?? '-']);
+    rows.push(['Response Rate (%)', `${stats.responseRate}%`]);
+    rows.push(['Satisfactory Rate (%)', `${stats.satisfactoryRate}%`]);
+    rows.push([]);
+
+    rows.push(['Evaluation Completion Trend']);
+    rows.push(['Module', 'Completion']);
+    evaluationTrend.forEach((item) => {
+      rows.push([item?.name || '', item?.completion ?? 0]);
+    });
+    rows.push([]);
+
+    rows.push(['Rating Distribution']);
+    rows.push(['Category', 'Percent']);
+    ratingDistribution.forEach((item) => {
+      rows.push([item?.name || '', `${item?.value ?? 0}%`]);
+    });
+    rows.push([]);
+
+    rows.push(['Evaluations']);
+    rows.push([
+      'Module',
+      'Module Code',
+      'Description',
+      'Created At',
+      'Responses',
+      'Average Rating',
+      'Very Good',
+      'Good',
+      'Fair',
+      'Poor',
+      'Category Ratings',
+      'Comments',
+    ]);
+
+    completedEvaluationsData.forEach((ev) => {
+      const categoryRatings = Array.isArray(ev?.category_rates)
+        ? ev.category_rates.map((c) => `${c.name}: ${Number(c.rating || 0).toFixed(2)}`).join(' | ')
+        : '';
+      const comments = Array.isArray(ev?.comments) ? ev.comments.join(' | ') : '';
+
+      rows.push([
+        ev?.module || '',
+        ev?.module_code || '',
+        ev?.description || '',
+        ev?.created_at ? new Date(ev.created_at).toLocaleString() : '',
+        ev?.responses_count ?? 0,
+        ev?.average_rating != null ? Number(ev.average_rating).toFixed(2) : '-',
+        ev?.rating_breakdown?.very_good ?? 0,
+        ev?.rating_breakdown?.good ?? 0,
+        ev?.rating_breakdown?.fair ?? 0,
+        ev?.rating_breakdown?.poor ?? 0,
+        categoryRatings,
+        comments,
+      ]);
+    });
+
+    const csv = buildCsv(rows);
+    downloadTextFile(`reports-analytics-${stamp}.csv`, csv, 'text/csv;charset=utf-8');
+  };
+
   return (
     <div className="min-h-screen w-full font-['Optima-Medium','Optima','Candara','sans-serif'] text-slate-900 bg-slate-50 overflow-x-hidden flex flex-col lg:flex-row">
       <Sidebar role="depthead" activeItem="reports" />
@@ -488,9 +732,14 @@ const ReportsPage = () => {
               <h1 className="text-4xl font-bold text-[#1f2937]">Reports & Analytics</h1>
               <p className="text-slate-500 mt-1">Comprehensive evaluation insights and trends</p>
             </div>
-            <button className="inline-flex items-center gap-2 px-4 py-2 bg-[#1f474d] text-white rounded-lg text-sm font-semibold hover:bg-[#18393e] transition-all">
-              <Download className="w-4 h-4" />
-              Export Report
+            <button
+              type="button"
+              onClick={handleExportReport}
+              disabled={isLoading || completedEvaluationsData.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download size={16} />
+              {isLoading ? 'Preparing...' : 'Export Report'}
             </button>
           </div>
 
@@ -510,12 +759,12 @@ const ReportsPage = () => {
             <StatCard 
               label="Response Rate" 
               value={isLoading ? '…' : `${stats.responseRate}%`} 
-              unit="avg responses per form"
+              unit="% forms with at least 1 response"
               color="bg-orange-500"
             />
             <StatCard 
               label="Satisfactory Rate" 
-              unit="% forms >= 4.0"
+              unit="% ratings >= 4.0 (normalized to 5.0)"
               value={isLoading ? '…' : `${stats.satisfactoryRate}%`} 
               color="bg-slate-400"
             />
@@ -657,10 +906,10 @@ const ReportsPage = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-700 mb-3">
                           <p>Average Rating: <span className="font-semibold">{aggregate?.average_rating ?? '-'}</span></p>
                           <p>Total Response Records: <span className="font-semibold">{aggregate?.responses_count ?? '-'}</span></p>
-                          <p>Very Good (5): <span className="font-semibold">{aggregate?.rating_breakdown?.very_good ?? 0}</span></p>
-                          <p>Good (4): <span className="font-semibold">{aggregate?.rating_breakdown?.good ?? 0}</span></p>
-                          <p>Fair (3): <span className="font-semibold">{aggregate?.rating_breakdown?.fair ?? 0}</span></p>
-                          <p>Poor (1-2): <span className="font-semibold">{aggregate?.rating_breakdown?.poor ?? 0}</span></p>
+                          <p>Very Good ({'>='}4.5): <span className="font-semibold">{aggregate?.rating_breakdown?.very_good ?? 0}</span></p>
+                          <p>Good (3.5-4.49): <span className="font-semibold">{aggregate?.rating_breakdown?.good ?? 0}</span></p>
+                          <p>Fair (2.5-3.49): <span className="font-semibold">{aggregate?.rating_breakdown?.fair ?? 0}</span></p>
+                          <p>Poor (&lt;2.5): <span className="font-semibold">{aggregate?.rating_breakdown?.poor ?? 0}</span></p>
                           <p>Rated Items Count: <span className="font-semibold">{totalRatings}</span></p>
                           {sentimentSummary && (
                             <p className="md:col-span-2">
@@ -724,20 +973,6 @@ const ReportsPage = () => {
                       </div>
                     );
                   })()}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Recommendations */}
-          <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">Recommended Actions</h3>
-            <p className="text-slate-500 text-sm mb-6">Suggested improvements based on student feedback</p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {recommendations.map((rec, idx) => (
-                <div key={idx} className="p-4 rounded-lg bg-yellow-50 border border-yellow-200">
-                  <p className="font-medium text-yellow-900">{rec.title}</p>
-                  <p className="text-sm text-yellow-800 mt-2">{rec.description}</p>
                 </div>
               ))}
             </div>

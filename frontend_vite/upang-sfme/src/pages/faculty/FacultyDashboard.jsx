@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from '../../components/Sidebar';
-import { Users, Star, TrendingUp, MessageSquare, ChevronRight } from 'lucide-react';
+import { Users, Star, TrendingUp, MessageSquare } from 'lucide-react';
 import { getAccessToken, getUser } from '../../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -8,6 +8,50 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
 const toNumber = (value) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
+};
+
+const extractList = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.results)) return payload.results;
+  if (payload && Array.isArray(payload.data)) return payload.data;
+  return [];
+};
+
+const getQuestionScale = (questionIdRaw) => {
+  const questionId = String(questionIdRaw || '').trim().toLowerCase();
+
+  if (questionId.startsWith('learn_')) return { min: 1, max: 4 };
+  if (questionId === 'overall_instructor' || questionId === 'overall_modules') return { min: 1, max: 10 };
+
+  if (
+    questionId.startsWith('inst_') ||
+    questionId.startsWith('content_') ||
+    questionId.startsWith('assess_') ||
+    questionId.startsWith('env_') ||
+    questionId.startsWith('comp_') ||
+    questionId.startsWith('method_') ||
+    questionId.startsWith('engage_') ||
+    questionId.startsWith('feedback_') ||
+    questionId.startsWith('prof_') ||
+    questionId === 'overall_rating' ||
+    questionId === 'overall_recommend'
+  ) {
+    return { min: 1, max: 5 };
+  }
+
+  return null;
+};
+
+const toNormalizedFivePointRating = (rawRating, questionIdRaw) => {
+  const rating = Number(rawRating);
+  if (!Number.isFinite(rating)) return null;
+
+  const scale = getQuestionScale(questionIdRaw);
+  if (!scale) return null;
+  if (rating < scale.min || rating > scale.max) return null;
+  if (scale.min === 1 && scale.max === 5) return rating;
+
+  return 1 + ((rating - scale.min) * 4) / (scale.max - scale.min);
 };
 
 const FacultyDashboard = () => {
@@ -24,16 +68,10 @@ const FacultyDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const handleViewDetails = (moduleId) => {
-    // navigate to module details route if available
-    window.history.pushState({}, '', `/faculty/modules/${moduleId}`);
-    window.dispatchEvent(new PopStateEvent('popstate'));
-  };
-
   useEffect(() => {
     const token = getAccessToken();
     const user = getUser();
-    if (!token) return; // already handled by initial auth check
+    if (!token) return;
 
     setFacultyInfo({
       name: user?.firstname ? `${user.firstname} ${user.lastname || ''}`.trim() : user?.email || 'Faculty',
@@ -49,39 +87,158 @@ const FacultyDashboard = () => {
     const fetchModules = async () => {
       setLoading(true);
       setError(null);
-      try {
-        const res = await fetch(`${API_BASE_URL}/faculty/modules/`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok) throw new Error(`Failed to load modules (${res.status})`);
-        const data = await res.json();
 
-        // Map backend module-assignment objects into the module shape used by this page
-        const mapped = (Array.isArray(data) ? data : data.results || []).map((m) => {
+      try {
+        const [modulesRes, formsRes, submissionsRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/faculty/modules/`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          }),
+          fetch(`${API_BASE_URL}/module-evaluation-forms/`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          }),
+          fetch(`${API_BASE_URL}/feedback/submissions/`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          }),
+        ]);
+
+        if (!modulesRes.ok) throw new Error(`Failed to load modules (${modulesRes.status})`);
+
+        const moduleRows = extractList(await modulesRes.json().catch(() => []));
+        const allForms = formsRes.ok ? extractList(await formsRes.json().catch(() => [])) : [];
+        const allSubmissions = submissionsRes.ok ? extractList(await submissionsRes.json().catch(() => [])) : [];
+
+        const facultyClassroomIds = new Set(
+          moduleRows
+            .map((row) => row?.classroom_id ?? row?.classroom)
+            .filter((id) => id !== null && id !== undefined && String(id).trim() !== '')
+            .map((id) => String(id))
+        );
+
+        const facultyForms = allForms.filter((form) => {
+          const classroomId = form?.classroom;
+          if (classroomId === null || classroomId === undefined) return false;
+          return facultyClassroomIds.has(String(classroomId));
+        });
+
+        const formsById = new Map(facultyForms.map((form) => [String(form?.id), form]));
+        const formsByClassroom = new Map();
+        facultyForms.forEach((form) => {
+          const classroomId = form?.classroom;
+          if (classroomId !== null && classroomId !== undefined && String(classroomId).trim() !== '') {
+            const key = String(classroomId);
+            if (!formsByClassroom.has(key)) formsByClassroom.set(key, []);
+            formsByClassroom.get(key).push(form);
+          }
+        });
+
+        const resolveFormIdFromSubmission = (submission) => {
+          const formModel = String(submission?.form_model || '').toLowerCase();
+          if (formModel && formModel !== 'moduleevaluationform') return null;
+
+          const primary = submission?.form_object_id;
+          if (primary !== null && primary !== undefined && formsById.has(String(primary))) {
+            return String(primary);
+          }
+
+          const secondary = submission?.form_id;
+          if (secondary !== null && secondary !== undefined && formsById.has(String(secondary))) {
+            return String(secondary);
+          }
+
+          const legacy = submission?.form;
+          if (legacy !== null && legacy !== undefined) {
+            if (typeof legacy === 'object') {
+              const legacyId = legacy.id ?? legacy.pk;
+              if (legacyId !== null && legacyId !== undefined && formsById.has(String(legacyId))) {
+                return String(legacyId);
+              }
+            } else if (formsById.has(String(legacy))) {
+              return String(legacy);
+            }
+          }
+
+          return null;
+        };
+
+        const submissionsByFormId = new Map();
+        allSubmissions.forEach((submission) => {
+          const formId = resolveFormIdFromSubmission(submission);
+          if (!formId) return;
+          if (!submissionsByFormId.has(formId)) submissionsByFormId.set(formId, []);
+          submissionsByFormId.get(formId).push(submission);
+        });
+
+        const mapped = moduleRows.map((m) => {
           const students = toNumber(m.enrolled_students ?? m.students_count);
-          const evaluations = toNumber(m.responses_count);
-          const averageRating = m.average_rating == null ? null : Number(m.average_rating);
-          const responseRate = students > 0 ? Math.min(100, Math.round((evaluations / students) * 100)) : 0;
+          const moduleId = String(m.module_id || m.id || m.subject_code || '');
+          const moduleCode = String(m.subject_code || '').trim().toUpperCase();
+          const classroomId = m?.classroom_id ?? m?.classroom;
+          const classroomKey = classroomId !== null && classroomId !== undefined ? String(classroomId) : '';
+          const moduleFormId = m?.evaluation_form_id !== null && m?.evaluation_form_id !== undefined
+            ? String(m.evaluation_form_id)
+            : '';
+
+          let candidateForms = [];
+          if (classroomKey && formsByClassroom.has(classroomKey)) {
+            candidateForms = formsByClassroom.get(classroomKey);
+          } else if (moduleFormId && formsById.has(moduleFormId)) {
+            candidateForms = [formsById.get(moduleFormId)];
+          } else if (formsById.has(moduleId)) {
+            candidateForms = [formsById.get(moduleId)];
+          }
+
+          let ratingSum = 0;
+          let ratingCount = 0;
+          let responsesCount = 0;
+
+          candidateForms.forEach((form) => {
+            const formId = String(form?.id || '');
+            const formSubmissions = submissionsByFormId.get(formId) || [];
+            responsesCount += formSubmissions.length;
+
+            formSubmissions.forEach((submission) => {
+              const respList = Array.isArray(submission?.responses) ? submission.responses : [];
+              respList.forEach((item) => {
+                const questionId = item?.question || item?.question_code || item?.question_id;
+                const normalized = toNormalizedFivePointRating(item?.rating, questionId);
+                if (normalized === null) return;
+                ratingSum += normalized;
+                ratingCount += 1;
+              });
+            });
+          });
+
+          const averageRating = ratingCount > 0
+            ? Number(Math.min(5, Math.max(1, ratingSum / ratingCount)).toFixed(1))
+            : null;
+
+          const effectiveResponsesCount = responsesCount;
+          const responseRate = students > 0 ? Math.min(100, Math.round((effectiveResponsesCount / students) * 100)) : 0;
 
           return {
-          id: m.module_id || m.id || m.subject_code,
-          code: (m.subject_code || '').toUpperCase(),
-          name: m.module_name || m.subject_code || 'Untitled',
-          semester: m.semester || m.academic_year || '',
-          students,
-          evaluations,
-          averageRating,
-          responseRate,
-          status: 'active',
-        }});
+            id: moduleId,
+            code: moduleCode,
+            name: m.module_name || m.subject_code || 'Untitled',
+            semester: m.semester || m.academic_year || '',
+            students,
+            evaluations: effectiveResponsesCount,
+            averageRating,
+            responseRate,
+            status: 'active',
+            _ratingSum: ratingCount > 0 ? ratingSum : 0,
+            _ratingCount: ratingCount > 0 ? ratingCount : 0,
+          };
+        });
 
         setModules(mapped);
 
         const totalStudents = mapped.reduce((sum, module) => sum + module.students, 0);
         const totalEvaluations = mapped.reduce((sum, module) => sum + module.evaluations, 0);
-        const ratedModules = mapped.filter((module) => module.averageRating != null);
-        const overallRating = ratedModules.length > 0
-          ? (ratedModules.reduce((sum, module) => sum + module.averageRating, 0) / ratedModules.length)
+        const totalRatingSum = mapped.reduce((sum, module) => sum + module._ratingSum, 0);
+        const totalRatingCount = mapped.reduce((sum, module) => sum + module._ratingCount, 0);
+
+        const overallRating = totalRatingCount > 0
+          ? Math.min(5, Math.max(1, totalRatingSum / totalRatingCount))
           : null;
         const responseRate = totalStudents > 0 ? Math.min(100, Math.round((totalEvaluations / totalStudents) * 100)) : 0;
 
@@ -110,7 +267,6 @@ const FacultyDashboard = () => {
 
         {/* MAIN CONTENT SCROLL AREA */}
         <main className="flex-1 overflow-y-auto">
-          
           <section className="py-10 px-8">
             <div className="max-w-6xl mx-auto">
               <div>
@@ -121,7 +277,6 @@ const FacultyDashboard = () => {
           </section>
 
           <div className="max-w-6xl mx-auto px-8 py-8">
-            
             {/* OVERALL PERFORMANCE */}
             <div className="mb-12 rounded-2xl border border-[#b6cff2] bg-[#f5f7ff] p-6 md:p-7">
               <h2 className="text-3xl font-bold text-slate-900">Your Overall Performance</h2>
@@ -171,7 +326,7 @@ const FacultyDashboard = () => {
             <div className="mb-8 flex items-end justify-between">
               <div>
                 <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Your Modules</h2>
-                <p className="text-slate-500 text-sm mt-1">Select a module to view detailed ratings and feedback</p>
+                <p className="text-slate-500 text-sm mt-1">Module ratings and feedback summary</p>
               </div>
               <span className="bg-[#1f474d]/10 text-[#1f474d] px-4 py-1.5 rounded-full text-xs font-bold">
                 {modules.length} Active Modules
@@ -203,7 +358,7 @@ const FacultyDashboard = () => {
                     <div className="flex items-center gap-3">
                       <div className="flex">
                         {[1, 2, 3, 4, 5].map((s) => (
-                          <Star key={s} size={18} className={`${s <= Math.floor(module.averageRating || 0) ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
+                          <Star key={s} size={18} className={`${s <= Math.floor(module.averageRating || 0) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}`} />
                         ))}
                       </div>
                       <span className="text-2xl font-bold text-slate-800">{module.averageRating != null ? module.averageRating.toFixed(1) : 'N/A'}</span>
@@ -211,7 +366,7 @@ const FacultyDashboard = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4 mb-8 text-center border-t border-slate-100 pt-6">
+                  <div className="grid grid-cols-3 gap-4 text-center border-t border-slate-100 pt-6">
                     <div>
                       <p className="text-xl font-bold text-slate-800">{module.students}</p>
                       <p className="text-[10px] text-slate-400 font-bold uppercase">Students</p>
@@ -225,18 +380,9 @@ const FacultyDashboard = () => {
                       <p className="text-[10px] text-slate-400 font-bold uppercase">Rate</p>
                     </div>
                   </div>
-
-                  <button 
-                    onClick={() => handleViewDetails(module.id)}
-                    className="w-full h-11 inline-flex items-center justify-center gap-2 px-4 rounded-xl bg-[#1f474d] text-white text-sm font-semibold hover:bg-[#2a5d65] transition-colors"
-                  >
-                    View Detailed Feedback
-                    <ChevronRight size={18} />
-                  </button>
                 </div>
               ))}
             </div>
-
           </div>
         </main>
       </div>

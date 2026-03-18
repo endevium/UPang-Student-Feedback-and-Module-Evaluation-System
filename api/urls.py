@@ -52,6 +52,7 @@ urlpatterns = [
     path("password-reset/confirm/", views.PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
 
     path("classrooms/", views.ClassroomListCreateView.as_view(), name="classroom-list-create"),
+    path("classrooms/<int:pk>/", views.ClassroomDetailView.as_view(), name="classroom-detail"),
     path("classrooms/join/", views.ClassroomJoinView.as_view(), name="classroom-join"),
     path("classrooms/leave/", views.StudentLeaveClassroomView.as_view(), name="classroom-leave"),
     path("classrooms/enrollments/pending/", views.FacultyPendingEnrollmentsView.as_view(), name="classroom-enrollments-pending"),

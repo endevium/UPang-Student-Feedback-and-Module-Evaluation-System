@@ -1027,8 +1027,13 @@ class FacultyModulesView(APIView):
                 subject_code__iexact=subject_code,
                 department=faculty.department,
             ).first() if subject_code else None
-            # try find a matching module evaluation form by subject code
-            mef = ModuleEvaluationForm.objects.filter(subject_code__iexact=subject_code).first() if subject_code else None
+            # Resolve by classroom to avoid mixing forms from other faculty with the same subject code.
+            mef = ModuleEvaluationForm.objects.filter(classroom=c).first()
+            if not mef and subject_code:
+                mef = ModuleEvaluationForm.objects.filter(
+                    classroom__faculty_id=faculty_id,
+                    subject_code__iexact=subject_code,
+                ).first()
             responses_count = 0
             average_rating = None
             if mef:
@@ -1064,6 +1069,8 @@ class FacultyModulesView(APIView):
                 'department': getattr(mod, 'department', getattr(faculty, 'department', None)),
                 'semester': getattr(c, 'semester', None) or getattr(mod, 'semester', None),
                 'academic_year': getattr(mod, 'academic_year', None),
+                'schedule': getattr(c, 'schedule', None),
+                'room': getattr(c, 'room', None),
                 'evaluation_form_id': mef.id if mef else None,
                 'responses_count': responses_count,
                 'average_rating': average_rating,
@@ -2126,20 +2133,38 @@ class FeedbackResponseListView(generics.ListAPIView):
             decoded = AccessToken(token)
         except Exception:
             return Response({"detail": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
-        if decoded.get("role") != "department_head":
-            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-        dept_head_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
-        if not dept_head_id:
+        role = decoded.get("role")
+        actor_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        if not actor_id:
             return Response({"detail": "Invalid token payload"}, status=status.HTTP_401_UNAUTHORIZED)
-        try:
-            DepartmentHead.objects.get(id=dept_head_id)
-        except DepartmentHead.DoesNotExist:
-            return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        qs = FeedbackResponse.objects.all()
+        if role == "department_head":
+            try:
+                DepartmentHead.objects.get(id=actor_id)
+            except DepartmentHead.DoesNotExist:
+                return Response({"detail": "Department head not found"}, status=status.HTTP_404_NOT_FOUND)
+            qs = FeedbackResponse.objects.all()
+        elif role == "faculty":
+            try:
+                Faculty.objects.get(id=actor_id)
+            except Faculty.DoesNotExist:
+                return Response({"detail": "Faculty not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            module_ct = ContentType.objects.get_for_model(ModuleEvaluationForm)
+            faculty_form_ids = ModuleEvaluationForm.objects.filter(
+                classroom__faculty_id=actor_id
+            ).values_list("id", flat=True)
+
+            qs = FeedbackResponse.objects.filter(
+                form_content_type=module_ct,
+                form_object_id__in=faculty_form_ids,
+            )
+        else:
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
         form = request.query_params.get('form')
         if form:
-            qs = qs.filter(form_id=form)
+            qs = qs.filter(form_object_id=form)
         page = self.paginate_queryset(qs)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -2847,6 +2872,44 @@ class ClassroomListCreateView(generics.ListCreateAPIView):
         if faculty is None:
             raise ValidationError("Internal error: faculty missing")
         serializer.save(faculty=faculty)
+
+
+class ClassroomDetailView(generics.RetrieveUpdateDestroyAPIView):
+    authentication_classes = [LegacyJWTAuthentication]
+    permission_classes = []
+    queryset = Classroom.objects.all()
+    serializer_class = ClassroomSerializer
+
+    def get_object(self):
+        token = _get_bearer_token(self.request)
+        if not token:
+            raise exceptions.NotAuthenticated()
+
+        try:
+            decoded = AccessToken(token)
+        except Exception:
+            raise exceptions.NotAuthenticated()
+
+        if decoded.get("role") != "faculty":
+            raise exceptions.PermissionDenied()
+
+        fac_id = decoded.get("legacy_user_id") or decoded.get("user_id") or decoded.get("sub")
+        if not fac_id:
+            raise exceptions.NotAuthenticated()
+
+        try:
+            classroom = super().get_object()
+        except Classroom.DoesNotExist:
+            raise exceptions.NotFound()
+
+        if str(classroom.faculty_id) != str(fac_id):
+            raise exceptions.PermissionDenied()
+
+        faculty = Faculty.objects.filter(id=fac_id).first()
+        if faculty:
+            self.request.user = faculty
+
+        return classroom
 
 class ClassroomJoinView(APIView):
     authentication_classes = [LegacyJWTAuthentication]
@@ -3566,13 +3629,24 @@ class ClassroomStudentsView(APIView):
         except Classroom.DoesNotExist:
             return Response({"detail": "Classroom not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        # Only the faculty who owns the classroom or a dept head can view
+        # Access rules:
+        # - faculty: only own classrooms
+        # - department head: only classrooms in their department
+        # - student: only classrooms where they have an approved enrollment
         if role == "faculty":
             if classroom.faculty_id != user_id:
                 return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
         elif role == "department_head":
             head = DepartmentHead.objects.filter(id=user_id).first()
             if not head or classroom.faculty.department != head.department:
+                return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        elif role == "student":
+            is_enrolled = ClassroomEnrollment.objects.filter(
+                classroom=classroom,
+                student_id=user_id,
+                approved=True,
+            ).exists()
+            if not is_enrolled:
                 return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
         else:
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
-import { Plus, School, Users, BookOpen, Copy, Clock3, MapPin, X, ChevronDown } from 'lucide-react';
+import { Plus, School, Users, BookOpen, Copy, Clock3, MapPin, X, ChevronDown, Pencil, Trash2 } from 'lucide-react';
 import { getAccessToken } from '../../utils/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -51,6 +51,45 @@ const normalizeYearLevel = (value) => {
   return digit || key;
 };
 
+const parseDayStringToArray = (raw) => {
+  if (!raw) return [];
+  const s = String(raw).trim();
+  const up = s.toUpperCase();
+  if (!up) return [];
+  // Common compact tokens
+  if (up === 'MWF') return ['Monday', 'Wednesday', 'Friday'];
+  if (up === 'TTH' || up === 'TH' || up === 'T/TH') return ['Tuesday', 'Thursday'];
+
+  // split on commas, slashes, spaces
+  const parts = up.split(/[,/\\]+|\s+/).map((p) => p.trim()).filter(Boolean);
+  const result = [];
+  for (const p of parts) {
+    if (!p) continue;
+    const low = p.toLowerCase();
+    if (low.startsWith('mon')) result.push('Monday');
+    else if (low.startsWith('tue') || low === 't') result.push('Tuesday');
+    else if (low.startsWith('wed') || low === 'w') result.push('Wednesday');
+    else if (low.startsWith('thu') || low.startsWith('th')) result.push('Thursday');
+    else if (low.startsWith('fri') || low === 'f') result.push('Friday');
+    else if (low.startsWith('sat') || low === 's') result.push('Saturday');
+    else if (p.length <= 3) {
+      // single-letter tokens like M, W, F
+      const letters = p.split('');
+      for (let ch of letters) {
+        ch = ch.toUpperCase();
+        if (ch === 'M') result.push('Monday');
+        if (ch === 'T') result.push('Tuesday');
+        if (ch === 'W') result.push('Wednesday');
+        if (ch === 'H') result.push('Thursday');
+        if (ch === 'F') result.push('Friday');
+        if (ch === 'S') result.push('Saturday');
+      }
+    }
+  }
+  // unique preserve order
+  return Array.from(new Set(result));
+};
+
 const ClassroomPage = () => {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +102,9 @@ const ClassroomPage = () => {
   const [copiedClassId, setCopiedClassId] = useState(null);
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
+  const [isEditingClassroom, setIsEditingClassroom] = useState(false);
+  const [editingClassroomId, setEditingClassroomId] = useState(null);
+  const [deletingClassroomId, setDeletingClassroomId] = useState(null);
   const [formData, setFormData] = useState({
     year_level: '',
     subject_code: '',
@@ -71,6 +113,9 @@ const ClassroomPage = () => {
     block: '',
     semester: '',
     schedule: '',
+    schedule_day: [],
+    start_time: '',
+    end_time: '',
     room: '',
   });
 
@@ -269,7 +314,9 @@ const ClassroomPage = () => {
   const handleCreateClassroom = async () => {
     setCreateError('');
 
-    if (!formData.year_level || !formData.subject_code || !formData.program || !formData.block || !formData.semester) {
+    const isEditing = Boolean(isEditingClassroom && editingClassroomId);
+
+    if (!formData.year_level || !formData.subject_code || !formData.program || !formData.block || !formData.semester || (!isEditing && (!(Array.isArray(formData.schedule_day) && formData.schedule_day.length > 0) || !formData.start_time || !formData.end_time))) {
       setCreateError('Please complete all required fields.');
       return;
     }
@@ -315,18 +362,30 @@ const ClassroomPage = () => {
         Summer: 'Summer',
       };
 
+      let scheduleStr = null;
+      if (Array.isArray(formData.schedule_day) && formData.schedule_day.length > 0 && formData.start_time && formData.end_time) {
+        const daysStr = formData.schedule_day.join(',');
+        scheduleStr = `${daysStr} ${formData.start_time} - ${formData.end_time}`;
+      } else if (formData.schedule && typeof formData.schedule === 'string' && formData.schedule.trim()) {
+        scheduleStr = formData.schedule.trim();
+      }
+
       const payload = {
         year_level: Number(formData.year_level),
         subject_code: formData.subject_code,
         program: formData.program,
         block: formData.block,
         semester: semesterValueMap[formData.semester] || formData.semester,
-        schedule: formData.schedule.trim() || null,
+        schedule: scheduleStr || null,
         room: formData.room.trim() || null,
       };
 
-      const res = await fetch(`${API_BASE_URL}/classrooms/`, {
-        method: 'POST',
+      const targetUrl = isEditing
+        ? `${API_BASE_URL}/classrooms/${editingClassroomId}/`
+        : `${API_BASE_URL}/classrooms/`;
+
+      const res = await fetch(targetUrl, {
+        method: isEditing ? 'PATCH' : 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -341,6 +400,8 @@ const ClassroomPage = () => {
       }
 
       setIsCreateModalOpen(false);
+      setIsEditingClassroom(false);
+      setEditingClassroomId(null);
       setFormData({
         year_level: '',
         subject_code: '',
@@ -349,6 +410,9 @@ const ClassroomPage = () => {
         block: '',
         semester: '',
         schedule: '',
+        schedule_day: [],
+        start_time: '',
+        end_time: '',
         room: '',
       });
       loadClassrooms();
@@ -356,6 +420,87 @@ const ClassroomPage = () => {
       setCreateError('Unable to create classroom right now.');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const openEditClassroomModal = (card) => {
+    const semesterDisplayMap = {
+      '1ST SEM': '1st Semester',
+      '1ST SEMESTER': '1st Semester',
+      '2ND SEM': '2nd Semester',
+      '2ND SEMESTER': '2nd Semester',
+      SUMMER: 'Summer',
+    };
+
+    const normalizedSemester = normalizeSemester(card.semester || '');
+    const semesterValue = semesterDisplayMap[normalizedSemester] || card.semester || '';
+
+    setCreateError('');
+    setIsEditingClassroom(true);
+    setEditingClassroomId(card.classroomId || null);
+    setIsCreateModalOpen(true);
+    // try to parse schedule into day + start/end (best-effort)
+    let parsed_day = '';
+    let parsed_start = '';
+    let parsed_end = '';
+    if (card?.schedule) {
+      // match patterns like "TTH 13:00 - 14:30" or "MWF 1:00 PM - 2:30 PM" (24h simple fallback)
+      const m = String(card.schedule).match(/^([A-Za-z0-9\s]{1,12})\s+(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+      if (m) {
+        parsed_day = m[1].trim();
+        parsed_start = m[2];
+        parsed_end = m[3];
+      }
+    }
+
+    setFormData({
+      year_level: card.yearLevel ? String(card.yearLevel) : '',
+      subject_code: card.code || '',
+      subject_name: card.title || '',
+      program: card.program || 'BSIT',
+      block: card.section || '',
+      semester: semesterValue,
+      schedule: card.schedule || '',
+      schedule_day: parseDayStringToArray(parsed_day),
+      start_time: parsed_start,
+      end_time: parsed_end,
+      room: card.room || '',
+    });
+  };
+
+  const handleDeleteClassroom = async (card) => {
+    if (!card?.classroomId) {
+      setCreateError('Unable to delete classroom: missing classroom id.');
+      return;
+    }
+
+    const ok = window.confirm(`Delete classroom ${card.code} - ${card.section}? This cannot be undone.`);
+    if (!ok) return;
+
+    const token = getAccessToken();
+    if (!token) {
+      setCreateError('Session expired. Please login again.');
+      return;
+    }
+
+    setDeletingClassroomId(card.classroomId);
+    try {
+      const res = await fetch(`${API_BASE_URL}/classrooms/${card.classroomId}/`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const msg = await parseApiError(res, 'Unable to delete classroom');
+        setCreateError(msg);
+        return;
+      }
+
+      await loadClassrooms();
+    } catch {
+      setCreateError('Unable to delete classroom right now.');
+    } finally {
+      setDeletingClassroomId(null);
     }
   };
 
@@ -394,7 +539,7 @@ const ClassroomPage = () => {
       const classCode = item?.classroom_code || item?.class_code || `UP-FB2S25-${section}-${code.replace(/\s+/g, '')}-01`;
       const schedule = item?.schedule || item?.class_schedule || item?.time_slot || 'TTH 1:00 PM - 2:30 PM';
       const room = item?.room || item?.location || 'CS Lab 1';
-      const students = Number(item?.students_count ?? item?.student_count ?? 0) || 0;
+      const students = Number(item?.enrolled_students ?? item?.students_count ?? item?.student_count ?? 0) || 0;
 
       return {
         id: item?.module_id || item?.id || `${code}-${index}`,
@@ -402,6 +547,9 @@ const ClassroomPage = () => {
         code,
         section,
         title,
+        program: item?.program || 'BSIT',
+        yearLevel: item?.year_level || '',
+        semester: item?.semester || '',
         classCode,
         schedule,
         room,
@@ -482,9 +630,10 @@ const ClassroomPage = () => {
       formData.semester &&
       formData.block &&
       formData.subject_code &&
-      formData.subject_name
+      formData.subject_name &&
+      (!isEditingClassroom ? (Array.isArray(formData.schedule_day) && formData.schedule_day.length > 0 && formData.start_time && formData.end_time) : true)
     );
-  }, [formData]);
+  }, [formData, isEditingClassroom]);
 
   const totalStudents = cards.reduce((sum, card) => sum + card.students, 0);
 
@@ -564,13 +713,36 @@ const ClassroomPage = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 {cards.map((card) => (
                   <div key={card.id} className="h-full bg-white border border-slate-200 rounded-2xl p-6 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-slate-300 flex flex-col">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="font-mono text-[10px] px-2 py-1 bg-slate-50 border border-slate-200 rounded text-slate-600 font-bold uppercase">
-                        {card.code}
-                      </span>
-                      <span className="text-[10px] px-2 py-1 bg-indigo-100 text-indigo-700 rounded font-bold uppercase">
-                        {card.section}
-                      </span>
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] px-2 py-1 bg-slate-50 border border-slate-200 rounded text-slate-600 font-bold uppercase">
+                          {card.code}
+                        </span>
+                        <span className="text-[10px] px-2 py-1 bg-indigo-100 text-indigo-700 rounded font-bold uppercase">
+                          {card.section}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditClassroomModal(card)}
+                          className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                          aria-label="Edit classroom"
+                          title="Edit classroom"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteClassroom(card)}
+                          disabled={deletingClassroomId === card.classroomId}
+                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
+                          aria-label="Delete classroom"
+                          title="Delete classroom"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
 
                     <h2 className="text-xl leading-tight font-bold text-slate-900 tracking-tight">{card.title}</h2>
@@ -624,8 +796,12 @@ const ClassroomPage = () => {
             <div className="px-6 pt-6 pb-5 max-h-[88vh] overflow-y-auto">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-2xl font-bold text-[#0f2f57] tracking-tight">Create New Classroom</h2>
-                  <p className="text-slate-500 mt-1.5 text-sm">Set up a new classroom and generate a class code for students to join.</p>
+                  <h2 className="text-2xl font-bold text-[#0f2f57] tracking-tight">{isEditingClassroom ? 'Edit Classroom' : 'Create New Classroom'}</h2>
+                  <p className="text-slate-500 mt-1.5 text-sm">
+                    {isEditingClassroom
+                      ? 'Update the classroom details and save your changes.'
+                      : 'Set up a new classroom and generate a class code for students to join.'}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -768,13 +944,51 @@ const ClassroomPage = () => {
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">Schedule</label>
-                  <input
-                    type="text"
-                    value={formData.schedule}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, schedule: e.target.value }))}
-                    placeholder="e.g., TTH 1:00 PM - 2:30 PM"
-                    className="w-full h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-slate-400 transition"
-                  />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-3">
+                      <div className="flex gap-2 flex-wrap">
+                        {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d) => {
+                          const isActive = Array.isArray(formData.schedule_day) && formData.schedule_day.includes(d);
+                          return (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => setFormData((prev) => {
+                                const days = Array.isArray(prev.schedule_day) ? [...prev.schedule_day] : [];
+                                const idx = days.indexOf(d);
+                                if (idx >= 0) days.splice(idx, 1);
+                                else days.push(d);
+                                return { ...prev, schedule_day: days };
+                              })}
+                              className={
+                                `px-3 py-2 rounded-lg text-sm font-medium border transition ${isActive ? 'bg-[#1f474d] text-white border-[#1f474d]' : 'bg-white text-slate-800 border border-slate-300 hover:bg-slate-50'}`
+                              }
+                            >
+                              {d}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <input
+                        type="time"
+                        value={formData.start_time}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, start_time: e.target.value }))}
+                        className="w-full h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-slate-400 transition"
+                        aria-label="Start time"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="time"
+                        value={formData.end_time}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, end_time: e.target.value }))}
+                        className="w-full h-11 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-slate-400 transition"
+                        aria-label="End time"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div>
@@ -800,6 +1014,8 @@ const ClassroomPage = () => {
                   onClick={() => {
                     setCreateError('');
                     setIsCreateModalOpen(false);
+                    setIsEditingClassroom(false);
+                    setEditingClassroomId(null);
                   }}
                 >
                   Cancel
@@ -810,7 +1026,7 @@ const ClassroomPage = () => {
                   disabled={creating || !isFormComplete}
                   className="px-5 py-2.5 rounded-lg bg-[#1f474d] text-white font-semibold hover:bg-[#2a5d65] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                 >
-                  {creating ? 'Creating...' : 'Create Classroom'}
+                  {creating ? (isEditingClassroom ? 'Saving...' : 'Creating...') : (isEditingClassroom ? 'Save Changes' : 'Create Classroom')}
                 </button>
               </div>
             </div>

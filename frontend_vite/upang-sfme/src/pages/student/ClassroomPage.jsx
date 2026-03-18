@@ -2,6 +2,34 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
 import { Plus, Users, CircleCheck, Clock3 } from 'lucide-react';
 
+// Helpers to extract schedule/room from various API shapes (string, nested objects, or separate fields)
+const extractSchedule = (item) => {
+  if (!item) return 'TBA';
+  const direct = item?.schedule || item?.classroom?.schedule || item?.module?.schedule || item?.time_slot || item?.class_schedule;
+  if (direct && typeof direct === 'string' && direct.trim()) return direct.trim();
+
+  const schedObj = item?.schedule_obj || item?.classroom?.schedule_obj || item?.module?.schedule_obj || item?.schedule_info;
+  if (schedObj && typeof schedObj === 'object') {
+    const days = Array.isArray(schedObj.days) ? schedObj.days.join(',') : (schedObj.days || schedObj.day || '');
+    const start = schedObj.start_time || schedObj.start || '';
+    const end = schedObj.end_time || schedObj.end || '';
+    if (days && start && end) return `${days} ${start} - ${end}`;
+    if (start && end) return `${start} - ${end}`;
+  }
+
+  const daysRaw = item?.days || item?.classroom?.days || item?.module?.days || item?.day;
+  const start = item?.start_time || item?.classroom?.start_time || item?.module?.start_time || item?.start;
+  const end = item?.end_time || item?.classroom?.end_time || item?.module?.end_time || item?.end;
+  if (daysRaw && start && end) return `${daysRaw} ${start} - ${end}`;
+  if (start && end) return `${start} - ${end}`;
+
+  return 'TBA';
+};
+
+const extractRoom = (item) => {
+  return item?.room || item?.classroom?.room || item?.module?.room || item?.location || 'TBA';
+};
+
 const ClassroomPage = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
@@ -112,8 +140,8 @@ const ClassroomPage = () => {
       const name = item?.module_name || item?.name || item?.title || code || `Classroom ${index + 1}`;
       const instructor = item?.instructor || item?.instructor_name || item?.lecturer || 'Instructor TBA';
       const section = item?.block || item?.classroom_code || item?.section || `CS-${index + 1}A`;
-      const schedule = item?.schedule || 'TBA';
-      const room = item?.room || 'TBA';
+      const schedule = extractSchedule(item);
+      const room = extractRoom(item);
       const students = Number(item?.students_count) || 0;
 
       const initials = String(instructor)
@@ -153,8 +181,8 @@ const ClassroomPage = () => {
         title: item?.module_name || 'Unknown Module',
         classroomCode: item?.classroom_code || 'N/A',
         instructor: item?.instructor || 'Instructor TBA',
-        schedule: item?.schedule || 'TBA',
-        room: item?.room || 'TBA',
+        schedule: extractSchedule(item),
+        room: extractRoom(item),
         students: Number(item?.students_count) || 0,
         requestedAt,
         status: item?.status || 'Pending',

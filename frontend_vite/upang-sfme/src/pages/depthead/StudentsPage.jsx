@@ -38,7 +38,7 @@ const StudentsManagement = () => {
 
   const [blocks, setBlocks] = useState([]);
   const [isLoadingBlocks, setIsLoadingBlocks] = useState(false);
-  const [blocksError, setBlocksError] = useState('');
+  const [_blocksError, setBlocksError] = useState('');
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -257,16 +257,48 @@ const StudentsManagement = () => {
       const token = getToken();
       const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 
-      // fetch module and instructor forms
-      const [mefRes, iefRes, subsRes] = await Promise.all([
+      // fetch forms/submissions and all classrooms (dept head can access by department)
+      const [mefRes, iefRes, subsRes, classroomsRes] = await Promise.all([
         fetch(`${API_BASE_URL}/module-evaluation-forms/`, { headers }),
         fetch(`${API_BASE_URL}/instructor-evaluation-forms/`, { headers }),
         fetch(`${API_BASE_URL}/feedback/submissions/`, { headers }),
+        fetch(`${API_BASE_URL}/classrooms/`, { headers }),
       ]);
 
       const mefList = mefRes.ok ? await mefRes.json().catch(() => []) : [];
       const iefList = iefRes.ok ? await iefRes.json().catch(() => []) : [];
       const subsList = subsRes.ok ? await subsRes.json().catch(() => []) : [];
+      const classroomsPayload = classroomsRes.ok ? await classroomsRes.json().catch(() => []) : [];
+      const classroomsList = Array.isArray(classroomsPayload)
+        ? classroomsPayload
+        : classroomsPayload?.results || [];
+
+      // Count approved classroom memberships per student.
+      // This becomes the source of truth for the "Modules" column.
+      const classroomStudentResponses = await Promise.all(
+        classroomsList.map(async (classroom) => {
+          const cid = classroom?.id;
+          if (!cid) return null;
+          try {
+            const res = await fetch(`${API_BASE_URL}/classrooms/${cid}/students/`, { headers });
+            if (!res.ok) return null;
+            return await res.json().catch(() => null);
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const modulesByStudent = new Map();
+      for (const classroomData of classroomStudentResponses) {
+        if (!classroomData) continue;
+        const studentsInClass = Array.isArray(classroomData?.students) ? classroomData.students : [];
+        for (const st of studentsInClass) {
+          const sid = String(st?.student_id || st?.id || '');
+          if (!sid) continue;
+          modulesByStudent.set(sid, (modulesByStudent.get(sid) || 0) + 1);
+        }
+      }
 
       const mefById = new Map();
       (Array.isArray(mefList) ? mefList : mefList.results || []).forEach(f => mefById.set(String(f.id), f));
@@ -318,11 +350,19 @@ const StudentsManagement = () => {
         const clsMap = studentMap.get(sid) || new Map();
         let completedCount = 0;
         for (const [, val] of clsMap.entries()) {
-          if (val.module && val.instructor) completedCount += 1;
+          // Count a completed module when the module evaluation has been submitted.
+          // Previously this required both module && instructor to be true,
+          // which left records as pending if only the module form was completed.
+          if (val.module) completedCount += 1;
         }
-        const totalModules = Number(s.modules || 0) || 0;
+        const totalModules = Number(modulesByStudent.get(sid) || 0);
         const pendingCount = Math.max(0, totalModules - completedCount);
-        return { ...s, completed: completedCount, pending: pendingCount };
+        return {
+          ...s,
+          modules: totalModules,
+          completed: completedCount,
+          pending: pendingCount,
+        };
       });
 
       setStudentData(updated);
@@ -348,7 +388,7 @@ const StudentsManagement = () => {
       }
       const data = await res.json().catch(() => []);
       setBlocks(Array.isArray(data) ? data : data?.results || []);
-    } catch (e) {
+    } catch {
       setBlocksError('Unable to reach server for blocks.');
       setBlocks([]);
     } finally {
@@ -443,7 +483,7 @@ const StudentsManagement = () => {
       setFormValues((prev) => ({ ...prev, block_section: '' }));
     }
     // only react to changes in available blocks
-  }, [availableBlockNames]);
+  }, [availableBlockNames, formValues.block_section]);
 
   const handleAddStudent = async (e) => {
     e.preventDefault();
@@ -602,6 +642,56 @@ const StudentsManagement = () => {
     link.href = URL.createObjectURL(blob);
     link.download = 'student_import_template.csv';
     link.click();
+  };
+
+  // Export current student table to CSV
+  const exportToCSV = (rows, headers, filename = 'student-list.csv') => {
+    if (!rows || rows.length === 0) {
+      window.alert('No records to export.');
+      return;
+    }
+
+    const escape = (value) => {
+      if (value === null || value === undefined) return '';
+      const s = String(value).replace(/\r?\n/g, ' ');
+      if (s.includes('"')) return '"' + s.replace(/"/g, '""') + '"';
+      if (s.includes(',') || s.includes('\n')) return '"' + s + '"';
+      return s;
+    };
+
+    const lines = [headers.join(',')];
+    for (const r of rows) {
+      const row = [
+        r.id || '',
+        r.name || '',
+        r.program || '',
+        r.block || '',
+        r.year || '',
+        r.modules ?? '',
+        r.completed ?? '',
+        r.pending ?? '',
+        r.status || '',
+      ].map(escape).join(',');
+      lines.push(row);
+    }
+
+    const csv = lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportStudents = () => {
+    const rows = filteredStudents;
+    const headers = ['Student ID','Name','Program','Block','Year','Modules','Completed','Pending','Status'];
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    exportToCSV(rows, headers, `student-list_${stamp}.csv`);
   };
 
   const showStudentDetails = async (studentId) => {
@@ -788,7 +878,7 @@ const StudentsManagement = () => {
                 >
                   📁 Bulk Import
                 </button>
-                <button className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
+                <button onClick={handleExportStudents} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
                   <Download size={16} /> Export List
                 </button>
               </div>
